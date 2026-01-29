@@ -4,7 +4,7 @@ DevSuite is a **local-first developer operating system**.
 
 It helps a single developer understand **what they work on**, **how long it takes**, **how complex it is**, and **for whom it was done**, while remaining private, auditable, and AI-friendly.
 
-DevSuite is not a generic task manager.  
+DevSuite is not a generic task manager.
 It is a **work telemetry and review system** designed to be used by both a human developer and AI agents.
 
 ---
@@ -59,7 +59,7 @@ DevSuite links to:
 - Notion pages
 - TickTick tasks
 
-Only IDs and URLs are stored.  
+Only IDs and URLs are stored.
 No external content is duplicated.
 
 ### AI agents are first-class users
