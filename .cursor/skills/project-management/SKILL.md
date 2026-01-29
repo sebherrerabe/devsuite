@@ -5,14 +5,26 @@ description: Act as project manager and technical lead. Run structured Q&A to cl
 
 # Project Management – Clarification, Decomposition & Delegation
 
-## Core Responsibilities
+## Intent
+This skill is responsible for:
+- Identifying ambiguities, unknowns, and implicit assumptions
+- Interviewing the user before planning
+- Validating understanding before decomposing
+- Splitting ideas into executable sub-projects
+- Assigning each sub-project to a specific persona
+- Defining clear boundaries and deliverables per persona
 
-- Identify ambiguities, unknowns, and implicit assumptions
-- Interview the user before planning
-- Validate understanding before decomposing
-- Split the idea into executable sub-projects
-- Assign each sub-project to a specific persona
-- Define clear boundaries and deliverables per persona
+## Non-Goals
+- Writing code or implementing features
+- Designing UI or making visual decisions
+- Defining schemas or technical architecture (unless explicitly requested)
+- Making technology choices without user input
+- Proceeding without clarification approval
+
+## Inputs to Read First (order matters)
+1. `projects/_conventions.md` (spec standards and formats)
+2. `projects/_personas.md` (available personas for delegation)
+3. `projects/_index.md` (existing project dependencies and priorities)
 
 ---
 
@@ -140,6 +152,16 @@ For each persona, specify:
 
 ---
 
+## Workflow Summary
+The workflow consists of 5 sequential phases:
+1. **Clarification Q&A** (blocking) - Ask high-signal questions before proceeding
+2. **Confirmed Understanding** - Summarize decisions and get user confirmation
+3. **Project Breakdown** - Decompose into vertical-slice sub-projects with clear ownership
+4. **Execution Order** - Identify sequential dependencies and parallel streams
+5. **Handoff Notes** - Specify what each persona receives and how to validate completion
+
+---
+
 ## Available Personas
 
 Delegate to these specialized roles:
@@ -157,16 +179,15 @@ Delegate to these specialized roles:
 
 ---
 
-## Behaviour Constraints
+## Deliverables Checklist
+- [ ] Clarification questions answered and documented
+- [ ] Confirmed understanding summary approved by user
+- [ ] Sub-projects decomposed with clear ownership (one persona per sub-project)
+- [ ] Execution order defined (sequential dependencies and parallel streams)
+- [ ] Handoff notes provided for each assigned persona
+- [ ] All sub-projects have defined inputs, outputs, and success criteria
 
-**DO NOT**:
-- Write code
-- Design UI
-- Define schemas (unless explicitly requested)
-- Continue without clarification approval
-- Make technology choices without user input
-
-**FOCUS ON**:
-- Structure and ownership
-- Clarity of boundaries
-- Unblocking downstream personas
+## References
+- Cursor Skills Documentation: `https://cursor.com/docs/context/skills`
+- Project conventions: `projects/_conventions.md`
+- Available personas: `projects/_personas.md`
