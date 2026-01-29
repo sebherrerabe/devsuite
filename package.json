@@ -1,0 +1,45 @@
+{
+  "name": "devsuite",
+  "private": true,
+  "type": "module",
+  "description": "DevSuite - Developer Productivity Platform",
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --build",
+    "clean": "pnpm -r run clean",
+    "test": "echo 'Tests will be implemented in future projects'",
+    "prepare": "husky"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs,ts,tsx,json,md}": [
+      "prettier --write"
+    ],
+    "*.{ts,tsx}": [
+      "eslint --fix"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^25.1.0",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "convex": "^1.31.6",
+    "eslint": "9",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "3",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,23 +1,26 @@
 ---
-id: "14-invoicing-module"
-title: "Invoicing Module"
-status: "pending"
+id: '14-invoicing-module'
+title: 'Invoicing Module'
+status: 'pending'
 priority: 12
 assigned_pm: null
-depends_on: ["04-company-module", "08-session-module"]
+depends_on: ['04-company-module', '08-session-module']
 unlocks: []
-estimated_complexity: "medium"
+estimated_complexity: 'medium'
 ---
 
 # Invoicing Module
 
 ## Summary
+
 Implement session-based invoicing with configurable rate cards. Invoicing is derivative (based on sessions), not a primary data source. Produces simple, auditable CSV outputs.
 
 ## Objective
+
 Enable users to generate invoices from tracked sessions for client billing.
 
 ## Key Deliverables
+
 - Rate card management (hourly rates per company/project)
 - Invoice generation from sessions
 - Invoice preview page
@@ -26,6 +29,7 @@ Enable users to generate invoices from tracked sessions for client billing.
 - Invoice history
 
 ## Success Criteria
+
 - [ ] Can configure rate cards
 - [ ] Can generate invoice for date range
 - [ ] Invoice shows session breakdown
@@ -35,6 +39,7 @@ Enable users to generate invoices from tracked sessions for client billing.
 ## Architecture Reference
 
 From spec section 2.11:
+
 - Derivative, not primary data
 - Based on sessions
 - Grouped by time period (typically monthly)
@@ -43,13 +48,16 @@ From spec section 2.11:
 - Not an accounting system
 
 ## Quick Links
+
 - [Scope](./SCOPE.md) _(to be created by AI PM)_
 - [Dependencies](./DEPENDENCIES.md) _(to be created by AI PM)_
 - [Tasks](./TASKS.md) _(to be created by AI PM)_
 - [Status](./STATUS.md) _(to be created by AI PM)_
 
 ## Notes for AI PM
+
 When decomposing this project:
+
 1. Rate cards are the configuration point
 2. Invoice is a view over sessions, not separate data
 3. CSV export is the primary output format

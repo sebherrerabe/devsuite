@@ -6,9 +6,11 @@ description: Implement optional TickTick integration for explicit task linking. 
 # TickTick Integration (Minimal)
 
 ## Intent
+
 This skill guides implementation of DevSuite's optional TickTick integration that enables linking DevSuite tasks to TickTick tasks. The integration is read-only, uses OAuth2 authentication, and does not mirror TickTick content—only references it.
 
 ## Non-Goals
+
 - Full TickTick task sync
 - Two-way synchronization
 - Creating TickTick tasks from DevSuite
@@ -16,6 +18,7 @@ This skill guides implementation of DevSuite's optional TickTick integration tha
 - Complex TickTick API operations (only task linking and metadata)
 
 ## Inputs to Read First
+
 - Repo: `projects/16-ticktick-integration/PROJECT.md` (integration requirements)
 - Repo: `projects/_conventions.md` (spec standards)
 - Repo: `/dev_suite_conceptual_architecture_business_vs_tech.md` (section 6, external links)
@@ -25,19 +28,23 @@ This skill guides implementation of DevSuite's optional TickTick integration tha
 ## Workflow
 
 ### 1) Set Up OAuth2 Flow
+
 TickTick uses OAuth2 for authentication. Implement the flow:
 
 **Step 1: Redirect to Authorization**
+
 - User clicks "Connect TickTick" in settings
 - Redirect to: `https://ticktick.com/oauth/authorize?scope=tasks:read&client_id=YOUR_CLIENT_ID&state=STATE&redirect_uri=REDIRECT_URI&response_type=code`
 - Store `state` parameter for CSRF protection
 
 **Step 2: Handle Callback**
+
 - Receive `code` and `state` in callback
 - Verify `state` matches stored value
 - Exchange code for access token
 
 **Step 3: Exchange Code for Token**
+
 ```typescript
 async function exchangeCodeForToken(
   code: string,
@@ -45,17 +52,17 @@ async function exchangeCodeForToken(
   clientSecret: string,
   redirectUri: string
 ): Promise<{ accessToken: string; refreshToken: string }> {
-  const response = await fetch("https://ticktick.com/oauth/token", {
-    method: "POST",
+  const response = await fetch('https://ticktick.com/oauth/token', {
+    method: 'POST',
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
       code,
-      grant_type: "authorization_code",
-      scope: "tasks:read",
+      grant_type: 'authorization_code',
+      scope: 'tasks:read',
       redirect_uri: redirectUri,
     }),
   });
@@ -69,11 +76,12 @@ async function exchangeCodeForToken(
 ```
 
 ### 2) Store TickTick Configuration
+
 - Add to Convex schema (`convex/schema.ts`):
 
 ```typescript
 ticktickIntegrations: defineTable({
-  companyId: v.id("companies"),
+  companyId: v.id('companies'),
   userId: v.string(), // TickTick user ID
   accessToken: v.string(), // Encrypted/stored securely
   refreshToken: v.string(), // Encrypted/stored securely
@@ -81,8 +89,7 @@ ticktickIntegrations: defineTable({
   enabled: v.boolean(),
   createdAt: v.number(),
   deletedAt: v.optional(v.number()),
-})
-  .index("by_company", ["companyId"]);
+}).index('by_company', ['companyId']);
 ```
 
 - Store tokens securely (encrypted or environment variable)
@@ -90,6 +97,7 @@ ticktickIntegrations: defineTable({
 - Handle token refresh when expired
 
 ### 3) Implement Token Refresh
+
 - Check token expiration before API calls
 - Refresh if expired:
 
@@ -99,16 +107,16 @@ async function refreshAccessToken(
   clientId: string,
   clientSecret: string
 ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
-  const response = await fetch("https://ticktick.com/oauth/token", {
-    method: "POST",
+  const response = await fetch('https://ticktick.com/oauth/token', {
+    method: 'POST',
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
       refresh_token: refreshToken,
-      grant_type: "refresh_token",
+      grant_type: 'refresh_token',
     }),
   });
 
@@ -122,6 +130,7 @@ async function refreshAccessToken(
 ```
 
 ### 4) Implement Link Validation
+
 - When user links a task to TickTick task:
   - Extract TickTick task ID from URL or input
   - Call TickTick API to verify task exists
@@ -132,11 +141,11 @@ async function refreshAccessToken(
 
 ```typescript
 export const validateTickTickLink = action({
-  args: { taskId: v.string(), companyId: v.id("companies") },
+  args: { taskId: v.string(), companyId: v.id('companies') },
   handler: async (ctx, args) => {
     const integration = await getTickTickIntegration(ctx, args.companyId);
     if (!integration?.enabled) {
-      throw new Error("TickTick integration not enabled");
+      throw new Error('TickTick integration not enabled');
     }
 
     const token = await ensureValidToken(ctx, integration);
@@ -153,6 +162,7 @@ export const validateTickTickLink = action({
 ```
 
 ### 5) Fetch Task Metadata
+
 - TickTick API endpoint: `GET /open/v1/task/{taskId}`
 - Requires `Authorization: Bearer {accessToken}` header
 - Returns task details:
@@ -161,7 +171,7 @@ export const validateTickTickLink = action({
 interface TickTickTask {
   id: string;
   title: string;
-  status: "NORMAL" | "COMPLETED" | "ARCHIVED";
+  status: 'NORMAL' | 'COMPLETED' | 'ARCHIVED';
   // ... other fields
 }
 
@@ -180,7 +190,7 @@ async function fetchTickTickTask(
 
   if (!response.ok) {
     if (response.status === 404) {
-      throw new Error("Task not found");
+      throw new Error('Task not found');
     }
     throw new Error(`TickTick API error: ${response.statusText}`);
   }
@@ -190,6 +200,7 @@ async function fetchTickTickTask(
 ```
 
 ### 6) Task Link UI
+
 - In task detail/edit form:
   - "Link to TickTick task" button
   - Input field for TickTick task ID or URL
@@ -202,6 +213,7 @@ async function fetchTickTickTask(
     - Remove link button
 
 ### 7) Company-Specific Configuration
+
 - Settings page for TickTick integration:
   - "Connect TickTick" button (initiates OAuth flow)
   - Disconnect button (revokes tokens)
@@ -209,6 +221,7 @@ async function fetchTickTickTask(
   - Last sync timestamp (if applicable)
 
 ### 8) Error Handling
+
 - Handle common errors gracefully:
   - Invalid task ID → Show error, don't create link
   - Token expired → Refresh automatically, retry
@@ -216,12 +229,14 @@ async function fetchTickTickTask(
   - API unavailable → Show warning, allow graceful degradation
 
 ### 9) Graceful Degradation
+
 - If TickTick integration is disabled or unavailable:
   - Still allow tasks to exist
   - Show placeholder for TickTick links
   - Don't block task operations
 
 ## Deliverables Checklist
+
 - [ ] OAuth2 flow implemented (authorize → callback → token exchange)
 - [ ] TickTick integration schema (company-scoped, tokens stored securely)
 - [ ] Token refresh logic
@@ -236,11 +251,13 @@ async function fetchTickTickTask(
 ## TickTick API Patterns
 
 ### Task ID Format
+
 - TickTick task IDs are strings (UUIDs or similar)
 - Can be extracted from TickTick web URLs
 - Format: `https://ticktick.com/webapp/#task/{taskId}`
 
 ### API Request Pattern
+
 ```typescript
 async function callTickTickAPI<T>(
   accessToken: string,
@@ -264,6 +281,7 @@ async function callTickTickAPI<T>(
 ```
 
 ### Task Status Mapping
+
 - TickTick statuses: `NORMAL`, `COMPLETED`, `ARCHIVED`
 - Map to DevSuite display:
   - `NORMAL` → Active badge
@@ -273,19 +291,23 @@ async function callTickTickAPI<T>(
 ## OAuth2 Flow Details
 
 ### Required Scopes
+
 - `tasks:read` - Read task information
 
 ### Redirect URI
+
 - Must be registered in TickTick developer portal
 - Format: `https://your-app.com/auth/ticktick/callback`
 - Must match exactly (including protocol and path)
 
 ### State Parameter
+
 - Generate random string
 - Store in session/cookie
 - Verify on callback to prevent CSRF
 
 ## References
+
 - `projects/16-ticktick-integration/PROJECT.md` - Integration requirements
 - `projects/_conventions.md` - Spec standards
 - `/dev_suite_conceptual_architecture_business_vs_tech.md` - Section 6

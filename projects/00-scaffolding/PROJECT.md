@@ -1,23 +1,26 @@
 ---
-id: "00-scaffolding"
-title: "Project Scaffolding"
-status: "pending"
+id: '00-scaffolding'
+title: 'Project Scaffolding'
+status: 'pending'
 priority: 1
 assigned_pm: null
 depends_on: []
-unlocks: ["01-shared-types", "02-convex-foundation", "03-frontend-foundation"]
-estimated_complexity: "medium"
+unlocks: ['01-shared-types', '02-convex-foundation', '03-frontend-foundation']
+estimated_complexity: 'medium'
 ---
 
 # Project Scaffolding
 
 ## Summary
+
 Set up the monorepo structure, tooling, and development environment for DevSuite. This project creates the foundation that all other projects build upon, including package management, TypeScript configuration, linting, and the basic folder structure.
 
 ## Objective
+
 Establish a working monorepo with all tooling configured so that subsequent projects can immediately begin development.
 
 ## Key Deliverables
+
 - pnpm workspace configuration
 - TypeScript project references setup
 - ESLint + Prettier configuration
@@ -27,6 +30,7 @@ Establish a working monorepo with all tooling configured so that subsequent proj
 - README with setup instructions
 
 ## Success Criteria
+
 - [ ] `pnpm install` works from repo root
 - [ ] `pnpm dev` starts all dev servers
 - [ ] `pnpm lint` runs across all packages
@@ -51,6 +55,7 @@ devsuite/
 ```
 
 ## Quick Links
+
 - [Scope](./SCOPE.md)
 - [Dependencies](./DEPENDENCIES.md)
 - [Tasks](./TASKS.md)

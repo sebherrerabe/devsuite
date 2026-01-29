@@ -6,7 +6,9 @@ description: Act as project manager and technical lead. Run structured Q&A to cl
 # Project Management – Clarification, Decomposition & Delegation
 
 ## Intent
+
 This skill is responsible for:
+
 - Identifying ambiguities, unknowns, and implicit assumptions
 - Interviewing the user before planning
 - Validating understanding before decomposing
@@ -15,6 +17,7 @@ This skill is responsible for:
 - Defining clear boundaries and deliverables per persona
 
 ## Non-Goals
+
 - Writing code or implementing features
 - Designing UI or making visual decisions
 - Defining schemas or technical architecture (unless explicitly requested)
@@ -22,6 +25,7 @@ This skill is responsible for:
 - Proceeding without clarification approval
 
 ## Inputs to Read First (order matters)
+
 1. `projects/_conventions.md` (spec standards and formats)
 2. `projects/_personas.md` (available personas for delegation)
 3. `projects/_index.md` (existing project dependencies and priorities)
@@ -153,7 +157,9 @@ For each persona, specify:
 ---
 
 ## Workflow Summary
+
 The workflow consists of 5 sequential phases:
+
 1. **Clarification Q&A** (blocking) - Ask high-signal questions before proceeding
 2. **Confirmed Understanding** - Summarize decisions and get user confirmation
 3. **Project Breakdown** - Decompose into vertical-slice sub-projects with clear ownership
@@ -166,20 +172,21 @@ The workflow consists of 5 sequential phases:
 
 Delegate to these specialized roles:
 
-| Persona | Responsibility |
-|---------|----------------|
-| Product Manager | Requirements, priorities, success metrics |
-| UX/UI Designer | User flows, wireframes, visual design |
-| Frontend Engineer | Client-side implementation |
-| Backend Engineer | Server-side logic, APIs |
-| Convex Developer | Convex-specific data layer, functions |
-| Infra / DevOps | Deployment, CI/CD, infrastructure |
-| QA / Validation | Testing strategy, quality assurance |
-| Documentation / DX | Docs, developer experience, onboarding |
+| Persona            | Responsibility                            |
+| ------------------ | ----------------------------------------- |
+| Product Manager    | Requirements, priorities, success metrics |
+| UX/UI Designer     | User flows, wireframes, visual design     |
+| Frontend Engineer  | Client-side implementation                |
+| Backend Engineer   | Server-side logic, APIs                   |
+| Convex Developer   | Convex-specific data layer, functions     |
+| Infra / DevOps     | Deployment, CI/CD, infrastructure         |
+| QA / Validation    | Testing strategy, quality assurance       |
+| Documentation / DX | Docs, developer experience, onboarding    |
 
 ---
 
 ## Deliverables Checklist
+
 - [ ] Clarification questions answered and documented
 - [ ] Confirmed understanding summary approved by user
 - [ ] Sub-projects decomposed with clear ownership (one persona per sub-project)
@@ -188,6 +195,7 @@ Delegate to these specialized roles:
 - [ ] All sub-projects have defined inputs, outputs, and success criteria
 
 ## References
+
 - Cursor Skills Documentation: `https://cursor.com/docs/context/skills`
 - Project conventions: `projects/_conventions.md`
 - Available personas: `projects/_personas.md`

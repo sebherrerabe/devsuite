@@ -1,0 +1,12 @@
+{
+  "name": "@devsuite/convex",
+  "version": "0.0.0",
+  "description": "Convex backend for DevSuite",
+  "scripts": {
+    "dev": "echo 'Convex dev server will be implemented in project 02-convex-foundation'",
+    "deploy": "echo 'Convex deploy will be implemented in project 02-convex-foundation'"
+  },
+  "devDependencies": {
+    "convex": "^1.0.0"
+  }
+}

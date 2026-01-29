@@ -3,6 +3,7 @@
 ## In Scope
 
 ### Entity Types
+
 Define TypeScript types for all core domain entities:
 
 - **Company**: id, name, metadata, createdAt, updatedAt, isDeleted
@@ -18,23 +19,28 @@ Define TypeScript types for all core domain entities:
 - **Invoice**: id, companyId, periodStart, periodEnd, sessions, rateCard, total
 
 ### Status Enums
+
 - TaskStatus: todo, in_progress, blocked, done, cancelled
 - InboxItemType: notification, pr_review, mention, etc.
 - ExternalLinkType: github_pr, github_issue, notion, ticktick, url
 
 ### Zod Schemas
+
 Runtime validation schemas matching each TypeScript type:
+
 - Input schemas (for creation/mutation)
 - Output schemas (for API responses)
 - Partial schemas (for updates)
 
 ### Utility Types
+
 - Branded types for IDs (CompanyId, TaskId, etc.)
 - Timestamp types
 - Pagination types
 - Error types
 
 ### Utility Functions
+
 - ID generation helpers
 - Date/time helpers
 - Validation helpers
@@ -49,15 +55,19 @@ Runtime validation schemas matching each TypeScript type:
 ## Boundaries
 
 ### Types vs Implementation
+
 This package defines data shapes only. Business logic implementation belongs in Convex functions or feature modules.
 
 ### Shared vs Feature-Specific
+
 Only types used by 2+ packages belong here. Feature-specific types stay in their respective packages.
 
 ### Validation vs Business Rules
+
 Zod schemas validate data shape and basic constraints (required fields, string lengths). Business rules (e.g., "task must belong to valid project") are enforced in Convex.
 
 ## Assumptions
+
 - TypeScript strict mode is enabled
 - Zod is the validation library
 - IDs are strings (Convex convention)
@@ -65,6 +75,7 @@ Zod schemas validate data shape and basic constraints (required fields, string l
 - Soft delete pattern: `isDeleted` boolean + `deletedAt` timestamp
 
 ## Open Questions
+
 - [ ] Should we use branded types for all IDs? (owner: @backend-engineer)
 - [ ] Zod vs Valibot for validation? (owner: @human-review)
 - [ ] Include API response wrapper types here or in feature modules? (owner: @backend-engineer)

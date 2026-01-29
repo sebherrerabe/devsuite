@@ -1,0 +1,10 @@
+{
+  "name": "@devsuite/web",
+  "version": "0.0.0",
+  "description": "Web application for DevSuite",
+  "scripts": {
+    "dev": "echo 'Web app dev server will be implemented in project 03-frontend-foundation'",
+    "build": "echo 'Web app build will be implemented in project 03-frontend-foundation'",
+    "clean": "echo 'Clean will be implemented in project 03-frontend-foundation'"
+  }
+}

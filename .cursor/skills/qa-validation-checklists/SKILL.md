@@ -6,14 +6,17 @@ description: Create QA validation checklists for DevSuite modules focusing on in
 # QA Validation Checklists
 
 ## Intent
+
 This skill provides structured validation checklists for QA/testing DevSuite modules, ensuring compliance with core invariants (soft delete, company scoping, privacy mode) and verifying module-specific functionality works correctly.
 
 ## Non-Goals
+
 - Writing unit tests (focuses on manual/integration validation)
 - Performance testing (covered by `performance-module` skill)
 - Security auditing (focuses on functional correctness)
 
 ## Inputs to Read First
+
 - Repo: `projects/_conventions.md` (spec standards)
 - Repo: `/dev_suite_conceptual_architecture_business_vs_tech.md` (invariants section 2.12)
 - Repo: `projects/XX-module-name/PROJECT.md` (module requirements)
@@ -24,6 +27,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 ### 1) Core Invariant Validation (All Modules)
 
 #### Soft Delete Invariant
+
 - [ ] **No hard deletes exist**: Search codebase for `db.delete()` calls—should be zero
 - [ ] **Soft delete implemented**: All delete operations set `deletedAt` timestamp
 - [ ] **Queries filter deleted items**: All list/get queries exclude `deletedAt !== undefined`
@@ -31,12 +35,14 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] **UI reflects soft delete**: Deleted items don't appear in lists, but may appear in "archived" views
 
 **Test Cases**:
+
 1. Create entity → Delete entity → Verify `deletedAt` is set (not removed from DB)
 2. List entities → Verify deleted entity doesn't appear
 3. Query by ID → Verify deleted entity returns null or error
 4. Soft delete parent → Verify children queries still work (or handle gracefully)
 
 #### Company Scoping Invariant
+
 - [ ] **All entities have `companyId`**: Schema includes `companyId: v.id("companies")`
 - [ ] **Queries filter by company**: All queries include company filter
 - [ ] **Mutations enforce company**: Create/update operations set/verify `companyId`
@@ -44,30 +50,35 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] **Cross-company access blocked**: Cannot access entities from other companies
 
 **Test Cases**:
+
 1. Create entity in Company A → Switch to Company B → Verify entity doesn't appear
 2. Try to update entity from Company A while in Company B → Should fail
 3. Try to query entity by ID from different company → Should return null/error
 4. Company switcher changes data immediately
 
 #### Privacy Mode Invariant
+
 - [ ] **Private global mode**: Shows data across all companies
 - [ ] **Company-scoped mode**: Shows data only for current company
 - [ ] **Mode switching works**: Toggle between modes updates UI correctly
 - [ ] **Inbox respects privacy mode**: Filters notifications by mode
 
 **Test Cases**:
+
 1. Create entities in Company A and Company B
 2. Switch to private global mode → Verify both companies' data visible
 3. Switch to company-scoped mode → Verify only current company's data visible
 4. Inbox shows notifications based on current mode
 
 #### External References Only Invariant
+
 - [ ] **No content mirroring**: External systems referenced by ID/URL only
 - [ ] **No full sync**: GitHub repos, Notion pages, TickTick tasks are linked, not copied
 - [ ] **Link validation**: External links can be validated but content isn't stored
 - [ ] **Graceful degradation**: System works if external system unavailable
 
 **Test Cases**:
+
 1. Link task to GitHub PR → Verify only PR URL/ID stored, not PR content
 2. Link task to Notion page → Verify only page ID stored, not page content
 3. External system unavailable → Verify DevSuite still functions
@@ -76,6 +87,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 ### 2) Module-Specific Validation
 
 #### Company Module (04)
+
 - [ ] Can create company
 - [ ] Can edit company details
 - [ ] Can soft-delete company
@@ -85,6 +97,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] Company settings page works
 
 #### Repository Module (05)
+
 - [ ] Can link GitHub repository (URL/identifier only)
 - [ ] Can list repositories for current company
 - [ ] Can edit repository details
@@ -94,6 +107,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] Cross-company repository access blocked
 
 #### Project Module (06)
+
 - [ ] Can create project within company
 - [ ] Can associate project with repositories (many-to-many)
 - [ ] Can list and filter projects
@@ -103,6 +117,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] Cross-company project access blocked
 
 #### Task Module (07)
+
 - [ ] Can create tasks with parent-child relationships
 - [ ] Task hierarchy renders correctly (tree view)
 - [ ] Can set complexity score (1-10)
@@ -113,6 +128,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] Cross-company task access blocked
 
 #### Session Module (08)
+
 - [ ] Can start new session
 - [ ] Timer shows elapsed time (realtime updates)
 - [ ] Can associate session with tasks (many-to-many)
@@ -124,6 +140,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] Cross-company session access blocked
 
 #### Inbox Module (11)
+
 - [ ] Inbox shows aggregated notifications
 - [ ] Can mark items as read
 - [ ] Can archive items
@@ -135,6 +152,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] Bulk actions work (mark all read, archive all)
 
 #### PR Review Module (10)
+
 - [ ] MCP can submit PR review
 - [ ] Review is persisted in Convex
 - [ ] UI shows review history
@@ -145,6 +163,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] Cross-company review access blocked
 
 #### Performance Module (13)
+
 - [ ] Signals are collected automatically
 - [ ] Dashboard shows key metrics
 - [ ] Can filter by date range
@@ -154,6 +173,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] Data accuracy verified
 
 #### Invoicing Module (14)
+
 - [ ] Can configure rate cards
 - [ ] Can generate invoice for date range
 - [ ] Invoice shows session breakdown
@@ -165,6 +185,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 ### 3) Integration-Specific Validation
 
 #### GitHub Integration (12)
+
 - [ ] Can list open PRs for repository
 - [ ] GitHub notifications appear in inbox
 - [ ] PR links open correct GitHub page
@@ -173,6 +194,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] Repository linking works
 
 #### Notion Integration (15)
+
 - [ ] Can link task to Notion page
 - [ ] Link shows page title
 - [ ] Notion updates appear in inbox
@@ -181,6 +203,7 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 - [ ] Invalid links handled gracefully
 
 #### TickTick Integration (16)
+
 - [ ] Can link DevSuite task to TickTick task
 - [ ] Link shows TickTick task title
 - [ ] Handles auth via TickTick Open API
@@ -190,22 +213,26 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 ### 4) UI/UX Validation
 
 #### Loading States
+
 - [ ] Loading indicators shown during data fetch
 - [ ] Skeleton screens for list views
 - [ ] No flash of empty content
 
 #### Empty States
+
 - [ ] Empty state messages are helpful
 - [ ] Empty states include call-to-action (if applicable)
 - [ ] Empty states are company-scoped
 
 #### Error States
+
 - [ ] Error messages are user-friendly
 - [ ] Errors include retry actions (if applicable)
 - [ ] Network errors handled gracefully
 - [ ] Validation errors shown inline
 
 #### Realtime Updates
+
 - [ ] Convex subscriptions update UI automatically
 - [ ] No manual refresh needed
 - [ ] Updates appear immediately
@@ -213,18 +240,21 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 ### 5) Data Integrity Validation
 
 #### Relationships
+
 - [ ] Foreign key relationships enforced
 - [ ] Cascading soft deletes handled correctly
 - [ ] Orphaned records don't exist
 - [ ] Many-to-many junctions work correctly
 
 #### Constraints
+
 - [ ] Required fields enforced
 - [ ] Unique constraints enforced (if applicable)
 - [ ] Validation rules applied
 - [ ] Type safety maintained
 
 ## Deliverables Checklist
+
 - [ ] Core invariant checklist completed for module
 - [ ] Module-specific checklist completed
 - [ ] Integration-specific checklist completed (if applicable)
@@ -240,29 +270,36 @@ This skill provides structured validation checklists for QA/testing DevSuite mod
 # QA Validation Report: [Module Name]
 
 ## Date
+
 [YYYY-MM-DD]
 
 ## Validator
+
 [Name/Identifier]
 
 ## Core Invariants
+
 - [ ] Soft delete: PASS / FAIL (notes)
 - [ ] Company scoping: PASS / FAIL (notes)
 - [ ] Privacy mode: PASS / FAIL (notes)
 - [ ] External references only: PASS / FAIL (notes)
 
 ## Module Functionality
+
 [List module-specific checks with PASS/FAIL]
 
 ## Issues Found
+
 1. [Issue description] - Severity: HIGH/MEDIUM/LOW
 2. [Issue description] - Severity: HIGH/MEDIUM/LOW
 
 ## Recommendations
+
 [List recommendations for improvements]
 ```
 
 ## References
+
 - `projects/_conventions.md` - Spec standards
 - `/dev_suite_conceptual_architecture_business_vs_tech.md` - Invariants
 - `projects/XX-module-name/PROJECT.md` - Module requirements

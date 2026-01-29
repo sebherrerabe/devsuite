@@ -6,7 +6,9 @@ description: Implement UI components using shadcn/ui and Tailwind CSS v4, follow
 # Frontend UI Patterns (shadcn/ui + Tailwind v4)
 
 ## Intent
+
 This skill is responsible for establishing UI component patterns and styling conventions:
+
 - Tailwind CSS v4 setup and configuration
 - shadcn/ui component installation and customization
 - Consistent loading/empty/error state patterns
@@ -16,12 +18,14 @@ This skill is responsible for establishing UI component patterns and styling con
 - Theme system (light/dark mode)
 
 ## Non-Goals
+
 - Routing or navigation (use `frontend-app-shell-and-routing`)
 - Data fetching logic (use `frontend-convex-integration`)
 - Business logic implementation (delegated to feature modules)
 - Custom component library beyond shadcn/ui base
 
 ## Inputs to Read First
+
 - Repo: `projects/03-frontend-foundation/PROJECT.md`
 - Repo: `projects/_conventions.md` (spec standards)
 - Repo: `/dev_suite_conceptual_architecture_business_vs_tech.md` (UI stack requirements)
@@ -31,13 +35,16 @@ This skill is responsible for establishing UI component patterns and styling con
 ## Workflow
 
 ### 1) Configure Tailwind CSS v4 with Vite
+
 - Install `tailwindcss` and `@tailwindcss/vite`
 - Add Tailwind Vite plugin to `vite.config.ts`:
-  ```ts
-  import tailwindcss from '@tailwindcss/vite'
 
-  plugins: [react(), tailwindcss()]
+  ```ts
+  import tailwindcss from '@tailwindcss/vite';
+
+  plugins: [react(), tailwindcss()];
   ```
+
 - Create/maintain main CSS file (e.g., `src/index.css`):
   ```css
   @import 'tailwindcss';
@@ -52,6 +59,7 @@ This skill is responsible for establishing UI component patterns and styling con
   ```
 
 ### 2) Install and configure shadcn/ui
+
 - Run `npx shadcn@latest init` in `apps/web/`
 - Configure `components.json`:
   ```json
@@ -74,35 +82,47 @@ This skill is responsible for establishing UI component patterns and styling con
 - Ensure path aliases (`@/components`, `@/lib`) resolve in `tsconfig.json`
 
 ### 3) Establish loading/empty/error state patterns
+
 Create reusable state components in `src/components/ui/states/`:
+
 - **LoadingState**: Skeleton loaders, spinners, progress indicators
 - **EmptyState**: Empty list/table messages with optional actions
 - **ErrorState**: Error messages with retry actions
 - **Skeleton**: Reusable skeleton component for various content types
 
 Pattern:
+
 ```tsx
-{isLoading && <LoadingState />}
-{!isLoading && !data && <EmptyState />}
-{error && <ErrorState error={error} onRetry={refetch} />}
-{data && <Content data={data} />}
+{
+  isLoading && <LoadingState />;
+}
+{
+  !isLoading && !data && <EmptyState />;
+}
+{
+  error && <ErrorState error={error} onRetry={refetch} />;
+}
+{
+  data && <Content data={data} />;
+}
 ```
 
 ### 4) Implement form patterns with React Hook Form + Zod
+
 - Install: `react-hook-form`, `@hookform/resolvers`, `zod`
 - Create form schema with Zod:
   ```ts
   const formSchema = z.object({
-    title: z.string().min(1, "Title is required"),
+    title: z.string().min(1, 'Title is required'),
     description: z.string().optional(),
-  })
+  });
   ```
 - Use `useForm` with `zodResolver`:
   ```tsx
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { title: "", description: "" },
-  })
+    defaultValues: { title: '', description: '' },
+  });
   ```
 - Integrate shadcn/ui Form components:
   - `<Form>` wrapper with `form` prop
@@ -111,6 +131,7 @@ Pattern:
 - Handle submission: `form.handleSubmit(onSubmit)`
 
 ### 5) Ensure accessibility standards
+
 - Use semantic HTML (`<button>`, `<nav>`, `<main>`, `<header>`)
 - Add ARIA labels where needed: `aria-label`, `aria-describedby`
 - Implement keyboard navigation:
@@ -122,6 +143,7 @@ Pattern:
 - Ensure color contrast meets WCAG AA standards
 
 ### 6) Component composition patterns
+
 - **Shared UI components** live in `src/components/ui/` (shadcn/ui base)
 - **Feature components** live in `src/components/features/<module>/`
 - **Layout components** live in `src/components/layout/`
@@ -142,6 +164,7 @@ Pattern:
   ```
 
 ### 7) Theme system (light/dark mode)
+
 - Use shadcn/ui's theme provider (or `next-themes` if needed)
 - Configure CSS variables in `src/index.css`:
   ```css
@@ -154,12 +177,14 @@ Pattern:
 - Ensure all components respect theme variables
 
 ### 8) Responsive design conventions
+
 - Mobile-first approach: design for mobile, enhance for desktop
 - Use Tailwind breakpoints: `sm:`, `md:`, `lg:`, `xl:`, `2xl:`
 - Test sidebar collapse on mobile (if applicable)
 - Ensure touch targets are at least 44x44px
 
 ## Deliverables Checklist
+
 - [ ] Tailwind CSS v4 configured with Vite plugin
 - [ ] Main CSS file imports Tailwind (`@import 'tailwindcss'`)
 - [ ] Custom theme variables defined with `@theme` if needed
@@ -175,6 +200,7 @@ Pattern:
 - [ ] Responsive design conventions documented
 
 ## References
+
 - Tailwind CSS v4: https://tailwindcss.com/blog/tailwindcss-v4
 - shadcn/ui: https://ui.shadcn.com
 - React Hook Form: https://react-hook-form.com
@@ -182,6 +208,7 @@ Pattern:
 - WCAG Guidelines: https://www.w3.org/WAI/WCAG21/quickref/
 
 ## Notes
+
 - Tailwind v4 uses CSS-first config; avoid `tailwind.config.js` unless absolutely necessary
 - shadcn/ui components are copied into your codebase; customize as needed
 - Always provide loading and error states; never show raw `undefined` or errors to users

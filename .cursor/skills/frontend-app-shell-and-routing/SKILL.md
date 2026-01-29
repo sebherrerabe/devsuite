@@ -6,7 +6,9 @@ description: Set up TanStack Router with file-based routing, application shell (
 # Frontend App Shell & Routing
 
 ## Intent
+
 This skill is responsible for establishing the routing foundation and application shell that all feature modules build upon:
+
 - TanStack Router configuration with file-based routing
 - Application shell (root layout, sidebar, header)
 - Company context propagation through routes
@@ -14,12 +16,14 @@ This skill is responsible for establishing the routing foundation and applicatio
 - Privacy mode integration with routing
 
 ## Non-Goals
+
 - Implementing feature-specific routes (delegated to module skills)
 - UI component implementation (use `frontend-ui-patterns-shadcn-tailwind`)
 - Convex data fetching (use `frontend-convex-integration`)
 - Authentication flows (covered by authz skill)
 
 ## Inputs to Read First
+
 - Repo: `projects/03-frontend-foundation/PROJECT.md`, `projects/04-company-module/PROJECT.md`
 - Repo: `projects/_conventions.md` (spec standards)
 - Repo: `/dev_suite_conceptual_architecture_business_vs_tech.md` (routing requirements)
@@ -29,10 +33,12 @@ This skill is responsible for establishing the routing foundation and applicatio
 ## Workflow
 
 ### 1) Configure TanStack Router plugin in Vite
+
 - Install `@tanstack/router-plugin` and `@tanstack/react-router`
 - Add router plugin to `vite.config.ts` **before** React plugin:
+
   ```ts
-  import { tanstackRouter } from '@tanstack/router-plugin/vite'
+  import { tanstackRouter } from '@tanstack/router-plugin/vite';
 
   plugins: [
     tanstackRouter({
@@ -40,8 +46,9 @@ This skill is responsible for establishing the routing foundation and applicatio
       autoCodeSplitting: true,
     }),
     react(),
-  ]
+  ];
   ```
+
 - Create `tsr.config.json` in project root:
   ```json
   {
@@ -51,6 +58,7 @@ This skill is responsible for establishing the routing foundation and applicatio
   ```
 
 ### 2) Set up file-based route structure
+
 - Create `src/routes/` directory
 - Create root route: `src/routes/__root.tsx` with:
   - Root layout component (shell structure)
@@ -65,7 +73,9 @@ This skill is responsible for establishing the routing foundation and applicatio
   - Files prefixed with `-` are ignored
 
 ### 3) Implement application shell components
+
 Create in `src/components/shell/`:
+
 - **RootLayout**: Main app container with sidebar + content area
 - **Sidebar**: Navigation menu, company switcher, privacy toggle
 - **Header**: Top bar with user info, notifications, theme toggle
@@ -73,6 +83,7 @@ Create in `src/components/shell/`:
 - **PrivacyToggle**: Switch between company-scoped and private global mode
 
 Shell structure:
+
 ```
 <RootLayout>
   <Sidebar />
@@ -84,6 +95,7 @@ Shell structure:
 ```
 
 ### 4) Set up company context propagation
+
 - Create `src/contexts/CompanyContext.tsx`:
   - Provides current `companyId` (or `null` for private mode)
   - Provides `setCompanyId` function
@@ -93,13 +105,14 @@ Shell structure:
 - Pass company context to Convex queries (see `frontend-convex-integration`)
 
 ### 5) Configure type-safe navigation
+
 - Import generated route tree: `import { routeTree } from '../routeTree.gen'`
 - Create router instance with route tree
 - Register router types:
   ```ts
   declare module '@tanstack/react-router' {
     interface Register {
-      router: typeof router
+      router: typeof router;
     }
   }
   ```
@@ -107,6 +120,7 @@ Shell structure:
 - Use `useNavigate()` hook for programmatic navigation
 
 ### 6) Handle loading and error states
+
 - Create `src/routes/__root.tsx` with:
   - `pendingComponent` for route-level loading
   - `errorComponent` for route-level errors
@@ -114,6 +128,7 @@ Shell structure:
 - Implement consistent loading skeletons (delegate to UI skill for components)
 
 ### 7) Integrate with company switcher
+
 - Company switcher reads from Convex query (list companies)
 - On company switch:
   - Update `CompanyContext`
@@ -122,6 +137,7 @@ Shell structure:
 - Handle "private global mode" (no company selected)
 
 ## Deliverables Checklist
+
 - [ ] Vite configured with TanStack Router plugin
 - [ ] `tsr.config.json` created with route directory settings
 - [ ] `src/routes/` directory structure established
@@ -136,11 +152,13 @@ Shell structure:
 - [ ] Loading and error states handled at route level
 
 ## References
+
 - TanStack Router docs: https://tanstack.com/router/latest
 - File-based routing: https://tanstack.com/router/latest/docs/framework/react/guide/file-based-routing
 - Route configuration: https://tanstack.com/router/latest/docs/api/file-based-routing
 
 ## Notes
+
 - Keep route files focused on route configuration; delegate component implementation to feature modules
 - Company context must be available before any Convex queries run
 - Privacy mode affects which data is visible; enforce at query level, not just UI level

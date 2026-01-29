@@ -9,8 +9,9 @@
 DevSuite is a **personal, local-first developer operating system**.
 
 Its goal is to help a single developer:
-- Understand *how they work*
-- Measure *effort, complexity, and outcomes*
+
+- Understand _how they work_
+- Measure _effort, complexity, and outcomes_
 - Separate work by **company / project** with strict privacy boundaries
 - Produce **time-based reports and invoices** from real work
 - Act as a **source of truth** for both the human developer and AI agents
@@ -22,6 +23,7 @@ DevSuite is not a task manager replacement; it is a **work telemetry system**.
 ## 2. Core Concepts
 
 ### 2.1 Company
+
 Represents a legal or organisational boundary.
 
 - All work belongs to exactly one company
@@ -35,6 +37,7 @@ A user can switch between **company-scoped mode** (office-safe) and **private gl
 ---
 
 ### 2.2 Repository
+
 Represents a source-code repository.
 
 - Belongs to a company
@@ -46,6 +49,7 @@ DevSuite never mirrors repository content — only identifiers and links.
 ---
 
 ### 2.3 Project
+
 Represents a logical unit of work.
 
 - Belongs to one company
@@ -57,9 +61,11 @@ Projects are the main organisational surface for daily work.
 ---
 
 ### 2.4 Task
+
 Represents an **intent or outcome**, not time.
 
 Key properties:
+
 - Tasks are **hierarchical** (a task may have children)
 - A task belongs to exactly one project
 - A task may link to external systems (Notion page, GitHub issue/PR, TickTick task)
@@ -68,20 +74,23 @@ Key properties:
   - Optional complexity score (1–10)
   - Optional stack/technology tags
 
-Tasks are *never deleted* — they represent historical intent.
+Tasks are _never deleted_ — they represent historical intent.
 
 ---
 
 ### 2.5 Session
+
 Represents **effort over time**.
 
 Key properties:
+
 - A session has a start and end time
 - A session belongs to one company
 - A session may touch **multiple tasks**
 - A session contains a human summary (what happened)
 
 Sessions are the primary source of truth for:
+
 - Time tracking
 - Performance analysis
 - Invoicing
@@ -91,11 +100,13 @@ Sessions are the primary source of truth for:
 ### 2.6 Session–Task Relationship
 
 A session may:
+
 - Touch one task
 - Touch many tasks
 - Touch no specific task (exploratory, support, meetings)
 
 This relationship may optionally include:
+
 - Per-task notes
 - Time distribution hints
 
@@ -104,6 +115,7 @@ This relationship may optionally include:
 ### 2.7 External Links
 
 Tasks may reference external systems by **identifier only**:
+
 - GitHub PR / Issue
 - Notion page
 - TickTick task
@@ -116,10 +128,12 @@ DevSuite does **not** store external content — only links.
 ### 2.8 Inbox / Notifications
 
 DevSuite provides a **unified inbox** that aggregates:
+
 - External notifications (GitHub, Notion)
 - Internal events (PR review ready, task blocked, etc.)
 
 Inbox items can be:
+
 - Read
 - Archived
 
@@ -132,6 +146,7 @@ They are scoped by company and privacy mode.
 ### Purpose
 
 DevSuite mirrors and extends the functionality of the existing **pr-review MCP tool** by providing:
+
 - Persistent storage of review outputs
 - A dedicated UI to explore past reviews
 - Long-term visibility into review workload and patterns
@@ -150,6 +165,7 @@ PR reviews are treated as **durable artifacts**, not transient CLI output.
   - Generated primarily by AI agents
 
 The **MCP server is responsible for producing review data**, including:
+
 - The analysis process
 - Extracted signals (risk areas, red flags, etc.)
 - Review formatting
@@ -161,6 +177,7 @@ DevSuite does not attempt to reinterpret or regenerate reviews.
 ### UI Responsibilities
 
 The frontend provides:
+
 - A PR review history view
 - Filters by company, repository, date
 - Direct links back to GitHub
@@ -183,21 +200,25 @@ DevSuite tracks **all pull request reviews performed by the user**, with a stron
 PR reviews are treated as **first-class work artifacts**, not ephemeral actions.
 
 Key principles:
-- A PR review represents *analysis and decision-making effort*
+
+- A PR review represents _analysis and decision-making effort_
 - Reviews are attributable to a company and repository
 - Reviews may or may not be linked to a task or session
 
 For each PR review, DevSuite stores:
+
 - A reference to the repository and PR (identifier / URL only)
 - The generated review report (usually produced by an AI agent)
 - Metadata such as date, reviewer (human / agent), and outcome signals
 
 The **exact structure and richness of review data is delegated to the MCP server**, which is considered the source of truth for:
+
 - How PRs are analysed
 - What signals are extracted
 - How review reports are generated
 
 DevSuite’s role is to:
+
 - Persist review outputs
 - Provide a UI to browse, search, and revisit past reviews
 - Correlate reviews with time, load, and projects
@@ -206,12 +227,12 @@ DevSuite’s role is to:
 
 ### 2.10 Performance Signals
 
-
 ### 2.9 Performance Signals
 
 DevSuite collects raw signals but avoids premature judgement.
 
 Examples of signals:
+
 - Time per task
 - Time per project
 - Complexity vs actual effort
@@ -227,6 +248,7 @@ Interpretation is left to the user (and later, AI assistance).
 DevSuite includes a dedicated PR review system that mirrors the workflow of the existing **pr-review MCP tool**.
 
 Goals:
+
 - Track **all PR reviews performed**, especially those produced with AI agents
 - Persist the generated review output as part of a searchable history
 - Provide a UI to browse reviews by company/project/repo and time period
@@ -253,10 +275,12 @@ DevSuite does not attempt to be an accounting system.
 ### 2.11 AI / Agent Interaction
 
 DevSuite is designed to be operated by:
+
 - A human via UI
 - AI agents via a controlled API
 
 Agents may:
+
 - Create projects and tasks
 - Start and stop sessions
 - Attach reviews and summaries
@@ -268,6 +292,7 @@ Agents may **never delete data**.
 ### 2.12 Data Integrity Rules
 
 Non-negotiable rules:
+
 - No hard deletes
 - All work is attributable to a company
 - External systems are referenced, never mirrored
@@ -284,6 +309,7 @@ Non-negotiable rules:
 - **Links = References, not data**
 
 DevSuite exists to answer:
+
 > “What did I actually do, for whom, and at what cost?”
 
 ---
@@ -307,20 +333,24 @@ DevSuite exists to answer:
 ## 2. Frontend Stack
 
 ### Core
+
 - Vite
 - React 19
 - TypeScript
 
 ### Routing & Data
+
 - TanStack Router
 - TanStack Query
 
 ### UI
+
 - Tailwind CSS v4
 - shadcn/ui
 - lucide-react (icons)
 
 ### Characteristics
+
 - No server components
 - No framework-imposed data fetching
 - Fully client-controlled rendering
@@ -330,12 +360,15 @@ DevSuite exists to answer:
 ## 3. Backend Stack
 
 ### Core Platform
+
 - Convex (self-hosted)
 
 ### Database
+
 - PostgreSQL (via Convex)
 
 ### Responsibilities
+
 - Data storage
 - Realtime subscriptions
 - Business rule enforcement
@@ -352,6 +385,7 @@ Convex functions act as the **only write boundary**.
 - No manual websocket management in the frontend
 
 Realtime is used for:
+
 - Task trees
 - Timers
 - Inbox updates
@@ -361,16 +395,20 @@ Realtime is used for:
 ## 5. MCP Server
 
 ### Role
+
 A separate Node.js process acting as an AI-facing control plane.
 
 ### Responsibilities
+
 - Expose DevSuite operations as MCP tools
 - Authenticate agents via static token
 - Call Convex functions
 - Run local tooling (e.g. GitHub CLI)
 
 ### PR review source of truth
+
 PR review automation is executed here (via your existing PR-review workflow). The MCP server is responsible for:
+
 - Fetching PR context using the local GitHub CLI
 - Generating review reports with agents
 - Returning richer PR metadata when needed
@@ -378,6 +416,7 @@ PR review automation is executed here (via your existing PR-review workflow). Th
 DevSuite stores the resulting artifacts (reports) and references (PR IDs/URLs). The MCP server remains the place to obtain deeper runtime details.
 
 ### Guarantees
+
 - Agents can read and modify
 - Agents cannot delete
 
@@ -386,11 +425,13 @@ DevSuite stores the resulting artifacts (reports) and references (PR IDs/URLs). 
 ## 6. Integrations
 
 ### GitHub
+
 - Read-only
 - Via GitHub CLI
 - No organisation OAuth
 
 Used for:
+
 - PR discovery
 - Review history (stored reports)
 - Notifications
@@ -398,11 +439,13 @@ Used for:
 ---
 
 ### Notion
+
 - Minimal API usage
 - Links and notifications only
 - Company-specific behaviour via plugins/adapters
 
 ### TickTick
+
 - Optional Open API integration
 - Explicit linking only
 - No full task mirroring
@@ -448,9 +491,9 @@ devsuite/
 DevSuite is intentionally boring in technology and strict in rules.
 
 Its value comes from:
+
 - Consistency over time
 - Honest measurement
 - Reduced cognitive load
 
 Everything else is optional.
-

@@ -6,18 +6,22 @@ description: Implement authorization patterns and company scoping enforcement fo
 # Authorization and Company Scoping (DevSuite)
 
 ## Intent
+
 This skill is responsible for implementing DevSuite's authorization model:
+
 - **Company scoping**: All queries/mutations filter by company context
 - **Privacy mode**: Support "private global mode" vs "company-scoped mode"
 - **Auth token parsing**: Extract company context from authentication
 - **Access control**: Enforce that users can only access their own company's data
 
 ## Non-Goals
+
 - Full authentication implementation (login flows, token generation)
 - User management (user creation, roles, permissions)
 - Frontend auth UI (use `frontend-convex-integration`)
 
 ## Inputs to Read First
+
 - Repo: `projects/02-convex-foundation/PROJECT.md`
 - Repo: `/dev_suite_conceptual_architecture_business_vs_tech.md` (sections 2.1, 2.12, 3.7)
 - Repo: `projects/_conventions.md` (privacy and scoping rules)
@@ -30,12 +34,12 @@ This skill is responsible for implementing DevSuite's authorization model:
 Create `convex/lib/auth.ts`:
 
 ```typescript
-import { QueryCtx, MutationCtx, ActionCtx } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { QueryCtx, MutationCtx, ActionCtx } from './_generated/server';
+import { Id } from './_generated/dataModel';
 
 export interface AuthContext {
   userId: string; // User identifier from token
-  companyId: Id<"companies"> | null; // null = private global mode
+  companyId: Id<'companies'> | null; // null = private global mode
   isPrivateMode: boolean; // true if companyId is null
 }
 
@@ -52,7 +56,7 @@ export function getAuthContext(
 ): AuthContext {
   // TODO: Implement actual token parsing
   // Placeholder: return first company for development
-  throw new Error("Auth not implemented - use placeholder for development");
+  throw new Error('Auth not implemented - use placeholder for development');
 }
 
 /**
@@ -62,7 +66,7 @@ export function getAuthContext(
  */
 export function getCompanyIdOrNull(
   ctx: QueryCtx | MutationCtx | ActionCtx
-): Id<"companies"> | null {
+): Id<'companies'> | null {
   const auth = getAuthContext(ctx);
   return auth.companyId;
 }
@@ -74,10 +78,10 @@ export function getCompanyIdOrNull(
  */
 export function requireCompanyId(
   ctx: QueryCtx | MutationCtx | ActionCtx
-): Id<"companies"> {
+): Id<'companies'> {
   const companyId = getCompanyIdOrNull(ctx);
   if (companyId === null) {
-    throw new Error("Operation requires company context");
+    throw new Error('Operation requires company context');
   }
   return companyId;
 }
@@ -89,7 +93,7 @@ export function requireCompanyId(
  */
 export function getCompanyContext(
   ctx: QueryCtx | MutationCtx | ActionCtx
-): Id<"companies"> | null {
+): Id<'companies'> | null {
   return getCompanyIdOrNull(ctx);
 }
 ```
@@ -99,9 +103,9 @@ export function getCompanyContext(
 Create `convex/auth.ts`:
 
 ```typescript
-import { httpAction } from "./_generated/server";
-import { httpRouter } from "convex/server";
-import { getAuthContext } from "./lib/auth";
+import { httpAction } from './_generated/server';
+import { httpRouter } from 'convex/server';
+import { getAuthContext } from './lib/auth';
 
 const http = httpRouter();
 
@@ -111,13 +115,13 @@ const http = httpRouter();
  * Called by frontend to verify token and get current company context.
  */
 http.route({
-  path: "/auth/validate",
-  method: "GET",
+  path: '/auth/validate',
+  method: 'GET',
   handler: httpAction(async (ctx, request) => {
     // Extract token from Authorization header
-    const authHeader = request.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Missing token" }), {
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Missing token' }), {
         status: 401,
       });
     }
@@ -129,7 +133,7 @@ http.route({
     const auth = getAuthContext(ctx);
     return new Response(JSON.stringify(auth), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { 'Content-Type': 'application/json' },
     });
   }),
 });
@@ -142,12 +146,12 @@ export default http;
 **Pattern: Company-scoped query (default)**
 
 ```typescript
-import { query } from "./_generated/server";
-import { getCompanyIdOrNull } from "./lib/auth";
+import { query } from './_generated/server';
+import { getCompanyIdOrNull } from './lib/auth';
 
 export const list = query({
   args: {},
-  handler: async (ctx) => {
+  handler: async ctx => {
     const companyId = getCompanyIdOrNull(ctx);
 
     if (companyId === null) {
@@ -157,9 +161,9 @@ export const list = query({
     }
 
     return await ctx.db
-      .query("repositories")
-      .withIndex("by_companyId_deletedAt", (q) =>
-        q.eq("companyId", companyId).eq("deletedAt", null)
+      .query('repositories')
+      .withIndex('by_companyId_deletedAt', q =>
+        q.eq('companyId', companyId).eq('deletedAt', null)
       )
       .collect();
   },
@@ -169,30 +173,30 @@ export const list = query({
 **Pattern: Private global mode query (explicit)**
 
 ```typescript
-import { query } from "./_generated/server";
-import { getCompanyIdOrNull } from "./lib/auth";
+import { query } from './_generated/server';
+import { getCompanyIdOrNull } from './lib/auth';
 
 /**
  * List all repositories across all companies (private global mode only).
  */
 export const listAll = query({
   args: {},
-  handler: async (ctx) => {
+  handler: async ctx => {
     const companyId = getCompanyIdOrNull(ctx);
 
     // Allow this query in private mode
     if (companyId === null) {
       return await ctx.db
-        .query("repositories")
-        .withIndex("by_deletedAt", (q) => q.eq("deletedAt", null))
+        .query('repositories')
+        .withIndex('by_deletedAt', q => q.eq('deletedAt', null))
         .collect();
     }
 
     // In company mode, still filter by company
     return await ctx.db
-      .query("repositories")
-      .withIndex("by_companyId_deletedAt", (q) =>
-        q.eq("companyId", companyId).eq("deletedAt", null)
+      .query('repositories')
+      .withIndex('by_companyId_deletedAt', q =>
+        q.eq('companyId', companyId).eq('deletedAt', null)
       )
       .collect();
   },
@@ -204,8 +208,8 @@ export const listAll = query({
 **Pattern: Require company context**
 
 ```typescript
-import { mutation } from "./_generated/server";
-import { requireCompanyId } from "./lib/auth";
+import { mutation } from './_generated/server';
+import { requireCompanyId } from './lib/auth';
 
 export const create = mutation({
   args: { name: v.string() },
@@ -213,7 +217,7 @@ export const create = mutation({
     // Require company context (throws if in private mode)
     const companyId = requireCompanyId(ctx);
 
-    return await ctx.db.insert("repositories", {
+    return await ctx.db.insert('repositories', {
       companyId,
       name: args.name,
       createdAt: Date.now(),
@@ -227,26 +231,26 @@ export const create = mutation({
 **Pattern: Assert company ownership**
 
 ```typescript
-import { mutation } from "./_generated/server";
-import { requireCompanyId } from "./lib/auth";
+import { mutation } from './_generated/server';
+import { requireCompanyId } from './lib/auth';
 
 export const update = mutation({
-  args: { id: v.id("repositories"), name: v.string() },
+  args: { id: v.id('repositories'), name: v.string() },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(ctx);
 
     const repo = await ctx.db.get(args.id);
     if (!repo) {
-      throw new Error("Repository not found");
+      throw new Error('Repository not found');
     }
 
     // Assert company ownership
     if (repo.companyId !== companyId) {
-      throw new Error("Repository does not belong to company");
+      throw new Error('Repository does not belong to company');
     }
 
     if (repo.deletedAt !== null) {
-      throw new Error("Repository is deleted");
+      throw new Error('Repository is deleted');
     }
 
     await ctx.db.patch(args.id, {
@@ -264,9 +268,9 @@ export const update = mutation({
 Create `convex/companies.ts`:
 
 ```typescript
-import { mutation } from "./_generated/server";
-import { v } from "convex/values";
-import { getAuthContext, requireCompanyId } from "./lib/auth";
+import { mutation } from './_generated/server';
+import { v } from 'convex/values';
+import { getAuthContext, requireCompanyId } from './lib/auth';
 
 /**
  * Switch to company-scoped mode.
@@ -275,7 +279,7 @@ import { getAuthContext, requireCompanyId } from "./lib/auth";
  * In production, this would update the user's session/token.
  */
 export const switchToCompany = mutation({
-  args: { companyId: v.id("companies") },
+  args: { companyId: v.id('companies') },
   handler: async (ctx, args) => {
     const auth = getAuthContext(ctx);
 
@@ -294,7 +298,7 @@ export const switchToCompany = mutation({
  */
 export const switchToPrivateMode = mutation({
   args: {},
-  handler: async (ctx) => {
+  handler: async ctx => {
     // In production, update session/token to remove companyId
     return { companyId: null };
   },
@@ -306,23 +310,27 @@ export const switchToPrivateMode = mutation({
 Document and enforce these rules:
 
 **Company-scoped mode** (default):
+
 - All queries filter by `companyId`
 - All mutations require `companyId`
 - Data is isolated by company
 - Suitable for "office-safe" usage
 
 **Private global mode**:
+
 - Queries can access all companies' data
 - Mutations still require explicit `companyId` (cannot create orphaned records)
 - Suitable for personal analytics and cross-company insights
 - User must explicitly switch to this mode
 
 **Enforcement**:
+
 - Default to company-scoped mode
 - Require explicit opt-in for private global mode
 - Log mode switches for audit trail
 
 ## Deliverables Checklist
+
 - [ ] `convex/lib/auth.ts` exists with `getAuthContext`, `requireCompanyId`, `getCompanyIdOrNull`
 - [ ] All queries filter by company context (or explicitly support private mode)
 - [ ] All mutations require company context and assert ownership
@@ -335,34 +343,41 @@ Document and enforce these rules:
 
 ```typescript
 // convex/lib/auth.ts
-import { QueryCtx, MutationCtx, ActionCtx } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { QueryCtx, MutationCtx, ActionCtx } from './_generated/server';
+import { Id } from './_generated/dataModel';
 
 export interface AuthContext {
   userId: string;
-  companyId: Id<"companies"> | null;
+  companyId: Id<'companies'> | null;
   isPrivateMode: boolean;
 }
 
-export function getAuthContext(ctx: QueryCtx | MutationCtx | ActionCtx): AuthContext {
+export function getAuthContext(
+  ctx: QueryCtx | MutationCtx | ActionCtx
+): AuthContext {
   // TODO: Parse JWT token from request
-  throw new Error("Auth not implemented");
+  throw new Error('Auth not implemented');
 }
 
-export function requireCompanyId(ctx: QueryCtx | MutationCtx | ActionCtx): Id<"companies"> {
+export function requireCompanyId(
+  ctx: QueryCtx | MutationCtx | ActionCtx
+): Id<'companies'> {
   const companyId = getCompanyIdOrNull(ctx);
   if (companyId === null) {
-    throw new Error("Operation requires company context");
+    throw new Error('Operation requires company context');
   }
   return companyId;
 }
 
-export function getCompanyIdOrNull(ctx: QueryCtx | MutationCtx | ActionCtx): Id<"companies"> | null {
+export function getCompanyIdOrNull(
+  ctx: QueryCtx | MutationCtx | ActionCtx
+): Id<'companies'> | null {
   return getAuthContext(ctx).companyId;
 }
 ```
 
 ## References
+
 - Convex auth docs: https://docs.convex.dev/auth
 - Convex HTTP actions: https://docs.convex.dev/functions/http-actions
 - DevSuite architecture: `/dev_suite_conceptual_architecture_business_vs_tech.md`

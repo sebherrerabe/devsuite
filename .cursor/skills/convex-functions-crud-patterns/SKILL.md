@@ -6,18 +6,22 @@ description: Implement Convex query, mutation, and action functions following De
 # Convex Functions: CRUD Patterns (DevSuite)
 
 ## Intent
+
 This skill provides standardized patterns for implementing Convex functions (queries, mutations, actions) that:
+
 - Enforce company scoping automatically
 - Implement soft delete (never hard delete)
 - Maintain type safety with `@devsuite/shared` types
 - Follow consistent error handling and validation patterns
 
 ## Non-Goals
+
 - Schema definition (use `convex-data-modeling-and-rules`)
 - Authorization logic (use `authz-and-company-scope`)
 - External API calls (use actions, but patterns are module-specific)
 
 ## Inputs to Read First
+
 - Repo: `projects/02-convex-foundation/PROJECT.md`
 - Repo: `projects/01-shared-types/PROJECT.md`
 - Repo: `/dev_suite_conceptual_architecture_business_vs_tech.md` (sections 2.1-2.12)
@@ -30,27 +34,29 @@ This skill provides standardized patterns for implementing Convex functions (que
 Create `convex/lib/helpers.ts` with reusable functions:
 
 ```typescript
-import { QueryCtx, MutationCtx } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { QueryCtx, MutationCtx } from './_generated/server';
+import { Id } from './_generated/dataModel';
 
 /**
  * Get company ID from context (placeholder until auth is implemented).
  * TODO: Replace with actual auth token parsing.
  */
-export function getCompanyId(ctx: QueryCtx | MutationCtx): Id<"companies"> {
+export function getCompanyId(ctx: QueryCtx | MutationCtx): Id<'companies'> {
   // Placeholder: return first company for now
   // In production, extract from auth token
-  throw new Error("Auth not implemented");
+  throw new Error('Auth not implemented');
 }
 
 /**
  * Assert record belongs to company and is not deleted.
  */
-export async function assertCompanyScoped<T extends { companyId: Id<"companies">; deletedAt: number | null }>(
+export async function assertCompanyScoped<
+  T extends { companyId: Id<'companies'>; deletedAt: number | null },
+>(
   ctx: QueryCtx | MutationCtx,
   table: string,
   id: Id<T>,
-  companyId: Id<"companies">
+  companyId: Id<'companies'>
 ): Promise<T> {
   const record = await ctx.db.get(id);
   if (!record) {
@@ -72,28 +78,33 @@ export async function assertCompanyScoped<T extends { companyId: Id<"companies">
 
 ```typescript
 // convex/companies.ts
-import { query } from "./_generated/server";
-import { v } from "convex/values";
-import { getCompanyId } from "./lib/helpers";
+import { query } from './_generated/server';
+import { v } from 'convex/values';
+import { getCompanyId } from './lib/helpers';
 
 export const list = query({
   args: {},
-  handler: async (ctx) => {
+  handler: async ctx => {
     const companyId = getCompanyId(ctx);
     return await ctx.db
-      .query("repositories")
-      .withIndex("by_companyId_deletedAt", (q) =>
-        q.eq("companyId", companyId).eq("deletedAt", null)
+      .query('repositories')
+      .withIndex('by_companyId_deletedAt', q =>
+        q.eq('companyId', companyId).eq('deletedAt', null)
       )
       .collect();
   },
 });
 
 export const get = query({
-  args: { id: v.id("repositories") },
+  args: { id: v.id('repositories') },
   handler: async (ctx, args) => {
     const companyId = getCompanyId(ctx);
-    const repo = await assertCompanyScoped(ctx, "repositories", args.id, companyId);
+    const repo = await assertCompanyScoped(
+      ctx,
+      'repositories',
+      args.id,
+      companyId
+    );
     return repo;
   },
 });
@@ -107,10 +118,10 @@ export const getByExternalId = query({
   handler: async (ctx, args) => {
     const companyId = getCompanyId(ctx);
     const repo = await ctx.db
-      .query("repositories")
-      .withIndex("by_externalId", (q) => q.eq("externalId", args.externalId))
-      .filter((q) => q.eq(q.field("companyId"), companyId))
-      .filter((q) => q.eq(q.field("deletedAt"), null))
+      .query('repositories')
+      .withIndex('by_externalId', q => q.eq('externalId', args.externalId))
+      .filter(q => q.eq(q.field('companyId'), companyId))
+      .filter(q => q.eq(q.field('deletedAt'), null))
       .first();
     return repo ?? null;
   },
@@ -123,9 +134,9 @@ export const getByExternalId = query({
 
 ```typescript
 // convex/repositories.ts
-import { mutation } from "./_generated/server";
-import { v } from "convex/values";
-import { getCompanyId } from "./lib/helpers";
+import { mutation } from './_generated/server';
+import { v } from 'convex/values';
+import { getCompanyId } from './lib/helpers';
 
 export const create = mutation({
   args: {
@@ -137,7 +148,7 @@ export const create = mutation({
     const companyId = getCompanyId(ctx);
     const now = Date.now();
 
-    return await ctx.db.insert("repositories", {
+    return await ctx.db.insert('repositories', {
       companyId,
       externalId: args.externalId,
       externalUrl: args.externalUrl,
@@ -155,13 +166,18 @@ export const create = mutation({
 ```typescript
 export const update = mutation({
   args: {
-    id: v.id("repositories"),
+    id: v.id('repositories'),
     name: v.optional(v.string()),
     externalUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const companyId = getCompanyId(ctx);
-    const repo = await assertCompanyScoped(ctx, "repositories", args.id, companyId);
+    const repo = await assertCompanyScoped(
+      ctx,
+      'repositories',
+      args.id,
+      companyId
+    );
 
     await ctx.db.patch(args.id, {
       ...(args.name !== undefined && { name: args.name }),
@@ -179,10 +195,15 @@ export const update = mutation({
 
 ```typescript
 export const remove = mutation({
-  args: { id: v.id("repositories") },
+  args: { id: v.id('repositories') },
   handler: async (ctx, args) => {
     const companyId = getCompanyId(ctx);
-    const repo = await assertCompanyScoped(ctx, "repositories", args.id, companyId);
+    const repo = await assertCompanyScoped(
+      ctx,
+      'repositories',
+      args.id,
+      companyId
+    );
 
     // Soft delete: set deletedAt timestamp
     await ctx.db.patch(args.id, {
@@ -203,21 +224,26 @@ export const remove = mutation({
 
 ```typescript
 export const remove = mutation({
-  args: { id: v.id("repositories") },
+  args: { id: v.id('repositories') },
   handler: async (ctx, args) => {
     const companyId = getCompanyId(ctx);
-    const repo = await assertCompanyScoped(ctx, "repositories", args.id, companyId);
+    const repo = await assertCompanyScoped(
+      ctx,
+      'repositories',
+      args.id,
+      companyId
+    );
 
     // Check if repository has active projects
     const activeProjects = await ctx.db
-      .query("projects")
-      .withIndex("by_repositoryId_deletedAt", (q) =>
-        q.eq("repositoryId", args.id).eq("deletedAt", null)
+      .query('projects')
+      .withIndex('by_repositoryId_deletedAt', q =>
+        q.eq('repositoryId', args.id).eq('deletedAt', null)
       )
       .first();
 
     if (activeProjects) {
-      throw new Error("Cannot delete repository with active projects");
+      throw new Error('Cannot delete repository with active projects');
     }
 
     await ctx.db.patch(args.id, {
@@ -235,7 +261,7 @@ export const remove = mutation({
 Import and validate with Zod schemas from `@devsuite/shared`:
 
 ```typescript
-import { RepositoryCreateInput, RepositoryUpdateInput } from "@devsuite/shared";
+import { RepositoryCreateInput, RepositoryUpdateInput } from '@devsuite/shared';
 
 export const create = mutation({
   args: {
@@ -278,6 +304,7 @@ throw new Error(`Cannot delete ${tableName} with active ${dependentTable}`);
 ```
 
 ## Deliverables Checklist
+
 - [ ] Helper functions exist in `convex/lib/helpers.ts` for company scoping and assertions
 - [ ] Query functions filter by `companyId` and `deletedAt === null`
 - [ ] Mutation functions enforce company scoping and never allow `companyId` changes
@@ -292,19 +319,19 @@ For a new entity, create these functions:
 
 ```typescript
 // convex/entities.ts
-import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
-import { getCompanyId, assertCompanyScoped } from "./lib/helpers";
+import { query, mutation } from './_generated/server';
+import { v } from 'convex/values';
+import { getCompanyId, assertCompanyScoped } from './lib/helpers';
 
 // List active records
 export const list = query({
   args: {},
-  handler: async (ctx) => {
+  handler: async ctx => {
     const companyId = getCompanyId(ctx);
     return await ctx.db
-      .query("entities")
-      .withIndex("by_companyId_deletedAt", (q) =>
-        q.eq("companyId", companyId).eq("deletedAt", null)
+      .query('entities')
+      .withIndex('by_companyId_deletedAt', q =>
+        q.eq('companyId', companyId).eq('deletedAt', null)
       )
       .collect();
   },
@@ -312,20 +339,22 @@ export const list = query({
 
 // Get single record
 export const get = query({
-  args: { id: v.id("entities") },
+  args: { id: v.id('entities') },
   handler: async (ctx, args) => {
     const companyId = getCompanyId(ctx);
-    return await assertCompanyScoped(ctx, "entities", args.id, companyId);
+    return await assertCompanyScoped(ctx, 'entities', args.id, companyId);
   },
 });
 
 // Create
 export const create = mutation({
-  args: { /* entity fields */ },
+  args: {
+    /* entity fields */
+  },
   handler: async (ctx, args) => {
     const companyId = getCompanyId(ctx);
     const now = Date.now();
-    return await ctx.db.insert("entities", {
+    return await ctx.db.insert('entities', {
       companyId,
       ...args,
       createdAt: now,
@@ -337,10 +366,10 @@ export const create = mutation({
 
 // Update
 export const update = mutation({
-  args: { id: v.id("entities"), /* optional fields */ },
+  args: { id: v.id('entities') /* optional fields */ },
   handler: async (ctx, args) => {
     const companyId = getCompanyId(ctx);
-    await assertCompanyScoped(ctx, "entities", args.id, companyId);
+    await assertCompanyScoped(ctx, 'entities', args.id, companyId);
     await ctx.db.patch(args.id, {
       ...args,
       updatedAt: Date.now(),
@@ -351,10 +380,10 @@ export const update = mutation({
 
 // Soft delete
 export const remove = mutation({
-  args: { id: v.id("entities") },
+  args: { id: v.id('entities') },
   handler: async (ctx, args) => {
     const companyId = getCompanyId(ctx);
-    await assertCompanyScoped(ctx, "entities", args.id, companyId);
+    await assertCompanyScoped(ctx, 'entities', args.id, companyId);
     await ctx.db.patch(args.id, {
       deletedAt: Date.now(),
       updatedAt: Date.now(),
@@ -365,6 +394,7 @@ export const remove = mutation({
 ```
 
 ## References
+
 - Convex functions docs: https://docs.convex.dev/functions
 - DevSuite architecture: `/dev_suite_conceptual_architecture_business_vs_tech.md`
 - Shared types: `projects/01-shared-types/PROJECT.md`

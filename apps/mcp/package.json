@@ -1,0 +1,16 @@
+{
+  "name": "@devsuite/mcp",
+  "version": "0.0.0",
+  "description": "MCP Server for DevSuite",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.0"
+  }
+}
