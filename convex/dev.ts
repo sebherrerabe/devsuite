@@ -118,6 +118,8 @@ export const seed = mutation({
       name: 'Demo Project',
       description: 'A sample project for development',
       repositoryIds: [repositoryId],
+      slug: 'demo-project',
+      notesMarkdown: null,
       metadata: {},
       createdAt: now,
       updatedAt: now,

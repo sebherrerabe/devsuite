@@ -1,10 +1,12 @@
 import { Sidebar } from './sidebar';
 import { Header } from './header';
 import { Outlet } from '@tanstack/react-router';
+import { GlobalCommandPalette } from './global-command-palette';
 
 export function AppShell() {
   return (
     <div className="min-h-screen bg-background">
+      <GlobalCommandPalette />
       <Header />
       <div className="flex pt-14">
         <Sidebar />

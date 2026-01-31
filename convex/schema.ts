@@ -61,12 +61,24 @@ export default defineSchema({
 
   /**
    * Project entities - company-scoped, can link to repositories
+   *
+   * Projects support:
+   * - UX fields: slug (auto-generated), color, isFavorite, isPinned
+   * - Docs: notesMarkdown (optional markdown scratchpad)
+   * - Name uniqueness enforced per company (case-insensitive)
    */
   projects: defineTable({
     companyId: v.id('companies'),
     name: v.string(),
     description: v.optional(v.string()),
     repositoryIds: v.array(v.id('repositories')),
+    // UX fields
+    slug: v.optional(v.string()), // Auto-generated from name on create
+    color: v.optional(v.string()), // Color label for UI
+    isFavorite: v.optional(v.boolean()), // Favorite flag
+    isPinned: v.optional(v.boolean()), // Pinned flag for list view
+    // Docs
+    notesMarkdown: v.union(v.string(), v.null()), // Optional markdown notes scratchpad
     metadata: v.any(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -76,13 +88,17 @@ export default defineSchema({
     .index('by_companyId_deletedAt', ['companyId', 'deletedAt']),
   // Note: Cannot index array fields directly. To query projects by repositoryId,
   // use a filter query: .filter(q => q.field('repositoryIds').includes(repositoryId))
+  // Note: Name uniqueness is enforced in functions via query + filter (case-insensitive comparison)
 
   /**
-   * Task entities - company-scoped via project, supports hierarchy
+   * Task entities - company-scoped, supports hierarchy
+   * Tasks can be project tasks (projectId set) OR company tasks (projectId null)
+   * Parent/child relationships must maintain same scope (projectId match)
    */
   tasks: defineTable({
-    projectId: v.id('projects'),
-    parentTaskId: v.optional(v.id('tasks')),
+    companyId: v.id('companies'),
+    projectId: v.union(v.id('projects'), v.null()),
+    parentTaskId: v.union(v.id('tasks'), v.null()),
     title: v.string(),
     description: v.optional(v.string()),
     status: v.union(
@@ -92,38 +108,93 @@ export default defineSchema({
       v.literal('done'),
       v.literal('cancelled')
     ),
-    complexity: v.optional(
-      v.union(
-        v.literal('trivial'),
-        v.literal('small'),
-        v.literal('medium'),
-        v.literal('large'),
-        v.literal('epic')
-      )
-    ),
-    tags: v.array(v.string()),
-    externalLinks: v.array(
-      v.object({
-        type: v.union(
-          v.literal('github_pr'),
-          v.literal('github_issue'),
-          v.literal('notion'),
-          v.literal('ticktick'),
-          v.literal('url')
-        ),
-        identifier: v.string(),
-        url: v.string(),
-      })
-    ),
+    /** Fractional indexing / LexoRank-style string for ordering siblings */
+    sortKey: v.string(),
+    /** Due date as Unix timestamp in milliseconds (null if no due date) */
+    dueDate: v.union(v.number(), v.null()),
+    /** Complexity score: integer 1-10 (null if not set) */
+    complexityScore: v.union(v.number(), v.null()),
+    /** Markdown notes/scratchpad */
+    notesMarkdown: v.union(v.string(), v.null()),
+    /** References to company-managed tags */
+    tagIds: v.array(v.id('tags')),
     metadata: v.any(),
     createdAt: v.number(),
     updatedAt: v.number(),
     deletedAt: v.union(v.number(), v.null()),
   })
+    .index('by_companyId', ['companyId'])
+    .index('by_companyId_deletedAt', ['companyId', 'deletedAt'])
     .index('by_projectId', ['projectId'])
     .index('by_projectId_deletedAt', ['projectId', 'deletedAt'])
     .index('by_parentTaskId', ['parentTaskId'])
-    .index('by_status', ['status']),
+    .index('by_status', ['status'])
+    .index('by_companyId_projectId_deletedAt', [
+      'companyId',
+      'projectId',
+      'deletedAt',
+    ])
+    .index('by_companyId_parentTaskId_deletedAt', [
+      'companyId',
+      'parentTaskId',
+      'deletedAt',
+    ])
+    .index('by_companyId_projectId_parentTaskId_deletedAt', [
+      'companyId',
+      'projectId',
+      'parentTaskId',
+      'deletedAt',
+    ]),
+
+  /**
+   * Tag entities - company-scoped managed tag set
+   * Tags are managed per company to enable consistent naming and future renames
+   */
+  tags: defineTable({
+    companyId: v.id('companies'),
+    name: v.string(),
+    color: v.union(v.string(), v.null()),
+    metadata: v.optional(v.any()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    deletedAt: v.union(v.number(), v.null()),
+  })
+    .index('by_companyId', ['companyId'])
+    .index('by_companyId_deletedAt', ['companyId', 'deletedAt'])
+    .index('by_companyId_name_deletedAt', ['companyId', 'name', 'deletedAt']),
+
+  /**
+   * External link entities - normalized table for task external references
+   * Stores user-provided titles (MVP); later can be fetched via integrations
+   */
+  external_links: defineTable({
+    companyId: v.id('companies'),
+    taskId: v.id('tasks'),
+    type: v.union(
+      v.literal('github_pr'),
+      v.literal('github_issue'),
+      v.literal('notion'),
+      v.literal('ticktick'),
+      v.literal('url')
+    ),
+    url: v.string(),
+    /** User-provided title (required in MVP) */
+    title: v.string(),
+    identifier: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    deletedAt: v.union(v.number(), v.null()),
+  })
+    .index('by_companyId', ['companyId'])
+    .index('by_companyId_deletedAt', ['companyId', 'deletedAt'])
+    .index('by_taskId', ['taskId'])
+    .index('by_taskId_deletedAt', ['taskId', 'deletedAt'])
+    .index('by_companyId_taskId_deletedAt', [
+      'companyId',
+      'taskId',
+      'deletedAt',
+    ]),
 
   /**
    * Session entities - company-scoped work sessions

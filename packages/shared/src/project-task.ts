@@ -3,6 +3,7 @@
  *
  * This module provides:
  * - ExternalLink types for referencing external systems (no mirroring)
+ * - Tag entity types (company-managed)
  * - Project entity types
  * - Task entity types with hierarchical support
  */
@@ -10,10 +11,14 @@
 import { z } from 'zod';
 import {
   companyIdSchema,
+  convexDocBaseSchema,
+  externalLinkIdSchema,
   projectIdSchema,
   repositoryIdSchema,
+  tagIdSchema,
   taskIdSchema,
   softDeletableSchema,
+  timestampSchema,
   timestampedSchema,
 } from './base';
 
@@ -45,20 +50,137 @@ export const externalLinkTypeSchema = z.enum(externalLinkTypeValues);
  *
  * IMPORTANT: This is a reference, not a copy. We store:
  * - type: which system it's from
- * - identifier: the unique ID in that system (e.g., PR number, Notion page ID)
+ * - title: user-provided label for display
+ * - identifier: the unique ID in that system (optional)
  * - url: direct link to view in the external system
- *
- * We do NOT store titles, descriptions, or other data that could become stale.
  */
-export const externalLinkSchema = z.object({
-  type: externalLinkTypeSchema,
-  /** System-specific identifier (e.g., "123" for PR #123, Notion page ID) */
-  identifier: z.string().min(1),
-  /** Direct URL to the external resource */
-  url: z.string().url(),
-});
+export const externalLinkSchema = z
+  .object({
+    id: externalLinkIdSchema,
+    companyId: companyIdSchema,
+    taskId: taskIdSchema,
+    type: externalLinkTypeSchema,
+    /** Direct URL to the external resource */
+    url: z.string().url(),
+    /** User-provided title (required) */
+    title: z.string().min(1),
+    /** System-specific identifier (e.g., "123" for PR #123, Notion page ID) */
+    identifier: z.string().min(1).optional(),
+    /** Arbitrary metadata (JSON-serializable) */
+    metadata: z.record(z.unknown()).nullable().optional(),
+  })
+  .merge(timestampedSchema)
+  .merge(softDeletableSchema);
 
 export type ExternalLink = z.infer<typeof externalLinkSchema>;
+
+/**
+ * Convex document shape for ExternalLink (raw DB document).
+ * Uses `_id` / `_creationTime` instead of `id`.
+ */
+export const externalLinkDocSchema = convexDocBaseSchema
+  .extend({
+    _id: externalLinkIdSchema,
+    companyId: companyIdSchema,
+    taskId: taskIdSchema,
+    type: externalLinkTypeSchema,
+    url: z.string().url(),
+    title: z.string().min(1),
+    identifier: z.string().min(1).optional(),
+    metadata: z.unknown().optional(),
+  })
+  .merge(timestampedSchema)
+  .merge(softDeletableSchema);
+
+export type ExternalLinkDoc = z.infer<typeof externalLinkDocSchema>;
+
+/**
+ * Schema for creating a new ExternalLink
+ */
+export const createExternalLinkInputSchema = z.object({
+  companyId: companyIdSchema,
+  taskId: taskIdSchema,
+  type: externalLinkTypeSchema,
+  url: z.string().url(),
+  title: z.string().min(1),
+  identifier: z.string().min(1).optional(),
+});
+
+export type CreateExternalLinkInput = z.infer<
+  typeof createExternalLinkInputSchema
+>;
+
+/**
+ * Schema for updating an ExternalLink
+ */
+export const updateExternalLinkInputSchema = z.object({
+  title: z.string().min(1).optional(),
+  url: z.string().url().optional(),
+  identifier: z.string().min(1).optional(),
+});
+
+export type UpdateExternalLinkInput = z.infer<
+  typeof updateExternalLinkInputSchema
+>;
+
+// ============================================================================
+// Tag Types
+// ============================================================================
+
+/**
+ * Tag entity Zod schema
+ */
+export const tagSchema = z
+  .object({
+    id: tagIdSchema,
+    companyId: companyIdSchema,
+    name: z.string().min(1).max(255),
+    color: z.string().nullable(),
+    /** Arbitrary metadata (JSON-serializable) */
+    metadata: z.record(z.unknown()).nullable().optional(),
+  })
+  .merge(timestampedSchema)
+  .merge(softDeletableSchema);
+
+export type Tag = z.infer<typeof tagSchema>;
+
+/**
+ * Convex document shape for Tag (raw DB document).
+ * Uses `_id` / `_creationTime` instead of `id`.
+ */
+export const tagDocSchema = convexDocBaseSchema
+  .extend({
+    _id: tagIdSchema,
+    companyId: companyIdSchema,
+    name: z.string().min(1).max(255),
+    color: z.string().nullable(),
+    metadata: z.unknown().optional(),
+  })
+  .merge(timestampedSchema)
+  .merge(softDeletableSchema);
+
+export type TagDoc = z.infer<typeof tagDocSchema>;
+
+/**
+ * Schema for creating a new Tag
+ */
+export const createTagInputSchema = z.object({
+  companyId: companyIdSchema,
+  name: z.string().min(1).max(255),
+  color: z.string().nullable(),
+});
+
+export type CreateTagInput = z.infer<typeof createTagInputSchema>;
+
+/**
+ * Schema for updating a Tag
+ */
+export const updateTagInputSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  color: z.string().nullable().optional(),
+});
+
+export type UpdateTagInput = z.infer<typeof updateTagInputSchema>;
 
 // ============================================================================
 // Task Status
@@ -83,28 +205,6 @@ export type TaskStatus = (typeof taskStatusValues)[number];
 export const taskStatusSchema = z.enum(taskStatusValues);
 
 // ============================================================================
-// Task Complexity
-// ============================================================================
-
-/**
- * Task complexity levels
- */
-export const taskComplexityValues = [
-  'trivial',
-  'small',
-  'medium',
-  'large',
-  'epic',
-] as const;
-
-export type TaskComplexity = (typeof taskComplexityValues)[number];
-
-/**
- * Zod schema for TaskComplexity
- */
-export const taskComplexitySchema = z.enum(taskComplexityValues);
-
-// ============================================================================
 // Project Types
 // ============================================================================
 
@@ -120,6 +220,16 @@ export const projectSchema = z
     companyId: companyIdSchema,
     name: z.string().min(1).max(255),
     description: z.string().max(2000).optional(),
+    /** Auto-generated slug */
+    slug: z.string().min(1).max(100).optional(),
+    /** Project color (hex or name) */
+    color: z.string().optional(),
+    /** Whether the project is pinned in the UI */
+    isPinned: z.boolean().optional(),
+    /** Whether the project is marked as favorite */
+    isFavorite: z.boolean().optional(),
+    /** Markdown notes/scratchpad */
+    notesMarkdown: z.string().nullable(),
     /** IDs of linked repositories */
     repositoryIds: z.array(repositoryIdSchema),
     /** Arbitrary metadata (JSON-serializable) */
@@ -134,6 +244,29 @@ export const projectSchema = z
 export type Project = z.infer<typeof projectSchema>;
 
 /**
+ * Convex document shape for Project (raw DB document).
+ * Uses `_id` / `_creationTime` instead of `id`.
+ */
+export const projectDocSchema = convexDocBaseSchema
+  .extend({
+    _id: projectIdSchema,
+    companyId: companyIdSchema,
+    name: z.string().min(1).max(255),
+    description: z.string().max(2000).optional(),
+    repositoryIds: z.array(repositoryIdSchema),
+    slug: z.string().min(1).max(100).optional(),
+    color: z.string().optional(),
+    isFavorite: z.boolean().optional(),
+    isPinned: z.boolean().optional(),
+    notesMarkdown: z.string().nullable(),
+    metadata: z.unknown(),
+  })
+  .merge(timestampedSchema)
+  .merge(softDeletableSchema);
+
+export type ProjectDoc = z.infer<typeof projectDocSchema>;
+
+/**
  * Schema for creating a new Project
  *
  * - id, timestamps, and deletedAt are generated server-side
@@ -144,6 +277,10 @@ export const createProjectInputSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(2000).optional(),
   repositoryIds: z.array(repositoryIdSchema).optional(),
+  color: z.string().optional(),
+  isPinned: z.boolean().optional(),
+  isFavorite: z.boolean().optional(),
+  notesMarkdown: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
@@ -160,6 +297,10 @@ export const updateProjectInputSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().max(2000).optional(),
   repositoryIds: z.array(repositoryIdSchema).optional(),
+  color: z.string().optional(),
+  isPinned: z.boolean().optional(),
+  isFavorite: z.boolean().optional(),
+  notesMarkdown: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
@@ -174,23 +315,29 @@ export type UpdateProjectInput = z.infer<typeof updateProjectInputSchema>;
  *
  * Tasks are the primary unit of work in DevSuite.
  * - Supports hierarchy via parentTaskId (optional, null for top-level)
- * - External systems are referenced via externalLinks (not mirrored)
- * - Company-scoped via project relationship
+ * - External systems are referenced via external_links (not mirrored)
+ * - Company-scoped (optionally project-scoped)
  */
 export const taskSchema = z
   .object({
     id: taskIdSchema,
-    projectId: projectIdSchema,
-    /** Parent task ID for hierarchy (undefined for top-level tasks) */
-    parentTaskId: taskIdSchema.optional(),
+    companyId: companyIdSchema,
+    projectId: projectIdSchema.nullable(),
+    /** Parent task ID for hierarchy (null for top-level tasks) */
+    parentTaskId: taskIdSchema.nullable(),
     title: z.string().min(1).max(500),
     description: z.string().max(10000).optional(),
     status: taskStatusSchema,
-    complexity: taskComplexitySchema.optional(),
-    /** Tags for categorization */
-    tags: z.array(z.string().min(1).max(50)),
-    /** Links to external systems (GitHub PRs, Notion pages, etc.) */
-    externalLinks: z.array(externalLinkSchema),
+    /** Complexity score from 1 to 10 */
+    complexityScore: z.number().int().min(1).max(10).nullable(),
+    /** Ordering key among siblings */
+    sortKey: z.string().min(1),
+    /** Due date timestamp (ms) */
+    dueDate: timestampSchema.nullable(),
+    /** Markdown notes/scratchpad */
+    notesMarkdown: z.string().nullable(),
+    /** Managed tag references */
+    tagIds: z.array(tagIdSchema),
     /** Arbitrary metadata (JSON-serializable) */
     metadata: z.record(z.unknown()),
   })
@@ -203,21 +350,44 @@ export const taskSchema = z
 export type Task = z.infer<typeof taskSchema>;
 
 /**
+ * Convex document shape for Task (raw DB document).
+ * Uses `_id` / `_creationTime` instead of `id`.
+ */
+export const taskDocSchema = convexDocBaseSchema
+  .extend({
+    _id: taskIdSchema,
+    companyId: companyIdSchema,
+    projectId: projectIdSchema.nullable(),
+    parentTaskId: taskIdSchema.nullable(),
+    title: z.string().min(1).max(500),
+    description: z.string().max(10000).optional(),
+    status: taskStatusSchema,
+    sortKey: z.string().min(1),
+    dueDate: timestampSchema.nullable(),
+    complexityScore: z.number().int().min(1).max(10).nullable(),
+    notesMarkdown: z.string().nullable(),
+    tagIds: z.array(tagIdSchema),
+    metadata: z.unknown(),
+  })
+  .merge(timestampedSchema)
+  .merge(softDeletableSchema);
+
+export type TaskDoc = z.infer<typeof taskDocSchema>;
+
+/**
  * Schema for creating a new Task
- *
- * - id, timestamps, and deletedAt are generated server-side
- * - projectId is required (company scoping via project)
- * - status defaults to 'todo' if not provided
  */
 export const createTaskInputSchema = z.object({
-  projectId: projectIdSchema,
-  parentTaskId: taskIdSchema.optional(),
+  companyId: companyIdSchema,
+  projectId: projectIdSchema.nullable(),
+  parentTaskId: taskIdSchema.nullable(),
   title: z.string().min(1).max(500),
   description: z.string().max(10000).optional(),
   status: taskStatusSchema.optional(),
-  complexity: taskComplexitySchema.optional(),
-  tags: z.array(z.string().min(1).max(50)).optional(),
-  externalLinks: z.array(externalLinkSchema).optional(),
+  complexityScore: z.number().int().min(1).max(10).nullable(),
+  dueDate: timestampSchema.nullable(),
+  notesMarkdown: z.string().nullable(),
+  tagIds: z.array(tagIdSchema).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
@@ -225,20 +395,15 @@ export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
 /**
  * Schema for updating a Task
- *
- * - All fields optional (partial update)
- * - id and timestamps cannot be updated directly
- * - projectId is immutable (use move operation if needed)
- * - parentTaskId can be set to null to move to top-level
  */
 export const updateTaskInputSchema = z.object({
-  parentTaskId: taskIdSchema.nullable().optional(),
   title: z.string().min(1).max(500).optional(),
   description: z.string().max(10000).optional(),
   status: taskStatusSchema.optional(),
-  complexity: taskComplexitySchema.nullable().optional(),
-  tags: z.array(z.string().min(1).max(50)).optional(),
-  externalLinks: z.array(externalLinkSchema).optional(),
+  complexityScore: z.number().int().min(1).max(10).nullable().optional(),
+  dueDate: timestampSchema.nullable().optional(),
+  notesMarkdown: z.string().nullable().optional(),
+  tagIds: z.array(tagIdSchema).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 

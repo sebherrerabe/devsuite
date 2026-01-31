@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import type { Id, Doc } from '../../../../convex/_generated/dataModel';
+import type { RepositoryProvider } from '@devsuite/shared';
 import {
   Table,
   TableBody,
@@ -60,7 +61,7 @@ export function CompanyRepositories({ companyId }: CompanyRepositoriesProps) {
     useState<Doc<'repositories'> | null>(null);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [provider, setProvider] = useState<string>('other');
+  const [provider, setProvider] = useState<RepositoryProvider>('other');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -294,7 +295,10 @@ export function CompanyRepositories({ companyId }: CompanyRepositoriesProps) {
               <label htmlFor="repo-provider" className="text-sm font-medium">
                 Provider
               </label>
-              <Select value={provider} onValueChange={setProvider}>
+              <Select
+                value={provider}
+                onValueChange={val => setProvider(val as RepositoryProvider)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -371,7 +375,10 @@ export function CompanyRepositories({ companyId }: CompanyRepositoriesProps) {
               >
                 Provider
               </label>
-              <Select value={provider} onValueChange={setProvider}>
+              <Select
+                value={provider}
+                onValueChange={val => setProvider(val as RepositoryProvider)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

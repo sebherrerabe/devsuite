@@ -37,6 +37,16 @@ export type ProjectId = string & { __brand: 'ProjectId' };
 export type TaskId = string & { __brand: 'TaskId' };
 
 /**
+ * Branded string type for Tag IDs
+ */
+export type TagId = string & { __brand: 'TagId' };
+
+/**
+ * Branded string type for External Link IDs
+ */
+export type ExternalLinkId = string & { __brand: 'ExternalLinkId' };
+
+/**
  * Branded string type for Session IDs
  */
 export type SessionId = string & { __brand: 'SessionId' };
@@ -66,21 +76,19 @@ export const timestampSchema = z.number().int().nonnegative();
 
 /**
  * Soft deletable entity pattern.
- * Uses `deletedAt` as the source of truth:
- * - undefined = not deleted
- * - number (timestamp) = deleted at that time
- *
- * This avoids duplication compared to having both `isDeleted` and `deletedAt`.
+ * Uses `deletedAt` as the source of truth (Convex convention):
+ * - null / undefined = not deleted (active)
+ * - number (timestamp ms) = deleted at that time
  */
 export type SoftDeletable = {
-  deletedAt: Timestamp | undefined;
+  deletedAt?: Timestamp | null;
 };
 
 /**
  * Zod schema for soft deletable pattern
  */
 export const softDeletableSchema = z.object({
-  deletedAt: timestampSchema.optional(),
+  deletedAt: timestampSchema.nullable().optional(),
 });
 
 // ============================================================================
@@ -199,6 +207,32 @@ export function isErr<T, E>(
  */
 export const idSchema = z.string().min(1);
 
+// ============================================================================
+// Convex Document Base Shape
+// ============================================================================
+
+/**
+ * Minimal base shape for a Convex document.
+ *
+ * Note:
+ * - Convex documents use `_id` (not `id`).
+ * - Many app-facing DTOs convert `_id` -> `id` for ergonomic usage.
+ */
+export type ConvexDocBase<TId extends string = string> = {
+  _id: TId;
+  _creationTime: Timestamp;
+};
+
+/**
+ * Zod schema for the minimal Convex document base shape.
+ *
+ * Table-specific schemas should typically override `_id` with a branded ID schema.
+ */
+export const convexDocBaseSchema = z.object({
+  _id: idSchema,
+  _creationTime: timestampSchema,
+});
+
 /**
  * Zod schema for CompanyId
  * Uses transform to cast to branded type after validation
@@ -221,6 +255,18 @@ export const projectIdSchema = idSchema.transform(val => val as ProjectId);
  * Zod schema for TaskId
  */
 export const taskIdSchema = idSchema.transform(val => val as TaskId);
+
+/**
+ * Zod schema for TagId
+ */
+export const tagIdSchema = idSchema.transform(val => val as TagId);
+
+/**
+ * Zod schema for ExternalLinkId
+ */
+export const externalLinkIdSchema = idSchema.transform(
+  val => val as ExternalLinkId
+);
 
 /**
  * Zod schema for SessionId

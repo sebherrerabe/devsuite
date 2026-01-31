@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
+import type { Id } from '../../../../convex/_generated/dataModel';
 import type { Doc } from '../../../../convex/_generated/dataModel';
 import {
   Table,
@@ -27,31 +27,29 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Badge } from '@/components/ui/badge';
 import { showToast } from '@/lib/toast';
 import { Loader2, MoreHorizontal, Pencil, Plus, Trash } from 'lucide-react';
-import { CompanyRepositories } from '@/components/company-repositories';
 
-import { TagsSettings } from '@/components/tags-settings';
-import { useCurrentCompany } from '@/lib/company-context';
-import { Separator } from '@/components/ui/separator';
+interface TagsSettingsProps {
+  companyId: Id<'companies'>;
+}
 
-export const Route = createFileRoute('/_app/settings/company')({
-  component: CompanySettingsPage,
-});
-
-function CompanySettingsPage() {
-  const { currentCompany } = useCurrentCompany();
-  const companies = useQuery(api.companies.list);
-  const createCompany = useMutation(api.companies.create);
-  const updateCompany = useMutation(api.companies.update);
-  const removeCompany = useMutation(api.companies.remove);
+export function TagsSettings({ companyId }: TagsSettingsProps) {
+  const tags = useQuery(api.tags.listTagsByCompany, { companyId });
+  const createTag = useMutation(api.tags.createTag);
+  const updateTag = useMutation(api.tags.updateTag);
+  const deleteTag = useMutation(api.tags.softDeleteTag);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  const [selectedCompany, setSelectedCompany] =
-    useState<Doc<'companies'> | null>(null);
+
+  const [selectedTag, setSelectedTag] = useState<Doc<'tags'> | null>(null);
+
+  // Form State
   const [name, setName] = useState('');
+  const [color, setColor] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -60,13 +58,19 @@ function CompanySettingsPage() {
 
     setIsSubmitting(true);
     try {
-      await createCompany({ name: name.trim() });
-      showToast.success('Company created successfully');
+      await createTag({
+        companyId,
+        name: name.trim(),
+        color: color || null,
+      });
+      showToast.success('Tag created successfully');
       setIsCreateOpen(false);
       setName('');
+      setColor(null);
     } catch (err) {
-      showToast.error('Failed to create company');
-      console.error('Error creating company:', err);
+      showToast.error(
+        err instanceof Error ? err.message : 'Failed to create tag'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -74,48 +78,57 @@ function CompanySettingsPage() {
 
   const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!name.trim() || !selectedCompany) return;
+    if (!name.trim() || !selectedTag) return;
 
     setIsSubmitting(true);
     try {
-      await updateCompany({ id: selectedCompany._id, name: name.trim() });
-      showToast.success('Company updated successfully');
+      await updateTag({
+        companyId,
+        tagId: selectedTag._id,
+        name: name.trim(),
+        color: color || null,
+      });
+      showToast.success('Tag updated successfully');
       setIsEditOpen(false);
-      setSelectedCompany(null);
+      setSelectedTag(null);
       setName('');
+      setColor(null);
     } catch (err) {
-      showToast.error('Failed to update company');
-      console.error('Error updating company:', err);
+      showToast.error(
+        err instanceof Error ? err.message : 'Failed to update tag'
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!selectedCompany) return;
+    if (!selectedTag) return;
 
     setIsSubmitting(true);
     try {
-      await removeCompany({ id: selectedCompany._id });
-      showToast.success('Company deleted successfully');
+      await deleteTag({ companyId, tagId: selectedTag._id });
+      showToast.success('Tag archived successfully');
       setIsDeleteOpen(false);
-      setSelectedCompany(null);
+      setSelectedTag(null);
     } catch (err) {
-      showToast.error('Failed to delete company');
-      console.error('Error deleting company:', err);
+      showToast.error(
+        err instanceof Error ? err.message : 'Failed to archive tag'
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const openEdit = (company: Doc<'companies'>) => {
-    setSelectedCompany(company);
-    setName(company.name);
+  const openEdit = (tag: Doc<'tags'>) => {
+    setSelectedTag(tag);
+    setName(tag.name);
+    setColor(tag.color);
     setIsEditOpen(true);
   };
 
-  const openDelete = (company: Doc<'companies'>) => {
-    setSelectedCompany(company);
+  const openDelete = (tag: Doc<'tags'>) => {
+    setSelectedTag(tag);
     setIsDeleteOpen(true);
   };
 
@@ -123,54 +136,65 @@ function CompanySettingsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-medium">Companies</h3>
+          <h3 className="text-lg font-medium">Tags</h3>
           <p className="text-sm text-muted-foreground">
-            Manage your companies and settings.
+            Manage tags used for categorizing tasks.
           </p>
         </div>
         <Button
           onClick={() => {
             setName('');
+            setColor(null);
             setIsCreateOpen(true);
           }}
+          size="sm"
         >
           <Plus className="mr-2 h-4 w-4" />
-          Create Company
+          Create Tag
         </Button>
       </div>
 
       <div className="h-px bg-border" />
 
-      {companies === undefined ? (
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      {tags === undefined ? (
+        <div className="flex h-32 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-      ) : companies.length === 0 ? (
-        <div className="flex h-64 flex-col items-center justify-center space-y-2 border border-dashed rounded-lg">
-          <p className="text-muted-foreground">No companies found</p>
-          <Button variant="outline" onClick={() => setIsCreateOpen(true)}>
-            Create your first company
-          </Button>
+      ) : tags.length === 0 ? (
+        <div className="flex h-32 flex-col items-center justify-center space-y-2 border border-dashed rounded-lg bg-muted/10">
+          <p className="text-muted-foreground text-sm">No tags found</p>
         </div>
       ) : (
         <div className="border rounded-md">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Created At</TableHead>
+                <TableHead>Tag</TableHead>
+                <TableHead>Color</TableHead>
                 <TableHead className="w-[100px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {companies.map(company => (
-                <TableRow key={company._id}>
-                  <TableCell className="font-medium">{company.name}</TableCell>
+              {tags.map(tag => (
+                <TableRow key={tag._id}>
                   <TableCell>
-                    {new Intl.DateTimeFormat('en-US', {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    }).format(new Date(company.createdAt))}
+                    <Badge
+                      variant="outline"
+                      style={
+                        tag.color
+                          ? {
+                              backgroundColor: tag.color,
+                              color: '#fff',
+                              borderColor: tag.color,
+                            }
+                          : {}
+                      }
+                    >
+                      {tag.name}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm font-mono">
+                    {tag.color || 'Default'}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -180,16 +204,16 @@ function CompanySettingsPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(company)}>
+                        <DropdownMenuItem onClick={() => openEdit(tag)}>
                           <Pencil className="mr-2 h-4 w-4" />
                           Edit
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() => openDelete(company)}
+                          onClick={() => openDelete(tag)}
                           className="text-destructive focus:text-destructive"
                         >
                           <Trash className="mr-2 h-4 w-4" />
-                          Delete
+                          Archive
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -205,9 +229,9 @@ function CompanySettingsPage() {
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create Company</DialogTitle>
+            <DialogTitle>Create Tag</DialogTitle>
             <DialogDescription>
-              Add a new company to manage your projects and tasks.
+              Add a new tag to organize your tasks.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-4 py-4">
@@ -217,11 +241,31 @@ function CompanySettingsPage() {
               </label>
               <Input
                 id="name"
-                placeholder="Acme Inc."
+                placeholder="e.g. Bug, Feature"
                 value={name}
                 onChange={e => setName(e.target.value)}
                 autoFocus
               />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="color" className="text-sm font-medium">
+                Color (Hex)
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="color"
+                  type="color"
+                  className="w-12 p-1 h-10 cursor-pointer"
+                  value={color || '#000000'}
+                  onChange={e => setColor(e.target.value)}
+                />
+                <Input
+                  placeholder="#000000"
+                  value={color || ''}
+                  onChange={e => setColor(e.target.value)}
+                  className="flex-1"
+                />
+              </div>
             </div>
             <DialogFooter>
               <Button
@@ -245,12 +289,9 @@ function CompanySettingsPage() {
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="sm:max-w-4xl">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Company</DialogTitle>
-            <DialogDescription>
-              Update the name of your company.
-            </DialogDescription>
+            <DialogTitle>Edit Tag</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleUpdate} className="space-y-4 py-4">
             <div className="space-y-2">
@@ -259,17 +300,31 @@ function CompanySettingsPage() {
               </label>
               <Input
                 id="edit-name"
-                placeholder="Acme Inc."
                 value={name}
                 onChange={e => setName(e.target.value)}
                 autoFocus
               />
             </div>
-
-            {selectedCompany && (
-              <CompanyRepositories companyId={selectedCompany._id} />
-            )}
-
+            <div className="space-y-2">
+              <label htmlFor="edit-color" className="text-sm font-medium">
+                Color
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="edit-color"
+                  type="color"
+                  className="w-12 p-1 h-10 cursor-pointer"
+                  value={color || '#000000'}
+                  onChange={e => setColor(e.target.value)}
+                />
+                <Input
+                  placeholder="#000000"
+                  value={color || ''}
+                  onChange={e => setColor(e.target.value)}
+                  className="flex-1"
+                />
+              </div>
+            </div>
             <DialogFooter>
               <Button
                 type="button"
@@ -294,11 +349,10 @@ function CompanySettingsPage() {
       <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Company</DialogTitle>
+            <DialogTitle>Archive Tag</DialogTitle>
             <DialogDescription className="text-destructive">
-              Are you sure you want to delete{' '}
-              <strong>{selectedCompany?.name}</strong>? This action will remove
-              the company from your list.
+              Are you sure you want to archive this tag? It will no longer
+              appear in selection lists, but existing tasks will keep it.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -318,31 +372,11 @@ function CompanySettingsPage() {
               {isSubmitting && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              Delete
+              Archive
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {currentCompany && (
-        <>
-          <Separator className="my-8" />
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-medium">
-                Current Company: {currentCompany.name}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Manage settings specific to your currently active company.
-              </p>
-            </div>
-
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
-              <TagsSettings companyId={currentCompany._id} />
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }

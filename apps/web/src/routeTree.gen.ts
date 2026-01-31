@@ -14,15 +14,21 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
 import { Route as AuthSignUpRouteImport } from './routes/auth/sign-up'
 import { Route as AuthSignInRouteImport } from './routes/auth/sign-in'
+import { Route as AppTasksRouteImport } from './routes/_app.tasks'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppSessionsRouteImport } from './routes/_app.sessions'
 import { Route as AppReviewsRouteImport } from './routes/_app.reviews'
 import { Route as AppProjectsRouteImport } from './routes/_app.projects'
 import { Route as AppInboxRouteImport } from './routes/_app.inbox'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app.settings.index'
+import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
 import { Route as AppSettingsProfileRouteImport } from './routes/_app.settings.profile'
 import { Route as AppSettingsIntegrationsRouteImport } from './routes/_app.settings.integrations'
 import { Route as AppSettingsCompanyRouteImport } from './routes/_app.settings.company'
+import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects.$projectId'
+import { Route as AppProjectsProjectIdTasksRouteImport } from './routes/_app.projects.$projectId.tasks'
+import { Route as AppProjectsProjectIdSettingsRouteImport } from './routes/_app.projects.$projectId.settings'
+import { Route as AppProjectsProjectIdSessionsRouteImport } from './routes/_app.projects.$projectId.sessions'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -47,6 +53,11 @@ const AuthSignInRoute = AuthSignInRouteImport.update({
   id: '/sign-in',
   path: '/sign-in',
   getParentRoute: () => AuthRoute,
+} as any)
+const AppTasksRoute = AppTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
@@ -78,6 +89,11 @@ const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppSettingsRoute,
 } as any)
+const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppProjectsRoute,
+} as any)
 const AppSettingsProfileRoute = AppSettingsProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
@@ -93,52 +109,92 @@ const AppSettingsCompanyRoute = AppSettingsCompanyRouteImport.update({
   path: '/company',
   getParentRoute: () => AppSettingsRoute,
 } as any)
+const AppProjectsProjectIdRoute = AppProjectsProjectIdRouteImport.update({
+  id: '/$projectId',
+  path: '/$projectId',
+  getParentRoute: () => AppProjectsRoute,
+} as any)
+const AppProjectsProjectIdTasksRoute =
+  AppProjectsProjectIdTasksRouteImport.update({
+    id: '/tasks',
+    path: '/tasks',
+    getParentRoute: () => AppProjectsProjectIdRoute,
+  } as any)
+const AppProjectsProjectIdSettingsRoute =
+  AppProjectsProjectIdSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => AppProjectsProjectIdRoute,
+  } as any)
+const AppProjectsProjectIdSessionsRoute =
+  AppProjectsProjectIdSessionsRouteImport.update({
+    id: '/sessions',
+    path: '/sessions',
+    getParentRoute: () => AppProjectsProjectIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/inbox': typeof AppInboxRoute
-  '/projects': typeof AppProjectsRoute
+  '/projects': typeof AppProjectsRouteWithChildren
   '/reviews': typeof AppReviewsRoute
   '/sessions': typeof AppSessionsRoute
   '/settings': typeof AppSettingsRouteWithChildren
+  '/tasks': typeof AppTasksRoute
   '/auth/sign-in': typeof AuthSignInRoute
   '/auth/sign-up': typeof AuthSignUpRoute
+  '/projects/$projectId': typeof AppProjectsProjectIdRouteWithChildren
   '/settings/company': typeof AppSettingsCompanyRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/settings/profile': typeof AppSettingsProfileRoute
+  '/projects/': typeof AppProjectsIndexRoute
   '/settings/': typeof AppSettingsIndexRoute
+  '/projects/$projectId/sessions': typeof AppProjectsProjectIdSessionsRoute
+  '/projects/$projectId/settings': typeof AppProjectsProjectIdSettingsRoute
+  '/projects/$projectId/tasks': typeof AppProjectsProjectIdTasksRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRouteWithChildren
   '/inbox': typeof AppInboxRoute
-  '/projects': typeof AppProjectsRoute
   '/reviews': typeof AppReviewsRoute
   '/sessions': typeof AppSessionsRoute
+  '/tasks': typeof AppTasksRoute
   '/auth/sign-in': typeof AuthSignInRoute
   '/auth/sign-up': typeof AuthSignUpRoute
   '/': typeof AppIndexRoute
+  '/projects/$projectId': typeof AppProjectsProjectIdRouteWithChildren
   '/settings/company': typeof AppSettingsCompanyRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/settings/profile': typeof AppSettingsProfileRoute
+  '/projects': typeof AppProjectsIndexRoute
   '/settings': typeof AppSettingsIndexRoute
+  '/projects/$projectId/sessions': typeof AppProjectsProjectIdSessionsRoute
+  '/projects/$projectId/settings': typeof AppProjectsProjectIdSettingsRoute
+  '/projects/$projectId/tasks': typeof AppProjectsProjectIdTasksRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/_app/inbox': typeof AppInboxRoute
-  '/_app/projects': typeof AppProjectsRoute
+  '/_app/projects': typeof AppProjectsRouteWithChildren
   '/_app/reviews': typeof AppReviewsRoute
   '/_app/sessions': typeof AppSessionsRoute
   '/_app/settings': typeof AppSettingsRouteWithChildren
+  '/_app/tasks': typeof AppTasksRoute
   '/auth/sign-in': typeof AuthSignInRoute
   '/auth/sign-up': typeof AuthSignUpRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/projects/$projectId': typeof AppProjectsProjectIdRouteWithChildren
   '/_app/settings/company': typeof AppSettingsCompanyRoute
   '/_app/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/_app/settings/profile': typeof AppSettingsProfileRoute
+  '/_app/projects/': typeof AppProjectsIndexRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
+  '/_app/projects/$projectId/sessions': typeof AppProjectsProjectIdSessionsRoute
+  '/_app/projects/$projectId/settings': typeof AppProjectsProjectIdSettingsRoute
+  '/_app/projects/$projectId/tasks': typeof AppProjectsProjectIdTasksRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -150,26 +206,37 @@ export interface FileRouteTypes {
     | '/reviews'
     | '/sessions'
     | '/settings'
+    | '/tasks'
     | '/auth/sign-in'
     | '/auth/sign-up'
+    | '/projects/$projectId'
     | '/settings/company'
     | '/settings/integrations'
     | '/settings/profile'
+    | '/projects/'
     | '/settings/'
+    | '/projects/$projectId/sessions'
+    | '/projects/$projectId/settings'
+    | '/projects/$projectId/tasks'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
     | '/inbox'
-    | '/projects'
     | '/reviews'
     | '/sessions'
+    | '/tasks'
     | '/auth/sign-in'
     | '/auth/sign-up'
     | '/'
+    | '/projects/$projectId'
     | '/settings/company'
     | '/settings/integrations'
     | '/settings/profile'
+    | '/projects'
     | '/settings'
+    | '/projects/$projectId/sessions'
+    | '/projects/$projectId/settings'
+    | '/projects/$projectId/tasks'
   id:
     | '__root__'
     | '/_app'
@@ -179,13 +246,19 @@ export interface FileRouteTypes {
     | '/_app/reviews'
     | '/_app/sessions'
     | '/_app/settings'
+    | '/_app/tasks'
     | '/auth/sign-in'
     | '/auth/sign-up'
     | '/_app/'
+    | '/_app/projects/$projectId'
     | '/_app/settings/company'
     | '/_app/settings/integrations'
     | '/_app/settings/profile'
+    | '/_app/projects/'
     | '/_app/settings/'
+    | '/_app/projects/$projectId/sessions'
+    | '/_app/projects/$projectId/settings'
+    | '/_app/projects/$projectId/tasks'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -230,6 +303,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthSignInRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_app/tasks': {
+      id: '/_app/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof AppTasksRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/settings': {
       id: '/_app/settings'
       path: '/settings'
@@ -272,6 +352,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsIndexRouteImport
       parentRoute: typeof AppSettingsRoute
     }
+    '/_app/projects/': {
+      id: '/_app/projects/'
+      path: '/'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof AppProjectsIndexRouteImport
+      parentRoute: typeof AppProjectsRoute
+    }
     '/_app/settings/profile': {
       id: '/_app/settings/profile'
       path: '/profile'
@@ -293,8 +380,65 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsCompanyRouteImport
       parentRoute: typeof AppSettingsRoute
     }
+    '/_app/projects/$projectId': {
+      id: '/_app/projects/$projectId'
+      path: '/$projectId'
+      fullPath: '/projects/$projectId'
+      preLoaderRoute: typeof AppProjectsProjectIdRouteImport
+      parentRoute: typeof AppProjectsRoute
+    }
+    '/_app/projects/$projectId/tasks': {
+      id: '/_app/projects/$projectId/tasks'
+      path: '/tasks'
+      fullPath: '/projects/$projectId/tasks'
+      preLoaderRoute: typeof AppProjectsProjectIdTasksRouteImport
+      parentRoute: typeof AppProjectsProjectIdRoute
+    }
+    '/_app/projects/$projectId/settings': {
+      id: '/_app/projects/$projectId/settings'
+      path: '/settings'
+      fullPath: '/projects/$projectId/settings'
+      preLoaderRoute: typeof AppProjectsProjectIdSettingsRouteImport
+      parentRoute: typeof AppProjectsProjectIdRoute
+    }
+    '/_app/projects/$projectId/sessions': {
+      id: '/_app/projects/$projectId/sessions'
+      path: '/sessions'
+      fullPath: '/projects/$projectId/sessions'
+      preLoaderRoute: typeof AppProjectsProjectIdSessionsRouteImport
+      parentRoute: typeof AppProjectsProjectIdRoute
+    }
   }
 }
+
+interface AppProjectsProjectIdRouteChildren {
+  AppProjectsProjectIdSessionsRoute: typeof AppProjectsProjectIdSessionsRoute
+  AppProjectsProjectIdSettingsRoute: typeof AppProjectsProjectIdSettingsRoute
+  AppProjectsProjectIdTasksRoute: typeof AppProjectsProjectIdTasksRoute
+}
+
+const AppProjectsProjectIdRouteChildren: AppProjectsProjectIdRouteChildren = {
+  AppProjectsProjectIdSessionsRoute: AppProjectsProjectIdSessionsRoute,
+  AppProjectsProjectIdSettingsRoute: AppProjectsProjectIdSettingsRoute,
+  AppProjectsProjectIdTasksRoute: AppProjectsProjectIdTasksRoute,
+}
+
+const AppProjectsProjectIdRouteWithChildren =
+  AppProjectsProjectIdRoute._addFileChildren(AppProjectsProjectIdRouteChildren)
+
+interface AppProjectsRouteChildren {
+  AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRouteWithChildren
+  AppProjectsIndexRoute: typeof AppProjectsIndexRoute
+}
+
+const AppProjectsRouteChildren: AppProjectsRouteChildren = {
+  AppProjectsProjectIdRoute: AppProjectsProjectIdRouteWithChildren,
+  AppProjectsIndexRoute: AppProjectsIndexRoute,
+}
+
+const AppProjectsRouteWithChildren = AppProjectsRoute._addFileChildren(
+  AppProjectsRouteChildren,
+)
 
 interface AppSettingsRouteChildren {
   AppSettingsCompanyRoute: typeof AppSettingsCompanyRoute
@@ -316,19 +460,21 @@ const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppInboxRoute: typeof AppInboxRoute
-  AppProjectsRoute: typeof AppProjectsRoute
+  AppProjectsRoute: typeof AppProjectsRouteWithChildren
   AppReviewsRoute: typeof AppReviewsRoute
   AppSessionsRoute: typeof AppSessionsRoute
   AppSettingsRoute: typeof AppSettingsRouteWithChildren
+  AppTasksRoute: typeof AppTasksRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppInboxRoute: AppInboxRoute,
-  AppProjectsRoute: AppProjectsRoute,
+  AppProjectsRoute: AppProjectsRouteWithChildren,
   AppReviewsRoute: AppReviewsRoute,
   AppSessionsRoute: AppSessionsRoute,
   AppSettingsRoute: AppSettingsRouteWithChildren,
+  AppTasksRoute: AppTasksRoute,
   AppIndexRoute: AppIndexRoute,
 }
 
