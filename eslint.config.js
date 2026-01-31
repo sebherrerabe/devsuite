@@ -3,6 +3,7 @@ import tseslint from '@typescript-eslint/eslint-plugin';
 import tsparser from '@typescript-eslint/parser';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
+import globals from 'globals';
 
 export default [
   // Base config for all files
@@ -46,9 +47,7 @@ export default [
         },
       },
       globals: {
-        console: 'readonly',
-        window: 'readonly',
-        document: 'readonly',
+        ...globals.browser,
       },
     },
     rules: {
@@ -101,13 +100,14 @@ export default [
   // Ignore patterns
   {
     ignores: [
-      'dist/**',
-      'build/**',
-      'node_modules/**',
+      '**/dist/**',
+      '**/build/**',
+      '**/node_modules/**',
       'convex/_generated/**',
       'convex/betterAuth/_generated/**',
       'convex/convex/_generated/**',
       '.convex/**',
+      'apps/web/src/routeTree.gen.ts',
     ],
   },
 ];

@@ -18,6 +18,19 @@
 - [ ] Convex client configuration
 - [ ] Companies query (for company switcher)
 
+### From Environment (SPA + Convex + Better Auth)
+
+#### SPA (Vite) env vars (expected by `apps/web`)
+
+- [ ] `VITE_CONVEX_URL` is set
+- [ ] `VITE_CONVEX_SITE_URL` is set
+- [ ] `VITE_SITE_URL` is set
+
+#### Convex env vars (expected by Convex deployment)
+
+- [ ] `SITE_URL` is set
+- [ ] `BETTER_AUTH_SECRET` is set (do not commit; managed as an environment secret)
+
 ## Produced Outputs
 
 ### For All Feature Modules

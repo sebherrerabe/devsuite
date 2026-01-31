@@ -15,7 +15,7 @@
 - File-based route generation
 - Type-safe route definitions
 - Layout routes for shared UI
-- Protected route pattern (for auth later)
+- Protected route pattern (used by auth UI)
 
 ### State Management
 
@@ -41,6 +41,19 @@
 - Privacy mode toggle
 - Main content area
 - Toast/notification system
+
+### Authentication (SPA)
+
+- Email + password authentication UI (Better Auth)
+- Session-aware UI state (authenticated vs unauthenticated)
+- Protected route gating (redirect unauthenticated users to sign-in)
+
+#### MVP Definition
+
+- Email + password only
+- No email verification
+- No OAuth providers (GitHub/Google/etc.)
+- No password reset / forgot password flow
 
 ### Base Components
 
@@ -70,7 +83,6 @@
 - Feature-specific pages (covered by: feature modules)
 - Convex schema/functions (covered by: 02-convex-foundation)
 - MCP integration (covered by: 09-mcp-server)
-- Authentication UI (deferred)
 - Mobile-responsive beyond basic
 
 ## Boundaries
@@ -89,7 +101,6 @@ Use Convex hooks for database operations. Use TanStack Query for external APIs (
 
 ## Assumptions
 
-- Single-user application (no auth UI needed initially)
 - Desktop-first (basic mobile support)
 - Modern browsers only (no IE11)
 - Company list comes from Convex

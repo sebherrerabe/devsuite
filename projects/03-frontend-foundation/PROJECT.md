@@ -1,7 +1,7 @@
 ---
 id: '03-frontend-foundation'
 title: 'Frontend Foundation'
-status: 'pending'
+status: 'in-progress'
 priority: 3
 assigned_pm: null
 depends_on: ['00-scaffolding', '01-shared-types']
@@ -36,6 +36,7 @@ Establish a modern, type-safe React application with beautiful UI defaults and c
 - TanStack Router with file-based routing
 - TanStack Query integration (for non-Convex data)
 - Convex React client integration
+- Auth UI (SPA) for Better Auth (email + password)
 - Tailwind CSS v4 + shadcn/ui component library
 - Application shell (layout, sidebar, header)
 - Company context and switcher
@@ -49,6 +50,8 @@ Establish a modern, type-safe React application with beautiful UI defaults and c
 - [ ] Router works with type-safe routes
 - [ ] Convex realtime subscriptions work
 - [ ] shadcn/ui components render correctly
+- [ ] Auth UI exists for SPA login/logout (MVP: email + password; no email verification)
+- [ ] Protected routes require an authenticated session
 - [ ] Company switcher changes context
 - [ ] Privacy mode toggles visibility
 - [ ] Responsive layout works on desktop

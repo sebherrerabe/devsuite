@@ -1,12 +1,13 @@
 import { createClient } from '@convex-dev/better-auth';
-import { convex } from '@convex-dev/better-auth/plugins';
+import { convex, crossDomain } from '@convex-dev/better-auth/plugins';
 import type { GenericCtx } from '@convex-dev/better-auth/utils';
-import type { BetterAuthOptions } from 'better-auth';
-import { betterAuth } from 'better-auth';
+import { betterAuth, type BetterAuthOptions } from 'better-auth/minimal';
 import { components } from '../_generated/api';
 import type { DataModel } from '../_generated/dataModel';
 import authConfig from '../auth.config';
 import schema from './schema';
+
+const siteUrl = process.env.SITE_URL!;
 
 // Better Auth Component
 export const authComponent = createClient<DataModel, typeof schema>(
@@ -23,13 +24,19 @@ export const authComponent = createClient<DataModel, typeof schema>(
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
   return {
     appName: 'DevSuite',
-    baseURL: process.env.SITE_URL,
-    secret: process.env.BETTER_AUTH_SECRET,
+    secret: process.env.BETTER_AUTH_SECRET!,
+    trustedOrigins: [siteUrl],
     database: authComponent.adapter(ctx),
     emailAndPassword: {
       enabled: true,
+      requireEmailVerification: false,
     },
-    plugins: [convex({ authConfig })],
+    plugins: [
+      // Required for client-side frameworks (e.g. React SPA).
+      crossDomain({ siteUrl }),
+      // Required for Convex compatibility.
+      convex({ authConfig }),
+    ],
   } satisfies BetterAuthOptions;
 };
 

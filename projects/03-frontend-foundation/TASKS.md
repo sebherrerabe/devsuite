@@ -7,7 +7,7 @@
 | Field            | Value                              |
 | ---------------- | ---------------------------------- |
 | Assigned Persona | Frontend Engineer                  |
-| Status           | pending                            |
+| Status           | complete                           |
 | Depends On       | 00-scaffolding complete            |
 | Deliverable      | Working Vite dev server with React |
 
@@ -33,7 +33,7 @@ Use Vite's React plugin. Configure for SPA mode.
 | Field            | Value                    |
 | ---------------- | ------------------------ |
 | Assigned Persona | Frontend Engineer        |
-| Status           | pending                  |
+| Status           | complete                 |
 | Depends On       | TASK-03-001              |
 | Deliverable      | Type-safe routing system |
 
@@ -59,7 +59,7 @@ Follow TanStack Router docs for Vite setup. Enable route generation.
 | Field            | Value                   |
 | ---------------- | ----------------------- |
 | Assigned Persona | Frontend Engineer       |
-| Status           | pending                 |
+| Status           | complete                |
 | Depends On       | TASK-03-001             |
 | Deliverable      | Tailwind styling system |
 
@@ -84,7 +84,7 @@ Tailwind v4 has new configuration approach. Follow latest docs.
 | Field            | Value                       |
 | ---------------- | --------------------------- |
 | Assigned Persona | Frontend Engineer           |
-| Status           | pending                     |
+| Status           | complete                    |
 | Depends On       | TASK-03-003                 |
 | Deliverable      | shadcn/ui component library |
 
@@ -109,7 +109,7 @@ Use the CLI to add components. Customize theme to match DevSuite branding.
 | Field            | Value                                     |
 | ---------------- | ----------------------------------------- |
 | Assigned Persona | Frontend Engineer                         |
-| Status           | pending                                   |
+| Status           | in-progress                               |
 | Depends On       | TASK-03-001, 02-convex-foundation partial |
 | Deliverable      | Convex provider and hooks                 |
 
@@ -135,7 +135,7 @@ May need to coordinate with 02-convex-foundation for types.
 | Field            | Value                         |
 | ---------------- | ----------------------------- |
 | Assigned Persona | Frontend Engineer             |
-| Status           | pending                       |
+| Status           | in-progress                   |
 | Depends On       | TASK-03-005                   |
 | Deliverable      | Company selection and context |
 
@@ -160,7 +160,7 @@ Company context is used by all company-scoped features.
 | Field            | Value                           |
 | ---------------- | ------------------------------- |
 | Assigned Persona | Frontend Engineer               |
-| Status           | pending                         |
+| Status           | in-progress                     |
 | Depends On       | TASK-03-001                     |
 | Deliverable      | Privacy mode toggle and context |
 
@@ -211,7 +211,7 @@ Keep it clean and functional. DevSuite is a productivity tool, not a marketing s
 | Field            | Value                                 |
 | ---------------- | ------------------------------------- |
 | Assigned Persona | Frontend Engineer                     |
-| Status           | pending                               |
+| Status           | in-progress                           |
 | Depends On       | TASK-03-008, TASK-03-006, TASK-03-007 |
 | Deliverable      | Working application shell             |
 
@@ -237,7 +237,7 @@ Use TanStack Router's layout routes for the shell.
 | Field            | Value                      |
 | ---------------- | -------------------------- |
 | Assigned Persona | Frontend Engineer          |
-| Status           | pending                    |
+| Status           | in-progress                |
 | Depends On       | TASK-03-006, TASK-03-004   |
 | Deliverable      | Company dropdown component |
 
@@ -262,7 +262,7 @@ Use shadcn/ui dropdown-menu component.
 | Field            | Value                     |
 | ---------------- | ------------------------- |
 | Assigned Persona | Frontend Engineer         |
-| Status           | pending                   |
+| Status           | in-progress               |
 | Depends On       | TASK-03-004               |
 | Deliverable      | Toast notification system |
 
@@ -287,7 +287,7 @@ Use shadcn/ui toast component. Configure Sonner or similar.
 | Field            | Value                    |
 | ---------------- | ------------------------ |
 | Assigned Persona | Frontend Engineer        |
-| Status           | pending                  |
+| Status           | complete                 |
 | Depends On       | TASK-03-001              |
 | Deliverable      | Error boundary component |
 
@@ -307,11 +307,85 @@ Place at root and route level for granular recovery.
 
 ---
 
+### TASK-03-013: auth-spa-backend — Configure Better Auth in Convex
+
+| Field            | Value                                                       |
+| ---------------- | ----------------------------------------------------------- |
+| Assigned Persona | Convex Developer                                            |
+| Status           | complete                                                    |
+| Depends On       | 02-convex-foundation partial                                |
+| Deliverable      | Better Auth configured in Convex for SPA (email + password) |
+
+**Description**:
+Configure Better Auth for the SPA so the frontend can sign up / sign in with email + password and maintain an authenticated session.
+
+**Acceptance Criteria**:
+
+- [ ] Convex auth configuration supports email + password
+- [ ] Environment expectations are documented/validated (`SITE_URL`, `BETTER_AUTH_SECRET`)
+- [ ] End-to-end auth works from the SPA (signup, login, logout)
+- [ ] No email verification is required for MVP
+
+**Notes**:
+Prefer using the existing Convex auth scaffolding under `convex/` (e.g. `convex/betterAuth/`) rather than introducing a second auth system.
+
+---
+
+### TASK-03-014: auth-spa-frontend — Integrate SPA Auth Client + Session
+
+| Field            | Value                                                          |
+| ---------------- | -------------------------------------------------------------- |
+| Assigned Persona | Frontend Engineer                                              |
+| Status           | complete                                                       |
+| Depends On       | TASK-03-002, TASK-03-004, TASK-03-005, TASK-03-013             |
+| Deliverable      | SPA auth integration (session-aware UI + protected-route hook) |
+
+**Description**:
+Integrate the SPA with Better Auth so routes/components can react to authenticated vs unauthenticated state.
+
+**Acceptance Criteria**:
+
+- [ ] SPA reads required env vars (`VITE_CONVEX_URL`, `VITE_CONVEX_SITE_URL`, `VITE_SITE_URL`)
+- [ ] Auth session state is available in React (hook/context)
+- [ ] Protected route pattern redirects unauthenticated users to sign-in
+- [ ] Logout clears session and updates UI state
+
+**Notes**:
+Keep patterns consistent with the rest of the app shell (TanStack Router + shadcn/ui).
+
+---
+
+### TASK-03-015: auth-ui — Build Sign In / Sign Up UI
+
+| Field            | Value                                 |
+| ---------------- | ------------------------------------- |
+| Assigned Persona | Frontend Engineer                     |
+| Status           | complete                              |
+| Depends On       | TASK-03-002, TASK-03-004, TASK-03-014 |
+| Deliverable      | Sign-in and sign-up routes + forms    |
+
+**Description**:
+Implement the auth screens for MVP: sign-in and sign-up with email + password, using shadcn/ui form patterns.
+
+**Acceptance Criteria**:
+
+- [ ] `/sign-in` route exists with email + password form
+- [ ] `/sign-up` route exists with email + password form
+- [ ] Loading and error states are clear and accessible
+- [ ] Successful auth redirects to an authenticated route (app shell)
+
+**Notes**:
+MVP explicitly excludes email verification and password reset flows.
+
+---
+
 ## Task Dependency Graph
 
 ```
 TASK-03-001 (Vite init)
 ├── TASK-03-002 (Router)
+│   ├── TASK-03-014 (Auth SPA integration)
+│   │   └── TASK-03-015 (Auth UI)
 ├── TASK-03-003 (Tailwind)
 │   └── TASK-03-004 (shadcn)
 │       ├── TASK-03-008 (Shell design)
@@ -322,6 +396,10 @@ TASK-03-001 (Vite init)
 │       └── TASK-03-009 (Shell impl) ← also depends on 008, 007
 ├── TASK-03-007 (Privacy context)
 └── TASK-03-012 (Error boundary)
+
+02-convex-foundation (partial)
+└── TASK-03-013 (Auth backend)
+    └── TASK-03-014 (Auth SPA integration)
 ```
 
 ## Delegation Order
@@ -329,6 +407,8 @@ TASK-03-001 (Vite init)
 1. TASK-03-001 (start after scaffolding)
 2. TASK-03-002, TASK-03-003, TASK-03-007, TASK-03-012 (parallel)
 3. TASK-03-004, TASK-03-005 (after 003, 001)
-4. TASK-03-006, TASK-03-008, TASK-03-011 (after 005, 004)
-5. TASK-03-010 (after 006, 004)
-6. TASK-03-009 (after 006, 007, 008)
+4. TASK-03-006, TASK-03-008, TASK-03-011, TASK-03-013 (after 005 and/or 02-convex-foundation partial)
+5. TASK-03-014 (after 013, 002, 004, 005)
+6. TASK-03-015 (after 014, 002, 004)
+7. TASK-03-010 (after 006, 004)
+8. TASK-03-009 (after 006, 007, 008)
