@@ -5,9 +5,16 @@
 ### Convex Setup
 
 - Convex project initialization
-- Self-hosted configuration
+- Convex Cloud setup (Free-first)
 - Development environment setup
 - convex.json configuration
+- Portability notes (do not assume self-hosted as the default)
+
+### Authentication (Backend)
+
+- Better Auth on Convex (server-side integration)
+- Minimal auth endpoints wiring via Convex HTTP routes
+- Identity access pattern: `ctx.auth.getUserIdentity()`
 
 ### Schema Definitions
 
@@ -29,16 +36,18 @@ All entity tables with proper indexes:
 
 **Company Scoping**:
 
-- All queries filter by companyId
-- Context provides current company
-- "Global view" mode for cross-company access
+- All queries filter by `companyId` (explicit function argument)
+- Mutations validate ownership (IDs passed in must belong to the provided `companyId`)
+- Do not assume auth provides “current company” (company context is explicit and validated)
+- Optional future: “global view” for cross-company admin tooling (not required for initial modules)
 
 **Soft Delete**:
 
-- `isDeleted` boolean on all tables
-- `deletedAt` timestamp
-- Queries exclude deleted by default
-- Admin queries can include deleted
+- `deletedAt` is the source of truth (align with `@devsuite/shared` `SoftDeletable`)
+  - Active record: `deletedAt` is unset/empty (Convex schema uses `null` for “not deleted”)
+  - Deleted record: `deletedAt` is a timestamp
+- Queries exclude deleted by default (filter `deletedAt === null`)
+- Never hard delete (`db.delete` is not used in app logic)
 
 **Realtime Patterns**:
 
@@ -48,10 +57,11 @@ All entity tables with proper indexes:
 
 ### Helper Functions
 
-- `withCompanyScope` - Adds company filter to queries
-- `softDelete` - Marks entity as deleted
-- `assertNotDeleted` - Validation helper
-- `getCurrentCompany` - Context helper
+- `requireCompanyId` - Enforces `companyId` is explicitly provided
+- `assertCompanyMatch` - Ensures a record belongs to the company
+- `assertNotDeleted` / `isDeleted` - Soft delete safety helpers
+- `createSoftDeletePatch` / `createRestorePatch` - Consistent patch shapes
+- `assertFound` / `assertCompanyScoped` - Convenience assertion helpers
 
 ### Type Integration
 
@@ -64,7 +74,7 @@ All entity tables with proper indexes:
 - UI components (covered by: 03-frontend-foundation, feature modules)
 - MCP tool implementation (covered by: 09-mcp-server)
 - External API integrations (covered by: integration modules)
-- Authentication implementation (deferred - using Convex auth patterns)
+- Frontend login/registration UI (deferred to: 03-frontend-foundation or a dedicated auth UX project)
 
 ## Boundaries
 
@@ -82,13 +92,12 @@ Convex generates its own types from schema. We ensure these align with `@devsuit
 
 ## Assumptions
 
-- Convex self-hosted is configured separately (infra concern)
-- Single-user system initially (no multi-tenant auth complexity)
+- Convex Cloud Free tier is the default baseline for development and early production
+- Single-user system initially (no complex org membership model yet)
 - Company context comes from client-side selection
 - Soft delete is sufficient (no audit log yet)
 
 ## Open Questions
 
-- [ ] Convex self-hosted setup specifics? (owner: @infra-devops)
-- [ ] Authentication approach (Convex Auth, Clerk, custom)? (owner: @human-review)
+- [ ] How are users associated to companies (membership model)? (owner: @backend-engineer)
 - [ ] Index strategy for large datasets? (owner: @convex-developer)

@@ -1,7 +1,7 @@
 ---
 id: '02-convex-foundation'
 title: 'Convex Foundation'
-status: 'pending'
+status: 'in-progress'
 priority: 3
 assigned_pm: null
 depends_on: ['00-scaffolding', '01-shared-types']
@@ -29,12 +29,12 @@ Establish a production-ready Convex backend with enforced data integrity rules a
 
 ## Key Deliverables
 
-- Convex project initialization (self-hosted configuration)
+- Convex project initialization (Convex Cloud Free-first; document portability path)
 - Schema definitions for all core entities
 - Base CRUD patterns with company scoping
-- Soft delete implementation
+- Soft delete implementation (no hard deletes; `deletedAt` source-of-truth)
 - Realtime subscription patterns
-- Authentication/authorization patterns
+- Authentication/authorization patterns (Better Auth on Convex; backend-only in this project)
 - Helper functions for common operations
 
 ## Success Criteria
@@ -45,6 +45,7 @@ Establish a production-ready Convex backend with enforced data integrity rules a
 - [ ] Soft delete works (no hard deletes possible)
 - [ ] Realtime subscriptions work for all entities
 - [ ] Type safety between Convex and shared types
+- [ ] Better Auth integration works in Convex (identity available via `ctx.auth.getUserIdentity()`)
 
 ## Architecture Reference
 
@@ -52,8 +53,9 @@ From `/dev_suite_conceptual_architecture_business_vs_tech.md`:
 
 **Backend Stack**:
 
-- Convex (self-hosted)
+- Convex Cloud (Free tier) as the default starting point
 - PostgreSQL (via Convex)
+- Future portability: self-hosting may be supported later, but Cloud is the baseline
 
 **Responsibilities**:
 

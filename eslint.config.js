@@ -78,6 +78,18 @@ export default [
     },
   },
 
+  // Node.js config for Convex backend
+  {
+    files: ['convex/**/*.{ts,js}'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        Buffer: 'readonly',
+      },
+    },
+  },
+
   // Config for config files
   {
     files: ['*.config.{js,ts,mjs}', 'eslint.config.js'],
@@ -93,6 +105,8 @@ export default [
       'build/**',
       'node_modules/**',
       'convex/_generated/**',
+      'convex/betterAuth/_generated/**',
+      'convex/convex/_generated/**',
       '.convex/**',
     ],
   },

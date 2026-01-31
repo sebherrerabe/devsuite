@@ -57,6 +57,8 @@ Thumbs.db
 # Convex
 .convex/
 convex/_generated/
+convex/convex/
+convex/betterAuth/_generated/
 
 # Temporary files
 *.tmp
