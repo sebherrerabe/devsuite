@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, LogOut } from 'lucide-react';
+import { User, LogOut, Play } from 'lucide-react';
 
 export function Header() {
   const { data: session } = authClient.useSession();
@@ -25,11 +25,25 @@ export function Header() {
     <header className="fixed top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-14 items-center px-4 md:px-6">
         <div className="flex items-center gap-4 md:gap-8">
-          <Link to="/app" className="flex items-center space-x-2">
-            <span className="font-bold">DevSuite</span>
+          <Link to="/" className="flex items-center gap-2">
+            <img src="/logo.svg" alt="DevSuite" className="h-8 w-auto" />
           </Link>
           <CompanySwitcher />
         </div>
+
+        <div className="flex flex-1 items-center justify-center px-4">
+          <Button
+            variant="outline"
+            size="sm"
+            className="hidden h-8 gap-2 border-primary/20 font-mono text-xs md:flex"
+          >
+            <Play className="h-3 w-3 fill-current text-primary" />
+            <span className="text-primary">00:23:15</span>
+            <span className="text-muted-foreground">|</span>
+            <span className="text-muted-foreground">Task-123</span>
+          </Button>
+        </div>
+
         <div className="ml-auto flex items-center gap-2">
           <PrivacyModeToggle />
           <DropdownMenu>

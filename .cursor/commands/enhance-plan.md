@@ -1,0 +1,1 @@
+I need you to organize the work in phases and make more todos so we can hand off the phased work to different engineers/agents in chunks that can either be done sequentially and/or parallelized. Be sure the todos have a [Phase X] prefix in its content.

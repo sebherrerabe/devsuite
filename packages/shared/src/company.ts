@@ -8,10 +8,25 @@
 import { z } from 'zod';
 import {
   companyIdSchema,
+  idSchema,
   repositoryIdSchema,
   softDeletableSchema,
   timestampedSchema,
 } from './base';
+
+// ============================================================================
+// User ID
+// ============================================================================
+
+/**
+ * Branded string type for User IDs
+ */
+export type UserId = string & { __brand: 'UserId' };
+
+/**
+ * Zod schema for UserId
+ */
+export const userIdSchema = idSchema.transform(val => val as UserId);
 
 // ============================================================================
 // Repository Provider Enum
@@ -46,6 +61,14 @@ export const companySchema = z
     id: companyIdSchema,
     name: z.string().min(1).max(255),
     /**
+     * User who created/owns the company (auth identifier)
+     */
+    userId: userIdSchema,
+    /**
+     * Convenience flag for soft deletion status
+     */
+    isDeleted: z.boolean(),
+    /**
      * Flexible metadata for client-specific info (e.g., billing ID, notes)
      */
     metadata: z.record(z.unknown()).optional(),
@@ -75,6 +98,15 @@ export const createCompanyInputSchema = z.object({
 export type CreateCompanyInput = z.infer<typeof createCompanyInputSchema>;
 
 /**
+ * Schema for createCompany API args
+ *
+ * - requires name
+ */
+export const createCompanySchema = createCompanyInputSchema;
+
+export type CreateCompanyArgs = z.infer<typeof createCompanySchema>;
+
+/**
  * Schema for updating an existing Company
  *
  * - All fields optional (partial update)
@@ -86,6 +118,18 @@ export const updateCompanyInputSchema = z.object({
 });
 
 export type UpdateCompanyInput = z.infer<typeof updateCompanyInputSchema>;
+
+/**
+ * Schema for updateCompany API args
+ *
+ * - requires id and name
+ */
+export const updateCompanySchema = updateCompanyInputSchema.extend({
+  id: companyIdSchema,
+  name: z.string().min(1).max(255),
+});
+
+export type UpdateCompanyArgs = z.infer<typeof updateCompanySchema>;
 
 // ============================================================================
 // Repository Entity

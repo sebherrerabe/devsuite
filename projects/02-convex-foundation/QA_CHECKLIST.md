@@ -948,7 +948,7 @@ Use this template after completing the checklist to report results:
 - [ ] All high-severity issues resolved or documented as acceptable risk
 - [ ] Convex foundation ready for feature module development
 
-**QA Approval**: ******\_\_\_\_******  
+**QA Approval**: **\*\***\_\_\_\_**\*\***  
 **Date**: YYYY-MM-DD
 ```
 

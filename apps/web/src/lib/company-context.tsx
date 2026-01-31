@@ -1,45 +1,67 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useQuery } from 'convex/react';
+import { api } from '../../../../convex/_generated/api';
+import type { Id } from '../../../../convex/_generated/dataModel';
 
-interface Company {
-  id: string;
+export interface Company {
+  _id: Id<'companies'>;
   name: string;
+  userId: string;
+  isDeleted: boolean;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+  metadata?: Record<string, string | number | boolean | null>;
 }
 
 interface CompanyContextType {
   currentCompany: Company | null;
-  setCurrentCompany: (company: Company) => void;
+  setCurrentCompany: (company: Company | null) => void;
   companies: Company[];
   isLoading: boolean;
 }
 
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 
-// Placeholder data
-const PLACEHOLDER_COMPANIES: Company[] = [
-  { id: '1', name: 'Acme Corp' },
-  { id: '2', name: 'Globex' },
-];
+const STORAGE_KEY = 'devsuite-current-company-id';
 
 export function CompanyProvider({ children }: { children: React.ReactNode }) {
-  const [currentCompany, setCurrentCompanyState] = useState<Company | null>(
-    () => {
-      if (typeof window === 'undefined') return null;
-      const saved = localStorage.getItem('devsuite-current-company');
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch (e) {
-          console.error('Failed to parse saved company', e);
-        }
-      }
-      return PLACEHOLDER_COMPANIES[0] || null;
-    }
-  );
-  const [isLoading] = useState(false);
+  const companies = useQuery(api.companies.list);
+  const isLoading = companies === undefined;
 
-  const setCurrentCompany = (company: Company) => {
-    setCurrentCompanyState(company);
-    localStorage.setItem('devsuite-current-company', JSON.stringify(company));
+  const [currentCompanyId, setCurrentCompanyId] =
+    useState<Id<'companies'> | null>(() => {
+      if (typeof window === 'undefined') return null;
+      return localStorage.getItem(STORAGE_KEY) as Id<'companies'> | null;
+    });
+
+  const currentCompany =
+    companies?.find(c => c._id === currentCompanyId) || null;
+
+  // Handle cleanup when stored company no longer exists
+  // Only run this effect when companies list changes, not currentCompanyId
+  useEffect(() => {
+    if (!companies || currentCompanyId === null) return;
+
+    const exists = companies.some(c => c._id === currentCompanyId);
+    if (!exists) {
+      // Queue the state update to avoid cascading renders
+      const timer = setTimeout(() => {
+        setCurrentCompanyId(null);
+        localStorage.removeItem(STORAGE_KEY);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [companies, currentCompanyId]);
+
+  const setCurrentCompany = (company: Company | null) => {
+    if (company) {
+      setCurrentCompanyId(company._id);
+      localStorage.setItem(STORAGE_KEY, company._id);
+    } else {
+      setCurrentCompanyId(null);
+      localStorage.removeItem(STORAGE_KEY);
+    }
   };
 
   return (
@@ -47,7 +69,7 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       value={{
         currentCompany,
         setCurrentCompany,
-        companies: PLACEHOLDER_COMPANIES,
+        companies: companies || [],
         isLoading,
       }}
     >

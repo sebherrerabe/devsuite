@@ -21,13 +21,16 @@ export default defineSchema({
    */
   companies: defineTable({
     name: v.string(),
+    userId: v.string(),
+    isDeleted: v.boolean(),
     metadata: v.optional(v.any()),
     createdAt: v.number(),
     updatedAt: v.number(),
     deletedAt: v.union(v.number(), v.null()),
   })
     .index('by_deletedAt', ['deletedAt'])
-    .index('by_createdAt', ['createdAt']),
+    .index('by_createdAt', ['createdAt'])
+    .index('by_userId', ['userId']),
 
   // ============================================================================
   // Company-Scoped Entities

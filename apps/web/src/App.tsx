@@ -5,7 +5,6 @@ import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
 import { authClient } from './lib/auth';
 import { ThemeProvider } from 'next-themes';
 import { ErrorBoundary } from './components/error-boundary';
-import { CompanyProvider } from './lib/company-context';
 import { PrivacyModeProvider } from './lib/privacy-mode-context';
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
@@ -26,13 +25,11 @@ declare module '@tanstack/react-router' {
 export function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
         <ConvexBetterAuthProvider client={convex} authClient={authClient}>
-          <CompanyProvider>
-            <PrivacyModeProvider>
-              <RouterProvider router={router} />
-            </PrivacyModeProvider>
-          </CompanyProvider>
+          <PrivacyModeProvider>
+            <RouterProvider router={router} />
+          </PrivacyModeProvider>
         </ConvexBetterAuthProvider>
       </ThemeProvider>
     </ErrorBoundary>

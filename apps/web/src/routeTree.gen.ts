@@ -8,162 +8,348 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AppRouteImport } from './routes/_app'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthSignUpRouteImport } from './routes/auth/sign-up'
-import { Route as AuthSignInRouteImport } from './routes/auth/sign-in'
-import { Route as AppAppIndexRouteImport } from './routes/_app.app.index'
+import { Route as rootRouteImport } from './routes/__root';
+import { Route as AuthRouteImport } from './routes/auth';
+import { Route as AppRouteImport } from './routes/_app';
+import { Route as AppIndexRouteImport } from './routes/_app.index';
+import { Route as AuthSignUpRouteImport } from './routes/auth/sign-up';
+import { Route as AuthSignInRouteImport } from './routes/auth/sign-in';
+import { Route as AppSettingsRouteImport } from './routes/_app.settings';
+import { Route as AppSessionsRouteImport } from './routes/_app.sessions';
+import { Route as AppReviewsRouteImport } from './routes/_app.reviews';
+import { Route as AppProjectsRouteImport } from './routes/_app.projects';
+import { Route as AppInboxRouteImport } from './routes/_app.inbox';
+import { Route as AppSettingsIndexRouteImport } from './routes/_app.settings.index';
+import { Route as AppSettingsProfileRouteImport } from './routes/_app.settings.profile';
+import { Route as AppSettingsIntegrationsRouteImport } from './routes/_app.settings.integrations';
+import { Route as AppSettingsCompanyRouteImport } from './routes/_app.settings.company';
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
-} as any)
-const IndexRoute = IndexRouteImport.update({
+} as any);
+const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
+  getParentRoute: () => AppRoute,
+} as any);
 const AuthSignUpRoute = AuthSignUpRouteImport.update({
   id: '/sign-up',
   path: '/sign-up',
   getParentRoute: () => AuthRoute,
-} as any)
+} as any);
 const AuthSignInRoute = AuthSignInRouteImport.update({
   id: '/sign-in',
   path: '/sign-in',
   getParentRoute: () => AuthRoute,
-} as any)
-const AppAppIndexRoute = AppAppIndexRouteImport.update({
-  id: '/app/',
-  path: '/app/',
+} as any);
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AppRoute,
-} as any)
+} as any);
+const AppSessionsRoute = AppSessionsRouteImport.update({
+  id: '/sessions',
+  path: '/sessions',
+  getParentRoute: () => AppRoute,
+} as any);
+const AppReviewsRoute = AppReviewsRouteImport.update({
+  id: '/reviews',
+  path: '/reviews',
+  getParentRoute: () => AppRoute,
+} as any);
+const AppProjectsRoute = AppProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AppRoute,
+} as any);
+const AppInboxRoute = AppInboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => AppRoute,
+} as any);
+const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppSettingsRoute,
+} as any);
+const AppSettingsProfileRoute = AppSettingsProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppSettingsRoute,
+} as any);
+const AppSettingsIntegrationsRoute = AppSettingsIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => AppSettingsRoute,
+} as any);
+const AppSettingsCompanyRoute = AppSettingsCompanyRouteImport.update({
+  id: '/company',
+  path: '/company',
+  getParentRoute: () => AppSettingsRoute,
+} as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/auth': typeof AuthRouteWithChildren
-  '/auth/sign-in': typeof AuthSignInRoute
-  '/auth/sign-up': typeof AuthSignUpRoute
-  '/app/': typeof AppAppIndexRoute
+  '/': typeof AppIndexRoute;
+  '/auth': typeof AuthRouteWithChildren;
+  '/inbox': typeof AppInboxRoute;
+  '/projects': typeof AppProjectsRoute;
+  '/reviews': typeof AppReviewsRoute;
+  '/sessions': typeof AppSessionsRoute;
+  '/settings': typeof AppSettingsRouteWithChildren;
+  '/auth/sign-in': typeof AuthSignInRoute;
+  '/auth/sign-up': typeof AuthSignUpRoute;
+  '/settings/company': typeof AppSettingsCompanyRoute;
+  '/settings/integrations': typeof AppSettingsIntegrationsRoute;
+  '/settings/profile': typeof AppSettingsProfileRoute;
+  '/settings/': typeof AppSettingsIndexRoute;
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/auth': typeof AuthRouteWithChildren
-  '/auth/sign-in': typeof AuthSignInRoute
-  '/auth/sign-up': typeof AuthSignUpRoute
-  '/app': typeof AppAppIndexRoute
+  '/auth': typeof AuthRouteWithChildren;
+  '/inbox': typeof AppInboxRoute;
+  '/projects': typeof AppProjectsRoute;
+  '/reviews': typeof AppReviewsRoute;
+  '/sessions': typeof AppSessionsRoute;
+  '/auth/sign-in': typeof AuthSignInRoute;
+  '/auth/sign-up': typeof AuthSignUpRoute;
+  '/': typeof AppIndexRoute;
+  '/settings/company': typeof AppSettingsCompanyRoute;
+  '/settings/integrations': typeof AppSettingsIntegrationsRoute;
+  '/settings/profile': typeof AppSettingsProfileRoute;
+  '/settings': typeof AppSettingsIndexRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/_app': typeof AppRouteWithChildren
-  '/auth': typeof AuthRouteWithChildren
-  '/auth/sign-in': typeof AuthSignInRoute
-  '/auth/sign-up': typeof AuthSignUpRoute
-  '/_app/app/': typeof AppAppIndexRoute
+  __root__: typeof rootRouteImport;
+  '/_app': typeof AppRouteWithChildren;
+  '/auth': typeof AuthRouteWithChildren;
+  '/_app/inbox': typeof AppInboxRoute;
+  '/_app/projects': typeof AppProjectsRoute;
+  '/_app/reviews': typeof AppReviewsRoute;
+  '/_app/sessions': typeof AppSessionsRoute;
+  '/_app/settings': typeof AppSettingsRouteWithChildren;
+  '/auth/sign-in': typeof AuthSignInRoute;
+  '/auth/sign-up': typeof AuthSignUpRoute;
+  '/_app/': typeof AppIndexRoute;
+  '/_app/settings/company': typeof AppSettingsCompanyRoute;
+  '/_app/settings/integrations': typeof AppSettingsIntegrationsRoute;
+  '/_app/settings/profile': typeof AppSettingsProfileRoute;
+  '/_app/settings/': typeof AppSettingsIndexRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/auth/sign-in' | '/auth/sign-up' | '/app/'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/auth/sign-in' | '/auth/sign-up' | '/app'
-  id:
-    | '__root__'
+  fileRoutesByFullPath: FileRoutesByFullPath;
+  fullPaths:
     | '/'
-    | '/_app'
     | '/auth'
+    | '/inbox'
+    | '/projects'
+    | '/reviews'
+    | '/sessions'
+    | '/settings'
     | '/auth/sign-in'
     | '/auth/sign-up'
-    | '/_app/app/'
-  fileRoutesById: FileRoutesById
+    | '/settings/company'
+    | '/settings/integrations'
+    | '/settings/profile'
+    | '/settings/';
+  fileRoutesByTo: FileRoutesByTo;
+  to:
+    | '/auth'
+    | '/inbox'
+    | '/projects'
+    | '/reviews'
+    | '/sessions'
+    | '/auth/sign-in'
+    | '/auth/sign-up'
+    | '/'
+    | '/settings/company'
+    | '/settings/integrations'
+    | '/settings/profile'
+    | '/settings';
+  id:
+    | '__root__'
+    | '/_app'
+    | '/auth'
+    | '/_app/inbox'
+    | '/_app/projects'
+    | '/_app/reviews'
+    | '/_app/sessions'
+    | '/_app/settings'
+    | '/auth/sign-in'
+    | '/auth/sign-up'
+    | '/_app/'
+    | '/_app/settings/company'
+    | '/_app/settings/integrations'
+    | '/_app/settings/profile'
+    | '/_app/settings/';
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AppRoute: typeof AppRouteWithChildren
-  AuthRoute: typeof AuthRouteWithChildren
+  AppRoute: typeof AppRouteWithChildren;
+  AuthRoute: typeof AuthRouteWithChildren;
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
     '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: '/auth';
+      path: '/auth';
+      fullPath: '/auth';
+      preLoaderRoute: typeof AuthRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/_app': {
-      id: '/_app'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AppRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: '/_app';
+      path: '';
+      fullPath: '/';
+      preLoaderRoute: typeof AppRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/_app/': {
+      id: '/_app/';
+      path: '/';
+      fullPath: '/';
+      preLoaderRoute: typeof AppIndexRouteImport;
+      parentRoute: typeof AppRoute;
+    };
     '/auth/sign-up': {
-      id: '/auth/sign-up'
-      path: '/sign-up'
-      fullPath: '/auth/sign-up'
-      preLoaderRoute: typeof AuthSignUpRouteImport
-      parentRoute: typeof AuthRoute
-    }
+      id: '/auth/sign-up';
+      path: '/sign-up';
+      fullPath: '/auth/sign-up';
+      preLoaderRoute: typeof AuthSignUpRouteImport;
+      parentRoute: typeof AuthRoute;
+    };
     '/auth/sign-in': {
-      id: '/auth/sign-in'
-      path: '/sign-in'
-      fullPath: '/auth/sign-in'
-      preLoaderRoute: typeof AuthSignInRouteImport
-      parentRoute: typeof AuthRoute
-    }
-    '/_app/app/': {
-      id: '/_app/app/'
-      path: '/app'
-      fullPath: '/app/'
-      preLoaderRoute: typeof AppAppIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
+      id: '/auth/sign-in';
+      path: '/sign-in';
+      fullPath: '/auth/sign-in';
+      preLoaderRoute: typeof AuthSignInRouteImport;
+      parentRoute: typeof AuthRoute;
+    };
+    '/_app/settings': {
+      id: '/_app/settings';
+      path: '/settings';
+      fullPath: '/settings';
+      preLoaderRoute: typeof AppSettingsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    '/_app/sessions': {
+      id: '/_app/sessions';
+      path: '/sessions';
+      fullPath: '/sessions';
+      preLoaderRoute: typeof AppSessionsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    '/_app/reviews': {
+      id: '/_app/reviews';
+      path: '/reviews';
+      fullPath: '/reviews';
+      preLoaderRoute: typeof AppReviewsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    '/_app/projects': {
+      id: '/_app/projects';
+      path: '/projects';
+      fullPath: '/projects';
+      preLoaderRoute: typeof AppProjectsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    '/_app/inbox': {
+      id: '/_app/inbox';
+      path: '/inbox';
+      fullPath: '/inbox';
+      preLoaderRoute: typeof AppInboxRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    '/_app/settings/': {
+      id: '/_app/settings/';
+      path: '/';
+      fullPath: '/settings/';
+      preLoaderRoute: typeof AppSettingsIndexRouteImport;
+      parentRoute: typeof AppSettingsRoute;
+    };
+    '/_app/settings/profile': {
+      id: '/_app/settings/profile';
+      path: '/profile';
+      fullPath: '/settings/profile';
+      preLoaderRoute: typeof AppSettingsProfileRouteImport;
+      parentRoute: typeof AppSettingsRoute;
+    };
+    '/_app/settings/integrations': {
+      id: '/_app/settings/integrations';
+      path: '/integrations';
+      fullPath: '/settings/integrations';
+      preLoaderRoute: typeof AppSettingsIntegrationsRouteImport;
+      parentRoute: typeof AppSettingsRoute;
+    };
+    '/_app/settings/company': {
+      id: '/_app/settings/company';
+      path: '/company';
+      fullPath: '/settings/company';
+      preLoaderRoute: typeof AppSettingsCompanyRouteImport;
+      parentRoute: typeof AppSettingsRoute;
+    };
   }
 }
 
+interface AppSettingsRouteChildren {
+  AppSettingsCompanyRoute: typeof AppSettingsCompanyRoute;
+  AppSettingsIntegrationsRoute: typeof AppSettingsIntegrationsRoute;
+  AppSettingsProfileRoute: typeof AppSettingsProfileRoute;
+  AppSettingsIndexRoute: typeof AppSettingsIndexRoute;
+}
+
+const AppSettingsRouteChildren: AppSettingsRouteChildren = {
+  AppSettingsCompanyRoute: AppSettingsCompanyRoute,
+  AppSettingsIntegrationsRoute: AppSettingsIntegrationsRoute,
+  AppSettingsProfileRoute: AppSettingsProfileRoute,
+  AppSettingsIndexRoute: AppSettingsIndexRoute,
+};
+
+const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
+  AppSettingsRouteChildren
+);
+
 interface AppRouteChildren {
-  AppAppIndexRoute: typeof AppAppIndexRoute
+  AppInboxRoute: typeof AppInboxRoute;
+  AppProjectsRoute: typeof AppProjectsRoute;
+  AppReviewsRoute: typeof AppReviewsRoute;
+  AppSessionsRoute: typeof AppSessionsRoute;
+  AppSettingsRoute: typeof AppSettingsRouteWithChildren;
+  AppIndexRoute: typeof AppIndexRoute;
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppAppIndexRoute: AppAppIndexRoute,
-}
+  AppInboxRoute: AppInboxRoute,
+  AppProjectsRoute: AppProjectsRoute,
+  AppReviewsRoute: AppReviewsRoute,
+  AppSessionsRoute: AppSessionsRoute,
+  AppSettingsRoute: AppSettingsRouteWithChildren,
+  AppIndexRoute: AppIndexRoute,
+};
 
-const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren);
 
 interface AuthRouteChildren {
-  AuthSignInRoute: typeof AuthSignInRoute
-  AuthSignUpRoute: typeof AuthSignUpRoute
+  AuthSignInRoute: typeof AuthSignInRoute;
+  AuthSignUpRoute: typeof AuthSignUpRoute;
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
   AuthSignInRoute: AuthSignInRoute,
   AuthSignUpRoute: AuthSignUpRoute,
-}
+};
 
-const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren);
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRouteWithChildren,
-}
+};
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();
