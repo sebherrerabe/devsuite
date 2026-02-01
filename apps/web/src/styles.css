@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "@mdxeditor/editor/style.css";
 
 @plugin "tailwindcss-animate";
 
@@ -114,4 +113,46 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* MDXEditor Overrides */
+.mdxeditor {
+  /* Fix for dark mode text visibility */
+  color: var(--foreground);
+}
+
+.mdxeditor-toolbar {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  background-color: transparent !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+  padding: 0.5rem !important;
+}
+
+.mdxeditor-toolbar button {
+  color: var(--muted-foreground) !important;
+}
+
+.mdxeditor-toolbar button:hover {
+  background-color: hsl(var(--accent)) !important;
+  color: var(--accent-foreground) !important;
+}
+
+.mdxeditor-toolbar button[data-state="on"] {
+  background-color: hsl(var(--accent)) !important;
+  color: var(--accent-foreground) !important;
+}
+
+/* Fix raw SVGs if CSS is not loaded */
+.mdxeditor-toolbar svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Ensure editor content takes up space and has correct text color */
+.mdxeditor-root-contenteditable {
+  min-height: 200px;
+  padding: 1rem;
+  color: var(--foreground);
 }

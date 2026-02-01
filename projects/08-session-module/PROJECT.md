@@ -51,7 +51,7 @@ From spec sections 2.5, 2.6:
 
 ## Quick Links
 
-- [Scope](./SCOPE.md) _(to be created by AI PM)_
+- [Scope](./SCOPE.md)
 - [Dependencies](./DEPENDENCIES.md) _(to be created by AI PM)_
 - [Tasks](./TASKS.md) _(to be created by AI PM)_
 - [Status](./STATUS.md) _(to be created by AI PM)_

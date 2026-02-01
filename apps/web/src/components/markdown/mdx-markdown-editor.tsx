@@ -57,6 +57,7 @@ export const MDXMarkdownEditor = forwardRef<
           onChange={onChange}
           placeholder={placeholder}
           readOnly={readOnly}
+          className="mdxeditor"
           contentEditableClassName={cn(
             'focus:outline-none',
             'min-h-[200px] p-4',
