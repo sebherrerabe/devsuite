@@ -75,6 +75,7 @@ export default defineSchema({
     // UX fields
     slug: v.optional(v.string()), // Auto-generated from name on create
     color: v.optional(v.string()), // Color label for UI
+    emoji: v.optional(v.string()), // Emoji or :shortcode: identifier
     isFavorite: v.optional(v.boolean()), // Favorite flag
     isPinned: v.optional(v.boolean()), // Pinned flag for list view
     // Docs

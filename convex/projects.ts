@@ -1,5 +1,6 @@
 import { mutation, query } from './_generated/server';
 import type { QueryCtx, MutationCtx } from './_generated/server';
+import type { Id } from './_generated/dataModel';
 import { v } from 'convex/values';
 import {
   assertCompanyScoped,
@@ -65,32 +66,23 @@ function generateSlug(name: string): string {
  */
 async function nameExists(
   ctx: QueryCtx | MutationCtx,
-  companyId: string,
+  companyId: Id<'companies'>,
   name: string,
-  excludeId?: string
+  excludeId?: Id<'projects'>
 ): Promise<boolean> {
   const normalizedName = name.trim().toLowerCase();
 
-  const query = ctx.db
+  const candidates = await ctx.db
     .query('projects')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .withIndex('by_companyId_deletedAt', (q: any) =>
+    .withIndex('by_companyId_deletedAt', q =>
       q.eq('companyId', companyId).eq('deletedAt', null)
-    );
+    )
+    .collect();
 
-  const existing = await query
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((q: any) => {
-      const nameLower = q.field('name').toLowerCase();
-      const nameMatch = q.eq(nameLower, normalizedName);
-      if (excludeId) {
-        return q.and(nameMatch, q.neq(q.field('_id'), excludeId));
-      }
-      return nameMatch;
-    })
-    .first();
-
-  return existing !== null;
+  return candidates.some(p => {
+    if (excludeId && p._id === excludeId) return false;
+    return p.name.trim().toLowerCase() === normalizedName;
+  });
 }
 
 /**
@@ -108,6 +100,7 @@ export const createProject = mutation({
     description: v.optional(v.string()),
     repositoryIds: v.optional(v.array(v.id('repositories'))),
     color: v.optional(v.string()),
+    emoji: v.optional(v.string()),
     isFavorite: v.optional(v.boolean()),
     isPinned: v.optional(v.boolean()),
     notesMarkdown: v.optional(v.string()),
@@ -165,6 +158,7 @@ export const createProject = mutation({
       repositoryIds: args.repositoryIds ?? [],
       slug,
       ...(args.color && { color: args.color }),
+      ...(args.emoji && { emoji: args.emoji }),
       isFavorite: args.isFavorite ?? false,
       isPinned: args.isPinned ?? false,
       notesMarkdown: args.notesMarkdown ?? null,
@@ -193,6 +187,7 @@ export const updateProject = mutation({
     description: v.optional(v.string()),
     repositoryIds: v.optional(v.array(v.id('repositories'))),
     color: v.optional(v.string()),
+    emoji: v.optional(v.string()),
     isFavorite: v.optional(v.boolean()),
     isPinned: v.optional(v.boolean()),
     notesMarkdown: v.optional(v.string()),
@@ -218,6 +213,7 @@ export const updateProject = mutation({
       repositoryIds?: import('./_generated/dataModel').Id<'repositories'>[];
       slug?: string;
       color?: string | undefined;
+      emoji?: string | undefined;
       isFavorite?: boolean;
       isPinned?: boolean;
       notesMarkdown?: string | null;
@@ -277,6 +273,9 @@ export const updateProject = mutation({
     if (args.color !== undefined) {
       updates.color = args.color || undefined;
     }
+    if (args.emoji !== undefined) {
+      updates.emoji = args.emoji || undefined;
+    }
     if (args.isFavorite !== undefined) {
       updates.isFavorite = args.isFavorite;
     }
@@ -320,6 +319,37 @@ export const getProject = query({
     // Return null if deleted
     if (project.deletedAt !== null) {
       return null;
+    }
+
+    return project;
+  },
+});
+
+/**
+ * Get a project by ID, including archived projects.
+ *
+ * This allows the frontend to distinguish between "not found"
+ * and "archived" states. Use this when you need to detect archived
+ * projects and handle them explicitly (e.g., blocking navigation).
+ *
+ * Enforces:
+ * - Company scoping (user must own company)
+ * - Returns project regardless of deletedAt status
+ */
+export const getProjectIncludingArchived = query({
+  args: { id: v.id('projects') },
+  handler: async (ctx, args) => {
+    const userId = await getUserId(ctx);
+
+    const project = await ctx.db.get(args.id);
+    if (!project) {
+      return null;
+    }
+
+    // Verify user owns this project via company ownership
+    const company = await ctx.db.get(project.companyId);
+    if (!company || company.userId !== userId) {
+      return null; // Don't leak existence
     }
 
     return project;

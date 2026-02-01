@@ -406,9 +406,9 @@ pnpm typecheck
 
 ## Notes Section (for QA session findings)
 
-**Date**: ******\_\_\_******  
-**Validator**: ******\_\_\_******  
-**Environment**: ******\_\_\_******
+**Date**: **\*\***\_\_\_**\*\***
+**Validator**: **\*\***\_\_\_**\*\***
+**Environment**: **\*\***\_\_\_**\*\***
 
 ### Issues Found
 

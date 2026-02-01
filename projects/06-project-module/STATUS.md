@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Status**: planning  
-**Last Updated**: 2026-01-31  
+**Status**: planning
+**Last Updated**: 2026-01-31
 **Updated By**: product-manager
 
 ## Progress

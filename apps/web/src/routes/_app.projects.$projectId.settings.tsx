@@ -16,7 +16,10 @@ import {
 } from '@/components/ui/card';
 import { showToast } from '@/lib/toast';
 import { Loader2, Pin, Star, Archive, Save } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { EmojiPickerWrapper } from '@/components/ui/emoji-picker';
+import { MDXMarkdownEditor } from '@/components/markdown/mdx-markdown-editor';
 import { cn } from '@/lib/utils';
 import type { Id } from '../../../../convex/_generated/dataModel';
 
@@ -54,6 +57,7 @@ function ProjectSettingsPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [color, setColor] = useState('');
+  const [emoji, setEmoji] = useState('');
   const [selectedRepoIds, setSelectedRepoIds] = useState<Id<'repositories'>[]>(
     []
   );
@@ -81,6 +85,7 @@ function ProjectSettingsPage() {
         name: name.trim(),
         description: description.trim() || undefined,
         color,
+        emoji: emoji.trim() || undefined,
       });
       showToast.success('General settings updated');
     } catch (error) {
@@ -142,7 +147,11 @@ function ProjectSettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleUpdateGeneral} className="space-y-4">
+            <form
+              id="general-settings-form"
+              onSubmit={handleUpdateGeneral}
+              className="space-y-4"
+            >
               <div className="space-y-2">
                 <label className="text-sm font-medium">Name</label>
                 <Input
@@ -158,6 +167,19 @@ function ProjectSettingsPage() {
                   onChange={e => setDescription(e.target.value)}
                   rows={2}
                 />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="project-emoji" className="text-sm font-medium">
+                  Emoji / Icon
+                </label>
+                <EmojiPickerWrapper
+                  value={emoji}
+                  onChange={setEmoji}
+                  disabled={isSubmitting}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Select an emoji to identify your project
+                </p>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Color</label>
@@ -227,7 +249,12 @@ function ProjectSettingsPage() {
             </form>
           </CardContent>
           <CardFooter className="border-t px-6 py-4">
-            <Button size="sm" type="submit" disabled={isSubmitting}>
+            <Button
+              size="sm"
+              type="submit"
+              form="general-settings-form"
+              disabled={isSubmitting}
+            >
               {isSubmitting && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
@@ -246,28 +273,33 @@ function ProjectSettingsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="flex flex-wrap gap-2 min-h-[100px] p-2 border rounded-md overflow-y-auto">
-                {repositories?.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic">
-                    No repositories available.
-                  </p>
-                ) : (
-                  repositories?.map(repo => (
-                    <Badge
+              {repositories?.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">
+                  No repositories available.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {repositories?.map(repo => (
+                    <div
                       key={repo._id}
-                      variant={
-                        selectedRepoIds.includes(repo._id)
-                          ? 'default'
-                          : 'outline'
-                      }
-                      className="cursor-pointer"
+                      className="flex items-center space-x-2 cursor-pointer"
                       onClick={() => toggleRepo(repo._id)}
                     >
-                      {repo.name}
-                    </Badge>
-                  ))
-                )}
-              </div>
+                      <Checkbox
+                        id={`repo-${repo._id}`}
+                        checked={selectedRepoIds.includes(repo._id)}
+                        onCheckedChange={() => toggleRepo(repo._id)}
+                      />
+                      <Label
+                        htmlFor={`repo-${repo._id}`}
+                        className="text-sm font-normal cursor-pointer flex-1"
+                      >
+                        {repo.name}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </CardContent>
           <CardFooter className="border-t px-6 py-4">
@@ -294,11 +326,11 @@ function ProjectSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Textarea
-            value={notesMarkdown}
-            onChange={e => setNotesMarkdown(e.target.value)}
+          <MDXMarkdownEditor
+            markdown={notesMarkdown}
+            onChange={setNotesMarkdown}
             placeholder="# Project Notes..."
-            className="min-h-[300px] font-mono text-sm"
+            minHeight="300px"
           />
         </CardContent>
         <CardFooter className="border-t px-6 py-4 flex justify-between">

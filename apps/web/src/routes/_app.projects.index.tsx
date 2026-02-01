@@ -36,6 +36,7 @@ import { ProjectCreationDialog } from '@/components/project-creation-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { showToast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import type { Id } from '../../../../convex/_generated/dataModel';
 
 export const Route = createFileRoute('/_app/projects/')({
@@ -89,9 +90,14 @@ function ProjectsPage() {
   const togglePin = async (
     e: MouseEvent,
     projectId: Id<'projects'>,
-    currentPinned: boolean
+    currentPinned: boolean,
+    isArchived: boolean
   ) => {
     e.stopPropagation();
+    if (isArchived) {
+      showToast.error('Cannot pin archived projects');
+      return;
+    }
     try {
       await updateProject({ id: projectId, isPinned: !currentPinned });
       showToast.success(currentPinned ? 'Project unpinned' : 'Project pinned');
@@ -202,7 +208,12 @@ function ProjectsPage() {
                           }}
                         />
                         <div>
-                          <h3 className="font-semibold leading-none mb-1">
+                          <h3 className="font-semibold leading-none mb-1 flex items-center gap-2">
+                            {project.emoji && (
+                              <span className="text-base leading-none">
+                                {project.emoji}
+                              </span>
+                            )}
                             {project.name}
                           </h3>
                           <p className="text-xs text-muted-foreground truncate max-w-[150px]">
@@ -224,7 +235,7 @@ function ProjectsPage() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-amber-500"
-                        onClick={e => togglePin(e, project._id, true)}
+                        onClick={e => togglePin(e, project._id, true, false)}
                       >
                         <Pin className="h-4 w-4" />
                       </Button>
@@ -255,21 +266,33 @@ function ProjectsPage() {
                   {allOtherProjects.map(project => (
                     <TableRow
                       key={project._id}
-                      className="cursor-pointer group"
-                      onClick={() =>
+                      className={cn(
+                        'group',
+                        !project.deletedAt && 'cursor-pointer'
+                      )}
+                      onClick={() => {
+                        if (project.deletedAt) {
+                          showToast.error('Cannot open archived projects');
+                          return;
+                        }
                         navigate({
                           to: '/projects/$projectId/tasks',
                           params: { projectId: project._id },
-                        })
-                      }
+                        });
+                      }}
                     >
-                      <TableCell className="text-center px-2">
-                        <div
-                          className="w-2 h-2 rounded-full mx-auto"
-                          style={{
-                            backgroundColor: project.color || '#64748b',
-                          }}
-                        />
+                      <TableCell className="text-center px-2 w-[60px]">
+                        <div className="flex items-center justify-center gap-1.5 w-full">
+                          <div
+                            className="w-3 h-3 rounded-full shrink-0"
+                            style={{
+                              backgroundColor: project.color || '#64748b',
+                            }}
+                          />
+                          <span className="text-base leading-none w-5 text-center">
+                            {project.emoji || '\u200B'}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
@@ -307,8 +330,14 @@ function ProjectsPage() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
+                              disabled={project.deletedAt !== null}
                               onClick={e =>
-                                togglePin(e, project._id, !!project.isPinned)
+                                togglePin(
+                                  e,
+                                  project._id,
+                                  !!project.isPinned,
+                                  !!project.deletedAt
+                                )
                               }
                             >
                               {project.isPinned ? (
@@ -319,12 +348,19 @@ function ProjectsPage() {
                               {project.isPinned ? 'Unpin' : 'Pin'}
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() =>
+                              disabled={project.deletedAt !== null}
+                              onClick={() => {
+                                if (project.deletedAt) {
+                                  showToast.error(
+                                    'Cannot edit archived projects'
+                                  );
+                                  return;
+                                }
                                 navigate({
                                   to: '/projects/$projectId/settings',
                                   params: { projectId: project._id },
-                                })
-                              }
+                                });
+                              }}
                             >
                               <Settings className="mr-2 h-4 w-4" />
                               Settings

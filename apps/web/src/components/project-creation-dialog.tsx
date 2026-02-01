@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { showToast } from '@/lib/toast';
 import { Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { EmojiPickerWrapper } from '@/components/ui/emoji-picker';
 import { cn } from '@/lib/utils';
 
 const PROJECT_COLORS = [
@@ -54,6 +55,7 @@ export function ProjectCreationDialog({
     []
   );
   const [color, setColor] = useState(PROJECT_COLORS[0]?.value || '#64748b');
+  const [emoji, setEmoji] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -68,6 +70,7 @@ export function ProjectCreationDialog({
         description: description.trim() || undefined,
         repositoryIds: selectedRepoIds,
         color,
+        emoji: emoji.trim() || undefined,
       });
       showToast.success('Project created successfully');
       onOpenChange(false);
@@ -87,6 +90,7 @@ export function ProjectCreationDialog({
     setDescription('');
     setSelectedRepoIds([]);
     setColor(PROJECT_COLORS[0]?.value || '#64748b');
+    setEmoji('');
   };
 
   const toggleRepo = (repoId: Id<'repositories'>) => {
@@ -137,6 +141,20 @@ export function ProjectCreationDialog({
               className="resize-none"
               rows={3}
             />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="project-emoji" className="text-sm font-medium">
+              Emoji / Icon (optional)
+            </label>
+            <EmojiPickerWrapper
+              value={emoji}
+              onChange={setEmoji}
+              disabled={isSubmitting}
+            />
+            <p className="text-xs text-muted-foreground">
+              Select an emoji to identify your project
+            </p>
           </div>
 
           <div className="space-y-3">
