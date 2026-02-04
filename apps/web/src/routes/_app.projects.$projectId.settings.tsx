@@ -362,7 +362,12 @@ function ProjectSettingsPage() {
             <Button
               variant="outline"
               size="sm"
+              disabled={project.isDefault}
               onClick={async () => {
+                if (project.isDefault) {
+                  showToast.error('Default project cannot be archived');
+                  return;
+                }
                 await softDeleteProject({ id: projectIdTyped });
                 showToast.success('Project archived');
               }}

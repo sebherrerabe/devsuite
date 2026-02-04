@@ -12,6 +12,11 @@ import {
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { buildTaskTree, type TaskDoc, type TaskNode } from '@/lib/tasks';
+import {
+  getNextTriState,
+  getTriState,
+  triStateToStatus,
+} from '@/lib/task-tristate';
 import { cn, getMidSortKey } from '@/lib/utils';
 import {
   ChevronRight,
@@ -23,7 +28,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { TaskTriStateButton } from '@/components/task-tristate-button';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -62,17 +67,45 @@ interface TaskTreeProps {
   projectId: Id<'projects'> | null;
   companyId: Id<'companies'>;
   tasksFilter?: (task: TaskDoc) => boolean;
+  tasks?: TaskDoc[];
+  listId?: Id<'project_task_lists'> | null;
+  createProjectId?: Id<'projects'> | null;
+  selectedTaskId?: Id<'tasks'> | null;
+  onSelectTask?: (taskId: Id<'tasks'>) => void;
+  showSheet?: boolean;
+  useExternalDnd?: boolean;
 }
 
 const INDENT_WIDTH = 24; // px (1.5rem)
 
-export function TaskTree({ projectId, companyId, tasksFilter }: TaskTreeProps) {
-  const [selectedTaskId, setSelectedTaskId] = useState<Id<'tasks'> | null>(
-    null
+export function TaskTree({
+  projectId,
+  companyId,
+  tasksFilter,
+  tasks,
+  listId,
+  createProjectId,
+  selectedTaskId,
+  onSelectTask,
+  showSheet,
+  useExternalDnd,
+}: TaskTreeProps) {
+  const [localSelectedTaskId, setLocalSelectedTaskId] =
+    useState<Id<'tasks'> | null>(null);
+  const effectiveSelectedTaskId = onSelectTask
+    ? (selectedTaskId ?? null)
+    : localSelectedTaskId;
+  const handleSelect = useCallback(
+    (taskId: Id<'tasks'>) => {
+      if (onSelectTask) {
+        onSelectTask(taskId);
+        return;
+      }
+      setLocalSelectedTaskId(taskId);
+    },
+    [onSelectTask]
   );
-  const handleSelect = useCallback((taskId: Id<'tasks'>) => {
-    setSelectedTaskId(taskId);
-  }, []);
+  const renderSheet = showSheet !== false && !onSelectTask;
 
   return (
     <>
@@ -80,14 +113,20 @@ export function TaskTree({ projectId, companyId, tasksFilter }: TaskTreeProps) {
         projectId={projectId}
         companyId={companyId}
         tasksFilter={tasksFilter}
+        tasks={tasks}
+        listId={listId}
+        createProjectId={createProjectId}
+        useExternalDnd={useExternalDnd}
         onSelect={handleSelect}
       />
-      <TaskSheet
-        taskId={selectedTaskId}
-        companyId={companyId}
-        open={!!selectedTaskId}
-        onOpenChange={open => !open && setSelectedTaskId(null)}
-      />
+      {renderSheet ? (
+        <TaskSheet
+          taskId={effectiveSelectedTaskId}
+          companyId={companyId}
+          open={!!effectiveSelectedTaskId}
+          onOpenChange={open => !open && setLocalSelectedTaskId(null)}
+        />
+      ) : null}
     </>
   );
 }
@@ -101,17 +140,22 @@ const TaskTreeList = memo(
     projectId,
     companyId,
     tasksFilter,
+    tasks,
+    listId,
+    createProjectId,
+    useExternalDnd,
     onSelect,
   }: TaskTreeListProps) {
+    const externalDnd = useExternalDnd ?? false;
     const projectTasks = useQuery(
       api.tasks.getProjectTasks,
-      projectId ? { companyId, projectId } : 'skip'
+      !tasks && projectId ? { companyId, projectId } : 'skip'
     );
     const companyTasks = useQuery(
       api.tasks.getCompanyTasks,
-      projectId ? 'skip' : { companyId }
+      !tasks && !projectId ? { companyId } : 'skip'
     );
-    const tasksData = projectId ? projectTasks : companyTasks;
+    const tasksData = tasks ?? (projectId ? projectTasks : companyTasks);
 
     const createTask = useMutation(api.tasks.createTask);
     const updateTask = useMutation(api.tasks.updateTask);
@@ -186,6 +230,17 @@ const TaskTreeList = memo(
       setTaskToDelete(task);
     }, []);
 
+    const handleRemoveEmpty = useCallback(
+      async (taskId: Id<'tasks'>) => {
+        try {
+          await deleteTask({ companyId, taskId });
+        } catch {
+          showToast.error('Failed to remove empty task');
+        }
+      },
+      [companyId, deleteTask]
+    );
+
     const handleOutdent = useCallback(
       async (taskId: Id<'tasks'>) => {
         if (!tasksData) return;
@@ -203,6 +258,12 @@ const TaskTreeList = memo(
 
     const handleCreateTask = useCallback(
       async (parentTaskId: Id<'tasks'> | null = null) => {
+        const targetProjectId = projectId ?? createProjectId ?? null;
+        if (!targetProjectId) {
+          showToast.error('Select a project to create tasks');
+          return;
+        }
+
         // Validate depth before creating
         if (parentTaskId && tasksData) {
           const parentTask = tasksData.find(t => t._id === parentTaskId);
@@ -220,12 +281,13 @@ const TaskTreeList = memo(
         try {
           const id = await createTask({
             companyId,
-            projectId,
+            projectId: targetProjectId,
             parentTaskId,
             title: '',
             notesMarkdown: null,
             dueDate: null,
             complexityScore: null,
+            ...(listId && !parentTaskId ? { listId } : {}),
           });
           if (parentTaskId) {
             setExpandedIds(prev => new Set(prev).add(parentTaskId));
@@ -237,7 +299,80 @@ const TaskTreeList = memo(
           showToast.error(message);
         }
       },
-      [companyId, projectId, createTask, tasksData]
+      [companyId, projectId, createProjectId, listId, createTask, tasksData]
+    );
+
+    const handleCreateBelow = useCallback(
+      async (task: TaskNode) => {
+        if (!tasksData) return;
+
+        const targetProjectId = projectId ?? createProjectId ?? null;
+        if (!targetProjectId) {
+          showToast.error('Select a project to create tasks');
+          return;
+        }
+
+        const parentTaskId = task.parentTaskId ?? null;
+        const siblings = tasksData
+          .filter(t => t.parentTaskId === parentTaskId)
+          .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+        const index = siblings.findIndex(t => t._id === task._id);
+        if (index === -1) return;
+
+        const nextSibling = siblings[index + 1];
+        const listIdForTask =
+          parentTaskId === null ? (task.listId ?? listId ?? null) : null;
+
+        let id: Id<'tasks'> | null = null;
+        try {
+          id = await createTask({
+            companyId,
+            projectId: targetProjectId,
+            parentTaskId,
+            title: '',
+            notesMarkdown: null,
+            dueDate: null,
+            complexityScore: null,
+            ...(listIdForTask ? { listId: listIdForTask } : {}),
+          });
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : 'Failed to create task';
+          showToast.error(message);
+          return;
+        }
+
+        if (parentTaskId) {
+          setExpandedIds(prev => new Set(prev).add(parentTaskId));
+        }
+
+        if (nextSibling && id) {
+          const newSortKey = getMidSortKey(task.sortKey, nextSibling.sortKey);
+          try {
+            await moveTask({
+              companyId,
+              taskId: id,
+              newParentId: parentTaskId,
+              newSortKey,
+            });
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : 'Failed to position task';
+            showToast.error(message);
+          }
+        }
+      },
+      [
+        companyId,
+        projectId,
+        createProjectId,
+        listId,
+        createTask,
+        moveTask,
+        tasksData,
+      ]
     );
 
     const handleDelete = async () => {
@@ -263,6 +398,7 @@ const TaskTreeList = memo(
     };
 
     const handleDragStart = (event: DragStartEvent) => {
+      if (externalDnd) return;
       const { active } = event;
       setActiveId(active.id as Id<'tasks'>);
 
@@ -276,6 +412,7 @@ const TaskTreeList = memo(
     };
 
     const handleDragEnd = async (event: DragEndEvent) => {
+      if (externalDnd) return;
       const { active, over, delta } = event;
       setActiveId(null);
 
@@ -529,37 +666,33 @@ const TaskTreeList = memo(
       );
     }
 
-    return (
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
+    const listContent = (
+      <SortableContext
+        items={flattenedTree.map(t => t._id)}
+        strategy={verticalListSortingStrategy}
       >
-        <SortableContext
-          items={flattenedTree.map(t => t._id)}
-          strategy={verticalListSortingStrategy}
-        >
-          <div className="space-y-1">
-            {flattenedTree.map(task => (
-              <TaskItem
-                key={task._id}
-                task={task}
-                depth={getDepth(task, tasksData)}
-                expandedIds={expandedIds}
-                toggleExpand={toggleExpand}
-                onUpdate={handleUpdate}
-                onDelete={handleDeleteTask}
-                onCreateSibling={handleCreateTask}
-                onCreateChild={handleCreateTask}
-                onSelect={onSelect}
-                onOutdent={handleOutdent}
-                onIndent={handleIndent}
-                onReorder={handleReorder}
-              />
-            ))}
+        <div className="space-y-1">
+          {flattenedTree.map(task => (
+            <TaskItem
+              key={task._id}
+              task={task}
+              depth={getDepth(task, tasksData)}
+              expandedIds={expandedIds}
+              toggleExpand={toggleExpand}
+              onUpdate={handleUpdate}
+              onRemoveEmpty={handleRemoveEmpty}
+              onDelete={handleDeleteTask}
+              onCreateBelow={handleCreateBelow}
+              onCreateChild={handleCreateTask}
+              onSelect={onSelect}
+              onOutdent={handleOutdent}
+              onIndent={handleIndent}
+              onReorder={handleReorder}
+            />
+          ))}
 
-            {createPortal(
+          {!externalDnd &&
+            createPortal(
               <DragOverlay>
                 {activeTaskNode ? (
                   <div className="opacity-90">
@@ -570,8 +703,9 @@ const TaskTreeList = memo(
                       toggleExpand={() => {}}
                       isOverlay
                       onUpdate={() => {}}
+                      onRemoveEmpty={() => {}}
                       onDelete={() => {}}
-                      onCreateSibling={() => {}}
+                      onCreateBelow={() => {}}
                       onCreateChild={() => {}}
                       onSelect={() => {}}
                       onOutdent={() => {}}
@@ -584,15 +718,29 @@ const TaskTreeList = memo(
               document.body
             )}
 
-            <DeleteConfirmDialog
-              open={!!taskToDelete}
-              onOpenChange={open => !open && setTaskToDelete(null)}
-              onConfirm={handleDelete}
-              taskTitle={taskToDelete?.title || ''}
-              subtaskCount={taskToDelete ? countDescendants(taskToDelete) : 0}
-            />
-          </div>
-        </SortableContext>
+          <DeleteConfirmDialog
+            open={!!taskToDelete}
+            onOpenChange={open => !open && setTaskToDelete(null)}
+            onConfirm={handleDelete}
+            taskTitle={taskToDelete?.title || ''}
+            subtaskCount={taskToDelete ? countDescendants(taskToDelete) : 0}
+          />
+        </div>
+      </SortableContext>
+    );
+
+    if (externalDnd) {
+      return listContent;
+    }
+
+    return (
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        {listContent}
       </DndContext>
     );
   },
@@ -601,7 +749,11 @@ const TaskTreeList = memo(
       prev.projectId === next.projectId &&
       prev.companyId === next.companyId &&
       prev.tasksFilter === next.tasksFilter &&
-      prev.onSelect === next.onSelect
+      prev.tasks === next.tasks &&
+      prev.listId === next.listId &&
+      prev.createProjectId === next.createProjectId &&
+      prev.onSelect === next.onSelect &&
+      prev.useExternalDnd === next.useExternalDnd
     );
   }
 );
@@ -639,8 +791,9 @@ interface TaskItemProps {
       status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'cancelled';
     }>
   ) => void;
+  onRemoveEmpty: (taskId: Id<'tasks'>) => void;
   onDelete: (task: TaskNode) => void;
-  onCreateSibling: (parentTaskId: Id<'tasks'> | null) => void;
+  onCreateBelow: (task: TaskNode) => void;
   onCreateChild: (parentTaskId: Id<'tasks'>) => void;
   onSelect: (taskId: Id<'tasks'>) => void;
   onOutdent: (taskId: Id<'tasks'>) => void;
@@ -692,8 +845,9 @@ const TaskItemContent = memo(function TaskItemContent({
   expandedIds,
   toggleExpand,
   onUpdate,
+  onRemoveEmpty,
   onDelete,
-  onCreateSibling,
+  onCreateBelow,
   onCreateChild,
   onSelect,
   onOutdent,
@@ -707,6 +861,9 @@ const TaskItemContent = memo(function TaskItemContent({
   const hasChildren = task.children.length > 0;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isEditing, setIsEditing] = useState(task.title === '');
+  const isNewTask = task.title === '';
+  const triState = getTriState(task.status);
+  const nextTriState = getNextTriState(triState);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -716,10 +873,21 @@ const TaskItemContent = memo(function TaskItemContent({
 
   const handleTitleSubmit = () => {
     setIsEditing(false);
-    const newTitle = inputRef.current?.value.trim() || 'Untitled Task';
-    if (task.title !== newTitle) {
-      onUpdate(task._id, { title: newTitle });
+    const trimmed = inputRef.current?.value.trim() ?? '';
+    if (!trimmed) {
+      if (isNewTask) {
+        onRemoveEmpty(task._id);
+        return true;
+      }
+      if (inputRef.current) {
+        inputRef.current.value = task.title;
+      }
+      return false;
     }
+    if (task.title !== trimmed) {
+      onUpdate(task._id, { title: trimmed });
+    }
+    return false;
   };
 
   const handleRowClick = () => {
@@ -736,8 +904,10 @@ const TaskItemContent = memo(function TaskItemContent({
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      handleTitleSubmit();
-      onCreateSibling(task.parentTaskId);
+      const removed = handleTitleSubmit();
+      if (!removed) {
+        onCreateBelow(task);
+      }
     } else if (e.key === 'Tab') {
       e.preventDefault();
       if (e.shiftKey) {
@@ -759,7 +929,7 @@ const TaskItemContent = memo(function TaskItemContent({
   return (
     <div
       className={cn(
-        'flex items-center gap-2 p-1 rounded-md transition-colors group/row cursor-pointer',
+        'relative flex items-center gap-2 p-1 rounded-md transition-colors group/row cursor-pointer',
         !isOverlay && 'hover:bg-accent/50',
         task.status === 'done' && 'opacity-60',
         isDragging && 'opacity-30 bg-accent',
@@ -777,16 +947,19 @@ const TaskItemContent = memo(function TaskItemContent({
         ))}
       </div>
 
-      <div className="flex items-center gap-1 shrink-0">
-        <div
-          {...dragHandleProps}
-          className={cn(
-            'cursor-grab text-muted-foreground/50',
-            !isOverlay && 'hover:text-foreground'
-          )}
-        >
-          <GripVertical className="h-4 w-4" />
-        </div>
+      <div className="relative flex items-center gap-1 shrink-0">
+        {!isOverlay && (
+          <div
+            {...dragHandleProps}
+            className={cn(
+              'absolute -left-5 top-1/2 -translate-y-1/2 cursor-grab text-muted-foreground/60',
+              'opacity-0 pointer-events-none transition-opacity',
+              'group-hover/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:text-foreground'
+            )}
+          >
+            <GripVertical className="h-4 w-4" />
+          </div>
+        )}
 
         <div className="w-4 h-4 flex items-center justify-center shrink-0">
           {hasChildren && !isDragging && (
@@ -808,14 +981,13 @@ const TaskItemContent = memo(function TaskItemContent({
       </div>
 
       <div className="flex items-center gap-2 flex-1 min-w-0">
-        <Checkbox
-          checked={task.status === 'done'}
-          onCheckedChange={val =>
-            onUpdate(task._id, { status: val ? 'done' : 'todo' })
-          }
-          className="rounded-full h-4 w-4 shrink-0"
-          onClick={e => {
-            e.stopPropagation();
+        <TaskTriStateButton
+          size="sm"
+          state={triState}
+          aria-label={`Set task ${task.title} to ${nextTriState}`}
+          onClick={event => {
+            event.stopPropagation();
+            onUpdate(task._id, { status: triStateToStatus(nextTriState) });
           }}
         />
 
@@ -837,9 +1009,7 @@ const TaskItemContent = memo(function TaskItemContent({
             onClick={handleTitleClick}
           >
             {task.title || (
-              <span className="text-muted-foreground italic">
-                Untitled Task
-              </span>
+              <span className="text-muted-foreground italic">New task</span>
             )}
           </span>
         )}
@@ -867,6 +1037,15 @@ const TaskItemContent = memo(function TaskItemContent({
           className="flex items-center gap-2 shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity pr-2"
           onClick={e => e.stopPropagation()}
         >
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => onCreateBelow(task)}
+            aria-label="Add task below"
+          >
+            <Plus className="h-3 w-3" />
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-6 w-6">

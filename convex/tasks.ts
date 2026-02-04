@@ -3,8 +3,8 @@
  *
  * Enforces invariants:
  * - Company scoping: all tasks belong to a company
- * - Tasks can be project tasks (projectId) OR company tasks (projectId null)
- * - Parent/child relationships maintain same scope (no mixing)
+ * - Tasks are always project-scoped
+ * - Parent/child relationships maintain same project and list scope
  * - No cross-project moves
  * - Max depth = 3
  * - Prevent cycles
@@ -21,6 +21,7 @@ import {
   createSoftDeletePatch,
   createRestorePatch,
 } from './lib/helpers';
+import { ensureDefaultListId } from './projectTaskLists';
 
 // ============================================================================
 // Helper Functions
@@ -33,25 +34,29 @@ import {
  * @param ctx - Database context
  * @param parentTaskId - Parent task ID (null for top-level)
  * @param companyId - Company ID
- * @param projectId - Project ID (null for company tasks)
+ * @param projectId - Project ID
  * @returns Sort key string
  */
 async function generateSortKey(
   ctx: QueryCtx | MutationCtx,
   parentTaskId: Id<'tasks'> | null,
   companyId: Id<'companies'>,
-  projectId: Id<'projects'> | null
+  projectId: Id<'projects'>,
+  listId: Id<'project_task_lists'>
 ): Promise<string> {
   // Find siblings (tasks with same parent and project/company scope)
   const siblings = await ctx.db
     .query('tasks')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .withIndex('by_companyId_projectId_parentTaskId_deletedAt', (q: any) =>
-      q
-        .eq('companyId', companyId)
-        .eq('projectId', projectId)
-        .eq('parentTaskId', parentTaskId)
-        .eq('deletedAt', null)
+    .withIndex(
+      'by_companyId_projectId_listId_parentTaskId_deletedAt',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (q: any) =>
+        q
+          .eq('companyId', companyId)
+          .eq('projectId', projectId)
+          .eq('listId', listId)
+          .eq('parentTaskId', parentTaskId)
+          .eq('deletedAt', null)
     )
     .order('desc')
     .first();
@@ -196,7 +201,7 @@ export const getProjectTasks = query({
 });
 
 /**
- * Get all company-level tasks (flat list, client builds tree).
+ * Get all tasks for a company (flat list, client builds tree).
  */
 export const getCompanyTasks = query({
   args: {
@@ -207,8 +212,8 @@ export const getCompanyTasks = query({
 
     return await ctx.db
       .query('tasks')
-      .withIndex('by_companyId_projectId_deletedAt', q =>
-        q.eq('companyId', companyId).eq('projectId', null).eq('deletedAt', null)
+      .withIndex('by_companyId_deletedAt', q =>
+        q.eq('companyId', companyId).eq('deletedAt', null)
       )
       .collect();
   },
@@ -260,8 +265,9 @@ export const get = query({
 export const createTask = mutation({
   args: {
     companyId: v.id('companies'),
-    projectId: v.union(v.id('projects'), v.null()),
+    projectId: v.id('projects'),
     parentTaskId: v.union(v.id('tasks'), v.null()),
+    listId: v.optional(v.id('project_task_lists')),
     title: v.string(),
     description: v.optional(v.string()),
     status: v.optional(
@@ -280,12 +286,12 @@ export const createTask = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    const listIdInput = args.listId ?? null;
+    let resolvedListId: Id<'project_task_lists'> | null = null;
 
-    // Validate project if provided
-    if (args.projectId !== null) {
-      const project = await ctx.db.get(args.projectId);
-      assertCompanyScoped(project, companyId, 'projects');
-    }
+    // Validate project
+    const project = await ctx.db.get(args.projectId);
+    assertCompanyScoped(project, companyId, 'projects');
 
     // Validate parent if provided
     if (args.parentTaskId !== null) {
@@ -295,8 +301,28 @@ export const createTask = mutation({
       // Validate scope match: parent and new task must have same projectId
       if (parent.projectId !== args.projectId) {
         throw new Error(
-          'Parent and child tasks must have matching project scope (both project tasks or both company tasks)'
+          'Parent and child tasks must have matching project scope'
         );
+      }
+
+      const parentListId = parent.listId ?? null;
+      if (!parentListId) {
+        const defaultListId = await ensureDefaultListId(
+          ctx,
+          companyId,
+          parent.projectId
+        );
+        await ctx.db.patch(parent._id, {
+          listId: defaultListId,
+          updatedAt: Date.now(),
+        });
+        resolvedListId = defaultListId;
+      } else {
+        resolvedListId = parentListId;
+      }
+
+      if (listIdInput && resolvedListId && listIdInput !== resolvedListId) {
+        throw new Error('Child tasks must inherit the parent list');
       }
 
       // Check depth
@@ -304,6 +330,30 @@ export const createTask = mutation({
       if (parentDepth >= 2) {
         throw new Error('Maximum depth (3) reached. Cannot create child task.');
       }
+    }
+
+    if (args.parentTaskId === null) {
+      if (listIdInput) {
+        const list = await ctx.db.get(listIdInput);
+        assertCompanyScoped(list, companyId, 'project_task_lists');
+        if (list.projectId !== args.projectId) {
+          throw new Error('List does not belong to the specified project');
+        }
+        if (list.deletedAt !== null) {
+          throw new Error('List is deleted');
+        }
+        resolvedListId = listIdInput;
+      } else {
+        resolvedListId = await ensureDefaultListId(
+          ctx,
+          companyId,
+          args.projectId
+        );
+      }
+    }
+
+    if (!resolvedListId) {
+      throw new Error('Task list could not be resolved');
     }
 
     // Validate complexityScore range
@@ -319,13 +369,15 @@ export const createTask = mutation({
       ctx,
       args.parentTaskId,
       companyId,
-      args.projectId
+      args.projectId,
+      resolvedListId
     );
 
     const now = Date.now();
     const insertData: {
       companyId: Id<'companies'>;
-      projectId: Id<'projects'> | null;
+      projectId: Id<'projects'>;
+      listId: Id<'project_task_lists'>;
       parentTaskId: Id<'tasks'> | null;
       title: string;
       description?: string;
@@ -342,6 +394,7 @@ export const createTask = mutation({
     } = {
       companyId,
       projectId: args.projectId,
+      listId: resolvedListId,
       parentTaskId: args.parentTaskId,
       title: args.title.trim(),
       status: args.status ?? 'todo',
@@ -450,12 +503,37 @@ export const moveTask = mutation({
     companyId: v.id('companies'),
     taskId: v.id('tasks'),
     newParentId: v.union(v.id('tasks'), v.null()),
+    newListId: v.optional(v.id('project_task_lists')),
     newSortKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
     const task = await ctx.db.get(args.taskId);
     assertCompanyScoped(task, companyId, 'tasks');
+
+    const listIdInput = args.newListId ?? null;
+    let resolvedListId = task.listId ?? null;
+
+    if (
+      listIdInput &&
+      task.listId &&
+      listIdInput !== task.listId &&
+      args.newParentId !== null
+    ) {
+      throw new Error('Tasks moved across lists must be unlinked from parent');
+    }
+
+    if (listIdInput) {
+      const list = await ctx.db.get(listIdInput);
+      assertCompanyScoped(list, companyId, 'project_task_lists');
+      if (list.projectId !== task.projectId) {
+        throw new Error('List does not belong to the specified project');
+      }
+      if (list.deletedAt !== null) {
+        throw new Error('List is deleted');
+      }
+      resolvedListId = listIdInput;
+    }
 
     // If newParentId is provided, validate it
     if (args.newParentId !== null) {
@@ -477,24 +555,62 @@ export const moveTask = mutation({
       if (newParentDepth >= 2) {
         throw new Error('Maximum depth (3) reached. Cannot move task here.');
       }
+
+      const parentListId = newParent.listId ?? null;
+      if (!parentListId) {
+        if (!newParent.projectId) {
+          throw new Error('Parent task is missing project');
+        }
+        const defaultListId = await ensureDefaultListId(
+          ctx,
+          companyId,
+          newParent.projectId
+        );
+        await ctx.db.patch(newParent._id, {
+          listId: defaultListId,
+          updatedAt: Date.now(),
+        });
+        resolvedListId = defaultListId;
+      } else if (parentListId) {
+        if (listIdInput && parentListId !== listIdInput) {
+          throw new Error('Child tasks must inherit the parent list');
+        }
+        resolvedListId = parentListId;
+      }
     } else {
       // Moving to top-level: validate scope match (task's projectId stays same)
       // This is already enforced by the fact that we're not changing projectId
     }
 
-    // Generate sortKey if not provided
-    let sortKey = args.newSortKey;
-    if (!sortKey) {
-      sortKey = await generateSortKey(
+    if (!resolvedListId) {
+      if (!task.projectId) {
+        throw new Error('Task is missing project');
+      }
+      resolvedListId = await ensureDefaultListId(
         ctx,
-        args.newParentId,
         companyId,
         task.projectId
       );
     }
 
+    // Generate sortKey if not provided
+    let sortKey = args.newSortKey;
+    if (!sortKey) {
+      if (!task.projectId) {
+        throw new Error('Task is missing project');
+      }
+      sortKey = await generateSortKey(
+        ctx,
+        args.newParentId,
+        companyId,
+        task.projectId,
+        resolvedListId
+      );
+    }
+
     await ctx.db.patch(args.taskId, {
       parentTaskId: args.newParentId,
+      listId: resolvedListId,
       sortKey,
       updatedAt: Date.now(),
     });

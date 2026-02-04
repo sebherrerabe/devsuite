@@ -64,6 +64,7 @@ export default defineSchema({
    *
    * Projects support:
    * - UX fields: slug (auto-generated), color, isFavorite, isPinned
+   * - Defaults: one project per company can be marked as default
    * - Docs: notesMarkdown (optional markdown scratchpad)
    * - Name uniqueness enforced per company (case-insensitive)
    */
@@ -78,6 +79,7 @@ export default defineSchema({
     emoji: v.optional(v.string()), // Emoji or :shortcode: identifier
     isFavorite: v.optional(v.boolean()), // Favorite flag
     isPinned: v.optional(v.boolean()), // Pinned flag for list view
+    isDefault: v.optional(v.boolean()), // Default project for company (cannot be deleted)
     // Docs
     notesMarkdown: v.union(v.string(), v.null()), // Optional markdown notes scratchpad
     metadata: v.any(),
@@ -93,12 +95,13 @@ export default defineSchema({
 
   /**
    * Task entities - company-scoped, supports hierarchy
-   * Tasks can be project tasks (projectId set) OR company tasks (projectId null)
-   * Parent/child relationships must maintain same scope (projectId match)
+   * Tasks are always project-scoped (projectId required)
+   * Parent/child relationships must maintain same project and list scope
    */
   tasks: defineTable({
     companyId: v.id('companies'),
-    projectId: v.union(v.id('projects'), v.null()),
+    projectId: v.optional(v.union(v.id('projects'), v.null())),
+    listId: v.optional(v.union(v.id('project_task_lists'), v.null())),
     parentTaskId: v.union(v.id('tasks'), v.null()),
     title: v.string(),
     description: v.optional(v.string()),
@@ -145,7 +148,40 @@ export default defineSchema({
       'projectId',
       'parentTaskId',
       'deletedAt',
+    ])
+    .index('by_companyId_projectId_listId_deletedAt', [
+      'companyId',
+      'projectId',
+      'listId',
+      'deletedAt',
+    ])
+    .index('by_companyId_projectId_listId_parentTaskId_deletedAt', [
+      'companyId',
+      'projectId',
+      'listId',
+      'parentTaskId',
+      'deletedAt',
     ]),
+
+  /**
+   * Project task lists - user-defined list sections within a project
+   * Project-only, company-scoped
+   */
+  project_task_lists: defineTable({
+    companyId: v.id('companies'),
+    projectId: v.id('projects'),
+    name: v.string(),
+    sortKey: v.string(),
+    isDefault: v.boolean(),
+    metadata: v.any(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    deletedAt: v.union(v.number(), v.null()),
+  })
+    .index('by_companyId', ['companyId'])
+    .index('by_companyId_deletedAt', ['companyId', 'deletedAt'])
+    .index('by_projectId', ['projectId'])
+    .index('by_projectId_deletedAt', ['projectId', 'deletedAt']),
 
   /**
    * Tag entities - company-scoped managed tag set
@@ -198,39 +234,91 @@ export default defineSchema({
     ]),
 
   /**
-   * Session entities - company-scoped work sessions
+   * Session entities - company-scoped work sessions (event-sourced)
    */
   sessions: defineTable({
     companyId: v.id('companies'),
-    startTime: v.number(),
-    endTime: v.union(v.number(), v.null()),
+    createdBy: v.string(),
+    status: v.union(
+      v.literal('RUNNING'),
+      v.literal('PAUSED'),
+      v.literal('FINISHED'),
+      v.literal('CANCELLED')
+    ),
+    startAt: v.number(),
+    endAt: v.union(v.number(), v.null()),
+    cancelMode: v.union(
+      v.literal('DISCARD'),
+      v.literal('KEEP_EXCLUDED'),
+      v.null()
+    ),
+    cancelledAt: v.union(v.number(), v.null()),
+    discardedAt: v.union(v.number(), v.null()),
     summary: v.union(v.string(), v.null()),
-    taskIds: v.array(v.id('tasks')),
+    projectIds: v.array(v.id('projects')),
+    isExcludedFromSummaries: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
     deletedAt: v.union(v.number(), v.null()),
   })
     .index('by_companyId', ['companyId'])
     .index('by_companyId_deletedAt', ['companyId', 'deletedAt'])
-    .index('by_startTime', ['startTime'])
-    .index('by_endTime', ['endTime']),
+    .index('by_companyId_status_deletedAt', [
+      'companyId',
+      'status',
+      'deletedAt',
+    ])
+    .index('by_companyId_createdBy_status_deletedAt', [
+      'companyId',
+      'createdBy',
+      'status',
+      'deletedAt',
+    ])
+    .index('by_companyId_startAt', ['companyId', 'startAt'])
+    .index('by_companyId_endAt', ['companyId', 'endAt']),
 
   /**
-   * SessionTask junction - links sessions to tasks with metadata
+   * Session events - append-only event log
    */
-  sessionTasks: defineTable({
+  sessionEvents: defineTable({
+    companyId: v.id('companies'),
     sessionId: v.id('sessions'),
-    taskId: v.id('tasks'),
-    notes: v.union(v.string(), v.null()),
-    timeDistribution: v.union(v.number(), v.null()),
+    actorId: v.string(),
+    type: v.union(
+      v.literal('SESSION_STARTED'),
+      v.literal('SESSION_PAUSED'),
+      v.literal('SESSION_RESUMED'),
+      v.literal('SESSION_FINISHED'),
+      v.literal('SESSION_CANCELLED'),
+      v.literal('TASK_ACTIVATED'),
+      v.literal('TASK_DEACTIVATED'),
+      v.literal('TASK_MARKED_DONE'),
+      v.literal('TASK_RESET'),
+      v.literal('STEP_LOGGED'),
+      v.literal('PROJECT_ASSIGNED_TO_SESSION'),
+      v.literal('PROJECT_UNASSIGNED_FROM_SESSION')
+    ),
+    taskId: v.optional(v.union(v.id('tasks'), v.null())),
+    projectId: v.optional(v.union(v.id('projects'), v.null())),
+    timestamp: v.number(),
+    clientTimestamp: v.optional(v.union(v.number(), v.null())),
+    payload: v.any(),
     createdAt: v.number(),
-    updatedAt: v.number(),
-    deletedAt: v.union(v.number(), v.null()),
   })
+    .index('by_companyId', ['companyId'])
     .index('by_sessionId', ['sessionId'])
-    .index('by_taskId', ['taskId'])
-    .index('by_sessionId_deletedAt', ['sessionId', 'deletedAt'])
-    .index('by_taskId_deletedAt', ['taskId', 'deletedAt']),
+    .index('by_sessionId_timestamp', ['sessionId', 'timestamp'])
+    .index('by_companyId_taskId_timestamp', [
+      'companyId',
+      'taskId',
+      'timestamp',
+    ])
+    .index('by_companyId_projectId_timestamp', [
+      'companyId',
+      'projectId',
+      'timestamp',
+    ])
+    .index('by_companyId_timestamp', ['companyId', 'timestamp']),
 
   /**
    * InboxItem entities - company-scoped notifications

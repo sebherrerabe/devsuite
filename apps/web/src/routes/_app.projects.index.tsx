@@ -368,9 +368,17 @@ function ProjectsPage() {
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
-                              disabled={project.deletedAt !== null}
+                              disabled={
+                                project.deletedAt !== null || project.isDefault
+                              }
                               onClick={async () => {
                                 try {
+                                  if (project.isDefault) {
+                                    showToast.error(
+                                      'Default project cannot be archived'
+                                    );
+                                    return;
+                                  }
                                   await softDeleteProject({ id: project._id });
                                   showToast.success('Project archived');
                                 } catch {

@@ -1,5 +1,7 @@
 import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
+import { ensureDefaultListId } from './projectTaskLists';
+import { ensureDefaultProjectId } from './projects';
 
 /**
  * User identity type from Convex auth
@@ -35,6 +37,10 @@ export const create = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    const defaultProjectId = await ensureDefaultProjectId(ctx, companyId);
+    await ensureDefaultListId(ctx, companyId, defaultProjectId);
+
     return companyId;
   },
 });

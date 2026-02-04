@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { CompanySwitcher } from './company-switcher';
 import { PrivacyModeToggle } from './privacy-mode-toggle';
 import { Button } from '@/components/ui/button';
+import { SessionWidget } from './session-widget';
 import { authClient, signOut } from '@/lib/auth';
 import {
   DropdownMenu,
@@ -11,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, LogOut, Play } from 'lucide-react';
+import { User, LogOut } from 'lucide-react';
 
 export function Header() {
   const { data: session } = authClient.useSession();
@@ -32,16 +33,7 @@ export function Header() {
         </div>
 
         <div className="flex flex-1 items-center justify-center px-4">
-          <Button
-            variant="outline"
-            size="sm"
-            className="hidden h-8 gap-2 border-primary/20 font-mono text-xs md:flex"
-          >
-            <Play className="h-3 w-3 fill-current text-primary" />
-            <span className="text-primary">00:23:15</span>
-            <span className="text-muted-foreground">|</span>
-            <span className="text-muted-foreground">Task-123</span>
-          </Button>
+          <SessionWidget />
         </div>
 
         <div className="ml-auto flex items-center gap-2">

@@ -24,6 +24,10 @@ function GlobalTasksPage() {
     api.tasks.getCompanyTasks,
     companyId ? { companyId } : 'skip'
   );
+  const defaultProject = useQuery(
+    api.projects.getDefaultProject,
+    companyId ? { companyId } : 'skip'
+  );
 
   const { todayTasks, upcomingTasks, overdueTasks } = useMemo(() => {
     if (!tasks) return { todayTasks: [], upcomingTasks: [], overdueTasks: [] };
@@ -122,6 +126,7 @@ function GlobalTasksPage() {
           <TaskTree
             projectId={null}
             companyId={companyId}
+            createProjectId={defaultProject?._id ?? null}
             tasksFilter={(t: Doc<'tasks'>) =>
               todayTasks.some(tt => tt._id === t._id)
             }
@@ -131,6 +136,7 @@ function GlobalTasksPage() {
           <TaskTree
             projectId={null}
             companyId={companyId}
+            createProjectId={defaultProject?._id ?? null}
             tasksFilter={(t: Doc<'tasks'>) =>
               upcomingTasks.some(tt => tt._id === t._id)
             }
@@ -140,6 +146,7 @@ function GlobalTasksPage() {
           <TaskTree
             projectId={null}
             companyId={companyId}
+            createProjectId={defaultProject?._id ?? null}
             tasksFilter={(t: Doc<'tasks'>) =>
               overdueTasks.some(tt => tt._id === t._id)
             }

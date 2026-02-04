@@ -1,49 +1,98 @@
 /**
  * Session types and schemas for DevSuite
  *
- * Sessions are the primary source of truth for time tracking.
- * A session may touch multiple tasks or none (exploratory work).
+ * Sessions are event-based: events are the source of truth.
+ * Durations and summaries are derived from the event log.
  */
 
 import { z } from 'zod';
 import {
   type CompanyId,
   type SessionId,
-  type TaskId,
+  type ProjectId,
   type Timestamp,
   type SoftDeletable,
   type Timestamped,
   companyIdSchema,
   sessionIdSchema,
   taskIdSchema,
+  projectIdSchema,
   timestampSchema,
   softDeletableSchema,
   timestampedSchema,
+  idSchema,
 } from './base';
+import { type UserId, userIdSchema } from './company';
+
+// ============================================================================
+// Session Status + Cancel Modes
+// ============================================================================
+
+/**
+ * Session status values
+ */
+export const sessionStatusValues = [
+  'RUNNING',
+  'PAUSED',
+  'FINISHED',
+  'CANCELLED',
+] as const;
+
+export type SessionStatus = (typeof sessionStatusValues)[number];
+
+/**
+ * Zod schema for SessionStatus
+ */
+export const sessionStatusSchema = z.enum(sessionStatusValues);
+
+/**
+ * Cancellation modes for a session
+ */
+export const sessionCancelModeValues = ['DISCARD', 'KEEP_EXCLUDED'] as const;
+
+export type SessionCancelMode = (typeof sessionCancelModeValues)[number];
+
+/**
+ * Zod schema for SessionCancelMode
+ */
+export const sessionCancelModeSchema = z.enum(sessionCancelModeValues);
 
 // ============================================================================
 // Session Entity
 // ============================================================================
 
 /**
- * A work session representing a block of focused work time.
- * Sessions are company-scoped and may optionally link to tasks.
+ * A work session representing a block of time tracking.
+ *
+ * Sessions are company-scoped and derived from events.
  */
 export type Session = {
   /** Unique identifier */
   id: SessionId;
   /** Company this session belongs to (tenant isolation) */
   companyId: CompanyId;
-  /** When the session started (Unix ms) */
-  startTime: Timestamp;
-  /** When the session ended (Unix ms). Undefined/null for active sessions. */
-  endTime: Timestamp | null;
-  /** Optional summary of work done */
+  /** User who created the session */
+  createdBy: UserId;
+  /** Current status */
+  status: SessionStatus;
+  /** Session start timestamp (Unix ms) */
+  startAt: Timestamp;
+  /** Session end timestamp (Unix ms) */
+  endAt: Timestamp | null;
+  /** Cancellation mode (if cancelled) */
+  cancelMode: SessionCancelMode | null;
+  /** Timestamp when cancelled (if cancelled) */
+  cancelledAt: Timestamp | null;
+  /** Timestamp when discarded (if discard mode) */
+  discardedAt: Timestamp | null;
+  /** Optional summary of work completed */
   summary: string | null;
-  /** Task IDs worked on during this session. Can be empty for exploratory work. */
-  taskIds: TaskId[];
-} & SoftDeletable &
-  Timestamped;
+  /** Project IDs associated with this session (denormalized/derived) */
+  projectIds: ProjectId[];
+  /** Excluded from summaries (true for cancelled/discarded) */
+  isExcludedFromSummaries: boolean;
+} & Timestamped &
+  SoftDeletable;
 
 /**
  * Zod schema for Session entity
@@ -52,139 +101,291 @@ export const sessionSchema = z
   .object({
     id: sessionIdSchema,
     companyId: companyIdSchema,
-    startTime: timestampSchema,
-    endTime: timestampSchema.nullable(),
-    summary: z.string().nullable(),
-    taskIds: z.array(taskIdSchema),
+    createdBy: userIdSchema,
+    status: sessionStatusSchema,
+    startAt: timestampSchema,
+    endAt: timestampSchema.nullable(),
+    cancelMode: sessionCancelModeSchema.nullable(),
+    cancelledAt: timestampSchema.nullable(),
+    discardedAt: timestampSchema.nullable(),
+    summary: z.string().max(5000).nullable(),
+    projectIds: z.array(projectIdSchema),
+    isExcludedFromSummaries: z.boolean(),
   })
-  .merge(softDeletableSchema)
-  .merge(timestampedSchema);
+  .merge(timestampedSchema)
+  .merge(softDeletableSchema);
 
 // ============================================================================
-// Session Input Types
+// Session Event Types + Payloads
 // ============================================================================
 
 /**
- * Input for creating a new session
+ * Branded string type for SessionEvent IDs
  */
-export type CreateSessionInput = {
-  /** Company this session belongs to */
-  companyId: CompanyId;
-  /** When the session started */
-  startTime: Timestamp;
-  /** When the session ended (omit for active session) */
-  endTime?: Timestamp | null;
-  /** Optional summary */
-  summary?: string | null;
-  /** Task IDs to associate with this session */
-  taskIds?: TaskId[];
-};
+export type SessionEventId = string & { __brand: 'SessionEventId' };
 
 /**
- * Zod schema for creating a session
+ * Zod schema for SessionEventId
  */
-export const createSessionInputSchema = z.object({
-  companyId: companyIdSchema,
-  startTime: timestampSchema,
-  endTime: timestampSchema.nullable().optional(),
-  summary: z.string().max(5000).nullable().optional(),
-  taskIds: z.array(taskIdSchema).optional(),
+export const sessionEventIdSchema = idSchema.transform(
+  val => val as SessionEventId
+);
+
+/**
+ * Event type values for the session event log
+ */
+export const sessionEventTypeValues = [
+  'SESSION_STARTED',
+  'SESSION_PAUSED',
+  'SESSION_RESUMED',
+  'SESSION_FINISHED',
+  'SESSION_CANCELLED',
+  'TASK_ACTIVATED',
+  'TASK_DEACTIVATED',
+  'TASK_MARKED_DONE',
+  'TASK_RESET',
+  'STEP_LOGGED',
+  'PROJECT_ASSIGNED_TO_SESSION',
+  'PROJECT_UNASSIGNED_FROM_SESSION',
+] as const;
+
+export type SessionEventType = (typeof sessionEventTypeValues)[number];
+
+/**
+ * Zod schema for SessionEventType
+ */
+export const sessionEventTypeSchema = z.enum(sessionEventTypeValues);
+
+const emptyPayloadSchema = z.object({}).strict();
+
+/**
+ * Payload for SESSION_STARTED
+ */
+export const sessionStartedPayloadSchema = z.object({
+  projectIds: z.array(projectIdSchema).optional(),
 });
 
-/**
- * Input for updating an existing session
- */
-export type UpdateSessionInput = {
-  /** End time (set to close an active session) */
-  endTime?: Timestamp | null;
-  /** Updated summary */
-  summary?: string | null;
-  /** Replace task IDs (full replacement, not merge) */
-  taskIds?: TaskId[];
-};
+export type SessionStartedPayload = z.infer<typeof sessionStartedPayloadSchema>;
 
 /**
- * Zod schema for updating a session
+ * Payload for SESSION_CANCELLED
  */
-export const updateSessionInputSchema = z.object({
-  endTime: timestampSchema.nullable().optional(),
-  summary: z.string().max(5000).nullable().optional(),
-  taskIds: z.array(taskIdSchema).optional(),
+export const sessionCancelledPayloadSchema = z.object({
+  cancelMode: sessionCancelModeSchema,
 });
 
-// ============================================================================
-// SessionTask Junction Entity
-// ============================================================================
+export type SessionCancelledPayload = z.infer<
+  typeof sessionCancelledPayloadSchema
+>;
 
 /**
- * Junction type representing the relationship between a session and a task.
- * Provides additional metadata about work done on a specific task within a session.
+ * Payload for TASK_ACTIVATED / TASK_DEACTIVATED / TASK_MARKED_DONE
  */
-export type SessionTask = {
-  /** The session this record belongs to */
-  sessionId: SessionId;
-  /** The task worked on */
-  taskId: TaskId;
-  /** Optional notes about work done on this task during the session */
-  notes: string | null;
-  /** Time distribution as percentage (0-100) or null if not tracked */
-  timeDistribution: number | null;
-} & Timestamped;
-
-/**
- * Zod schema for SessionTask junction entity
- */
-export const sessionTaskSchema = z
-  .object({
-    sessionId: sessionIdSchema,
-    taskId: taskIdSchema,
-    notes: z.string().max(5000).nullable(),
-    timeDistribution: z.number().min(0).max(100).nullable(),
-  })
-  .merge(timestampedSchema);
-
-// ============================================================================
-// SessionTask Input Types
-// ============================================================================
-
-/**
- * Input for creating a session-task relationship
- */
-export type CreateSessionTaskInput = {
-  /** The session to link */
-  sessionId: SessionId;
-  /** The task to link */
-  taskId: TaskId;
-  /** Optional notes */
-  notes?: string | null;
-  /** Time distribution percentage */
-  timeDistribution?: number | null;
-};
-
-/**
- * Zod schema for creating a session-task relationship
- */
-export const createSessionTaskInputSchema = z.object({
-  sessionId: sessionIdSchema,
+export const sessionTaskEventPayloadSchema = z.object({
   taskId: taskIdSchema,
-  notes: z.string().max(5000).nullable().optional(),
-  timeDistribution: z.number().min(0).max(100).nullable().optional(),
+});
+
+export type SessionTaskEventPayload = z.infer<
+  typeof sessionTaskEventPayloadSchema
+>;
+
+/**
+ * Payload for STEP_LOGGED
+ */
+export const sessionStepLoggedPayloadSchema = z.object({
+  text: z.string().min(1).max(5000),
+  taskId: taskIdSchema.optional(),
+});
+
+export type SessionStepLoggedPayload = z.infer<
+  typeof sessionStepLoggedPayloadSchema
+>;
+
+/**
+ * Payload for PROJECT_ASSIGNED_TO_SESSION / PROJECT_UNASSIGNED_FROM_SESSION
+ */
+export const sessionProjectEventPayloadSchema = z.object({
+  projectId: projectIdSchema,
+});
+
+export type SessionProjectEventPayload = z.infer<
+  typeof sessionProjectEventPayloadSchema
+>;
+
+// ============================================================================
+// Session Events (discriminated union)
+// ============================================================================
+
+const sessionEventBaseSchema = z.object({
+  id: sessionEventIdSchema,
+  companyId: companyIdSchema,
+  sessionId: sessionIdSchema,
+  actorId: userIdSchema,
+  timestamp: timestampSchema,
+  clientTimestamp: timestampSchema.nullable().optional(),
+  createdAt: timestampSchema,
+});
+
+export const sessionStartedEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('SESSION_STARTED'),
+  payload: sessionStartedPayloadSchema,
+});
+
+export const sessionPausedEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('SESSION_PAUSED'),
+  payload: emptyPayloadSchema,
+});
+
+export const sessionResumedEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('SESSION_RESUMED'),
+  payload: emptyPayloadSchema,
+});
+
+export const sessionFinishedEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('SESSION_FINISHED'),
+  payload: emptyPayloadSchema,
+});
+
+export const sessionCancelledEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('SESSION_CANCELLED'),
+  payload: sessionCancelledPayloadSchema,
+});
+
+export const taskActivatedEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('TASK_ACTIVATED'),
+  payload: sessionTaskEventPayloadSchema,
+});
+
+export const taskDeactivatedEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('TASK_DEACTIVATED'),
+  payload: sessionTaskEventPayloadSchema,
+});
+
+export const taskMarkedDoneEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('TASK_MARKED_DONE'),
+  payload: sessionTaskEventPayloadSchema,
+});
+
+export const taskResetEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('TASK_RESET'),
+  payload: sessionTaskEventPayloadSchema,
+});
+
+export const stepLoggedEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('STEP_LOGGED'),
+  payload: sessionStepLoggedPayloadSchema,
+});
+
+export const projectAssignedEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('PROJECT_ASSIGNED_TO_SESSION'),
+  payload: sessionProjectEventPayloadSchema,
+});
+
+export const projectUnassignedEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('PROJECT_UNASSIGNED_FROM_SESSION'),
+  payload: sessionProjectEventPayloadSchema,
 });
 
 /**
- * Input for updating a session-task relationship
+ * Zod schema for SessionEvent (discriminated union)
  */
-export type UpdateSessionTaskInput = {
-  /** Updated notes */
-  notes?: string | null;
-  /** Updated time distribution */
-  timeDistribution?: number | null;
-};
+export const sessionEventSchema = z.discriminatedUnion('type', [
+  sessionStartedEventSchema,
+  sessionPausedEventSchema,
+  sessionResumedEventSchema,
+  sessionFinishedEventSchema,
+  sessionCancelledEventSchema,
+  taskActivatedEventSchema,
+  taskDeactivatedEventSchema,
+  taskMarkedDoneEventSchema,
+  taskResetEventSchema,
+  stepLoggedEventSchema,
+  projectAssignedEventSchema,
+  projectUnassignedEventSchema,
+]);
+
+export type SessionEvent = z.infer<typeof sessionEventSchema>;
+
+// ============================================================================
+// Derived Summaries (DTOs)
+// ============================================================================
 
 /**
- * Zod schema for updating a session-task relationship
+ * Duration summary derived from session events.
  */
-export const updateSessionTaskInputSchema = z.object({
-  notes: z.string().max(5000).nullable().optional(),
-  timeDistribution: z.number().min(0).max(100).nullable().optional(),
+export const sessionDurationSummarySchema = z.object({
+  /** Total running time for the session */
+  effectiveDurationMs: z.number().int().nonnegative(),
+  /** Sum of per-task durations (overlap allowed) */
+  activeTaskDurationMs: z.number().int().nonnegative(),
+  /** Running time with zero active tasks */
+  unallocatedDurationMs: z.number().int().nonnegative(),
+  /** True when task durations exceed session duration */
+  hasOverlap: z.boolean(),
+  /** True when unallocated duration is non-zero */
+  hasUnallocatedTime: z.boolean(),
 });
+
+export type SessionDurationSummary = z.infer<
+  typeof sessionDurationSummarySchema
+>;
+
+/**
+ * Per-task summary derived from events.
+ */
+export const sessionTaskSummarySchema = z.object({
+  taskId: taskIdSchema,
+  activeDurationMs: z.number().int().nonnegative(),
+  wasActive: z.boolean(),
+  wasCompleted: z.boolean(),
+  firstActivatedAt: timestampSchema.nullable(),
+  lastDeactivatedAt: timestampSchema.nullable(),
+});
+
+export type SessionTaskSummary = z.infer<typeof sessionTaskSummarySchema>;
+
+/**
+ * Per-project summary derived from tasks.
+ */
+export const sessionProjectSummarySchema = z.object({
+  projectId: projectIdSchema,
+  activeDurationMs: z.number().int().nonnegative(),
+});
+
+export type SessionProjectSummary = z.infer<typeof sessionProjectSummarySchema>;
+
+// ============================================================================
+// List + Detail DTOs
+// ============================================================================
+
+/**
+ * Session summary for list views
+ */
+export const sessionListItemSchema = z.object({
+  id: sessionIdSchema,
+  companyId: companyIdSchema,
+  createdBy: userIdSchema,
+  status: sessionStatusSchema,
+  startAt: timestampSchema,
+  endAt: timestampSchema.nullable(),
+  cancelMode: sessionCancelModeSchema.nullable(),
+  cancelledAt: timestampSchema.nullable(),
+  discardedAt: timestampSchema.nullable(),
+  summary: z.string().max(5000).nullable(),
+  projectIds: z.array(projectIdSchema),
+  isExcludedFromSummaries: z.boolean(),
+  durationSummary: sessionDurationSummarySchema,
+});
+
+export type SessionListItem = z.infer<typeof sessionListItemSchema>;
+
+/**
+ * Session detail DTO (timeline + summaries)
+ */
+export const sessionDetailSchema = sessionListItemSchema.extend({
+  events: z.array(sessionEventSchema),
+  taskSummaries: z.array(sessionTaskSummarySchema),
+  projectSummaries: z.array(sessionProjectSummarySchema),
+});
+
+export type SessionDetail = z.infer<typeof sessionDetailSchema>;

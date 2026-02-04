@@ -7,6 +7,7 @@ import {
   assertFound,
   createSoftDeletePatch,
 } from './lib/helpers';
+import { ensureDefaultListId } from './projectTaskLists';
 
 /**
  * User identity type from Convex auth
@@ -14,6 +15,8 @@ import {
 interface UserIdentity {
   subject: string;
 }
+
+const DEFAULT_PROJECT_NAME = 'General';
 
 /**
  * Get the current user ID from the auth context.
@@ -83,6 +86,85 @@ async function nameExists(
     if (excludeId && p._id === excludeId) return false;
     return p.name.trim().toLowerCase() === normalizedName;
   });
+}
+
+/**
+ * Ensure a default project exists for a company.
+ * Creates "General" when missing and guarantees exactly one default.
+ */
+export async function ensureDefaultProjectId(
+  ctx: MutationCtx,
+  companyId: Id<'companies'>
+): Promise<Id<'projects'>> {
+  const projects = await ctx.db
+    .query('projects')
+    .withIndex('by_companyId', q => q.eq('companyId', companyId))
+    .collect();
+
+  const activeProjects = projects.filter(project => project.deletedAt === null);
+  const defaults = activeProjects.filter(project => project.isDefault);
+  if (defaults.length > 0) {
+    const sorted = defaults.sort((a, b) => a.createdAt - b.createdAt);
+    const primary = sorted[0];
+    if (!primary) {
+      throw new Error('Default project resolution failed');
+    }
+    const now = Date.now();
+    for (const extra of sorted.slice(1)) {
+      await ctx.db.patch(extra._id, {
+        isDefault: false,
+        updatedAt: now,
+      });
+    }
+    for (const archived of projects) {
+      if (archived.deletedAt !== null && archived.isDefault) {
+        await ctx.db.patch(archived._id, {
+          isDefault: false,
+          updatedAt: now,
+        });
+      }
+    }
+    return primary._id;
+  }
+
+  const normalizedDefault = DEFAULT_PROJECT_NAME.toLowerCase();
+  const existing = activeProjects.find(
+    project => project.name.trim().toLowerCase() === normalizedDefault
+  );
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      isDefault: true,
+      updatedAt: Date.now(),
+    });
+    return existing._id;
+  }
+
+  const now = Date.now();
+  for (const archived of projects) {
+    if (archived.deletedAt !== null && archived.isDefault) {
+      await ctx.db.patch(archived._id, {
+        isDefault: false,
+        updatedAt: now,
+      });
+    }
+  }
+
+  const projectId = await ctx.db.insert('projects', {
+    companyId,
+    name: DEFAULT_PROJECT_NAME,
+    repositoryIds: [],
+    slug: generateSlug(DEFAULT_PROJECT_NAME),
+    isFavorite: false,
+    isPinned: false,
+    isDefault: true,
+    notesMarkdown: null,
+    metadata: {},
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  });
+
+  return projectId;
 }
 
 /**
@@ -161,12 +243,15 @@ export const createProject = mutation({
       ...(args.emoji && { emoji: args.emoji }),
       isFavorite: args.isFavorite ?? false,
       isPinned: args.isPinned ?? false,
+      isDefault: false,
       notesMarkdown: args.notesMarkdown ?? null,
       metadata: {},
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
     });
+
+    await ensureDefaultListId(ctx, args.companyId, projectId);
 
     return projectId;
   },
@@ -326,6 +411,33 @@ export const getProject = query({
 });
 
 /**
+ * Get the default project for a company.
+ */
+export const getDefaultProject = query({
+  args: {
+    companyId: v.id('companies'),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getUserId(ctx);
+
+    const company = await ctx.db.get(args.companyId);
+    if (!company || company.userId !== userId) {
+      throw new Error('Company not found or access denied');
+    }
+
+    const project = await ctx.db
+      .query('projects')
+      .withIndex('by_companyId_deletedAt', q =>
+        q.eq('companyId', args.companyId).eq('deletedAt', null)
+      )
+      .filter(q => q.eq(q.field('isDefault'), true))
+      .first();
+
+    return project ?? null;
+  },
+});
+
+/**
  * Get a project by ID, including archived projects.
  *
  * This allows the frontend to distinguish between "not found"
@@ -416,6 +528,10 @@ export const softDeleteProject = mutation({
     }
 
     assertCompanyScoped(project, project.companyId, 'Project');
+
+    if (project.isDefault) {
+      throw new Error('Default project cannot be deleted');
+    }
 
     // Soft delete
     await ctx.db.patch(args.id, createSoftDeletePatch());

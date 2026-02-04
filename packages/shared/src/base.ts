@@ -37,6 +37,11 @@ export type ProjectId = string & { __brand: 'ProjectId' };
 export type TaskId = string & { __brand: 'TaskId' };
 
 /**
+ * Branded string type for Project Task List IDs
+ */
+export type ProjectTaskListId = string & { __brand: 'ProjectTaskListId' };
+
+/**
  * Branded string type for Tag IDs
  */
 export type TagId = string & { __brand: 'TagId' };
@@ -255,6 +260,13 @@ export const projectIdSchema = idSchema.transform(val => val as ProjectId);
  * Zod schema for TaskId
  */
 export const taskIdSchema = idSchema.transform(val => val as TaskId);
+
+/**
+ * Zod schema for ProjectTaskListId
+ */
+export const projectTaskListIdSchema = idSchema.transform(
+  val => val as ProjectTaskListId
+);
 
 /**
  * Zod schema for TagId

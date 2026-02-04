@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
+import { authClient } from '@/lib/auth';
 import type { Id } from '../../../../convex/_generated/dataModel';
 
 export interface Company {
@@ -26,8 +27,9 @@ const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 const STORAGE_KEY = 'devsuite-current-company-id';
 
 export function CompanyProvider({ children }: { children: React.ReactNode }) {
-  const companies = useQuery(api.companies.list);
-  const isLoading = companies === undefined;
+  const { data: authSession } = authClient.useSession();
+  const companies = useQuery(api.companies.list, authSession ? {} : 'skip');
+  const isLoading = authSession === undefined || companies === undefined;
 
   const [currentCompanyId, setCurrentCompanyId] =
     useState<Id<'companies'> | null>(() => {

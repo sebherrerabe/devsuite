@@ -11,6 +11,8 @@ import { mutation } from './_generated/server';
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import { createSoftDeletePatch } from './lib/helpers';
+import { ensureDefaultListId } from './projectTaskLists';
+import { ensureDefaultProjectId } from './projects';
 
 // ============================================================================
 // Dev Environment Guard
@@ -85,6 +87,9 @@ export const seed = mutation({
       projectId?: Id<'projects'>;
     } = {};
 
+    const defaultProjectId = await ensureDefaultProjectId(ctx, companyId);
+    await ensureDefaultListId(ctx, companyId, defaultProjectId);
+
     // Create a default rate card
     const rateCardId = await ctx.db.insert('rateCards', {
       companyId,
@@ -119,6 +124,7 @@ export const seed = mutation({
       description: 'A sample project for development',
       repositoryIds: [repositoryId],
       slug: 'demo-project',
+      isDefault: false,
       notesMarkdown: null,
       metadata: {},
       createdAt: now,
@@ -126,6 +132,8 @@ export const seed = mutation({
       deletedAt: null,
     });
     results.projectId = projectId;
+
+    await ensureDefaultListId(ctx, companyId, projectId);
 
     return {
       success: true,
@@ -164,7 +172,6 @@ export const resetCompanyData = mutation({
       projects: number;
       tasks: number;
       sessions: number;
-      sessionTasks: number;
       inboxItems: number;
       prReviews: number;
       performanceSignals: number;
@@ -175,7 +182,6 @@ export const resetCompanyData = mutation({
       projects: 0,
       tasks: 0,
       sessions: 0,
-      sessionTasks: 0,
       inboxItems: 0,
       prReviews: 0,
       performanceSignals: 0,
@@ -194,13 +200,16 @@ export const resetCompanyData = mutation({
       results.repositories++;
     }
 
-    // Soft delete all projects
+    // Soft delete all non-default projects
     const projects = await ctx.db
       .query('projects')
       .withIndex('by_companyId', q => q.eq('companyId', companyId))
       .filter(q => q.eq(q.field('deletedAt'), null))
       .collect();
     for (const project of projects) {
+      if (project.isDefault) {
+        continue;
+      }
       await ctx.db.patch(project._id, deletePatch);
       results.projects++;
     }
@@ -234,19 +243,6 @@ export const resetCompanyData = mutation({
     for (const session of sessions) {
       await ctx.db.patch(session._id, deletePatch);
       results.sessions++;
-    }
-
-    // Soft delete all sessionTasks (via sessionId)
-    for (const session of sessions) {
-      const sessionTasks = await ctx.db
-        .query('sessionTasks')
-        .withIndex('by_sessionId', q => q.eq('sessionId', session._id))
-        .filter(q => q.eq(q.field('deletedAt'), null))
-        .collect();
-      for (const sessionTask of sessionTasks) {
-        await ctx.db.patch(sessionTask._id, deletePatch);
-        results.sessionTasks++;
-      }
     }
 
     // Soft delete all inboxItems

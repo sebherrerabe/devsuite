@@ -14,6 +14,7 @@ import {
   convexDocBaseSchema,
   externalLinkIdSchema,
   projectIdSchema,
+  projectTaskListIdSchema,
   repositoryIdSchema,
   tagIdSchema,
   taskIdSchema,
@@ -228,6 +229,8 @@ export const projectSchema = z
     isPinned: z.boolean().optional(),
     /** Whether the project is marked as favorite */
     isFavorite: z.boolean().optional(),
+    /** Whether the project is the default for the company */
+    isDefault: z.boolean(),
     /** Markdown notes/scratchpad */
     notesMarkdown: z.string().nullable(),
     /** IDs of linked repositories */
@@ -258,6 +261,7 @@ export const projectDocSchema = convexDocBaseSchema
     color: z.string().optional(),
     isFavorite: z.boolean().optional(),
     isPinned: z.boolean().optional(),
+    isDefault: z.boolean(),
     notesMarkdown: z.string().nullable(),
     metadata: z.unknown(),
   })
@@ -316,13 +320,14 @@ export type UpdateProjectInput = z.infer<typeof updateProjectInputSchema>;
  * Tasks are the primary unit of work in DevSuite.
  * - Supports hierarchy via parentTaskId (optional, null for top-level)
  * - External systems are referenced via external_links (not mirrored)
- * - Company-scoped (optionally project-scoped)
+ * - Company-scoped and always project-scoped
  */
 export const taskSchema = z
   .object({
     id: taskIdSchema,
     companyId: companyIdSchema,
-    projectId: projectIdSchema.nullable(),
+    projectId: projectIdSchema,
+    listId: projectTaskListIdSchema,
     /** Parent task ID for hierarchy (null for top-level tasks) */
     parentTaskId: taskIdSchema.nullable(),
     title: z.string().min(1).max(500),
@@ -357,7 +362,8 @@ export const taskDocSchema = convexDocBaseSchema
   .extend({
     _id: taskIdSchema,
     companyId: companyIdSchema,
-    projectId: projectIdSchema.nullable(),
+    projectId: projectIdSchema,
+    listId: projectTaskListIdSchema,
     parentTaskId: taskIdSchema.nullable(),
     title: z.string().min(1).max(500),
     description: z.string().max(10000).optional(),
@@ -379,7 +385,8 @@ export type TaskDoc = z.infer<typeof taskDocSchema>;
  */
 export const createTaskInputSchema = z.object({
   companyId: companyIdSchema,
-  projectId: projectIdSchema.nullable(),
+  projectId: projectIdSchema,
+  listId: projectTaskListIdSchema.optional(),
   parentTaskId: taskIdSchema.nullable(),
   title: z.string().min(1).max(500),
   description: z.string().max(10000).optional(),

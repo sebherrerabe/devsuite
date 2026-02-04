@@ -8,8 +8,7 @@
     "target": "ES2022",
     "lib": ["ES2022"],
     "moduleResolution": "bundler",
-    "outDir": "_generated",
-    "noEmit": false,
+    "noEmit": true,
     "skipLibCheck": true
   },
   "include": ["**/*.ts"],

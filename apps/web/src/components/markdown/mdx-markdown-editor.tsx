@@ -18,7 +18,12 @@ import {
   ListsToggle,
   CodeToggle,
 } from '@mdxeditor/editor';
-import { forwardRef, useImperativeHandle, useRef } from 'react';
+import {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  type CSSProperties,
+} from 'react';
 import { cn } from '@/lib/utils';
 
 export interface MDXMarkdownEditorProps {
@@ -28,6 +33,7 @@ export interface MDXMarkdownEditorProps {
   minHeight?: string;
   readOnly?: boolean;
   className?: string;
+  variant?: 'default' | 'minimal';
 }
 
 export const MDXMarkdownEditor = forwardRef<
@@ -35,21 +41,42 @@ export const MDXMarkdownEditor = forwardRef<
   MDXMarkdownEditorProps
 >(
   (
-    { markdown, onChange, placeholder, minHeight, readOnly, className },
+    {
+      markdown,
+      onChange,
+      placeholder,
+      minHeight,
+      readOnly,
+      className,
+      variant,
+    },
     ref
   ) => {
     const editorRef = useRef<MDXEditorMethods>(null);
+    const isMinimal = variant === 'minimal';
 
     useImperativeHandle(ref, () => editorRef.current!);
 
     return (
       <div
         className={cn(
-          'rounded-md border border-input bg-background',
-          'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
+          !isMinimal && 'rounded-md border border-input bg-background',
+          !isMinimal &&
+            'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
           className
         )}
-        style={{ minHeight }}
+        style={{
+          minHeight,
+          ...(isMinimal
+            ? ({
+                color: 'hsl(var(--foreground))',
+                ['--mdx-editor-text-color' as string]: 'hsl(var(--foreground))',
+                ['--mdx-editor-foreground' as string]: 'hsl(var(--foreground))',
+                ['--mdx-editor-secondary-text-color' as string]:
+                  'hsl(var(--muted-foreground))',
+              } as CSSProperties)
+            : {}),
+        }}
       >
         <MDXEditor
           ref={editorRef}
@@ -57,10 +84,15 @@ export const MDXMarkdownEditor = forwardRef<
           onChange={onChange}
           placeholder={placeholder}
           readOnly={readOnly}
-          className="mdxeditor"
+          className={cn(
+            'mdxeditor',
+            isMinimal && 'text-[color:hsl(var(--foreground))]'
+          )}
           contentEditableClassName={cn(
             'focus:outline-none',
-            'min-h-[200px] p-4',
+            isMinimal
+              ? 'min-h-[200px] p-0 text-[color:hsl(var(--foreground))] !text-foreground'
+              : 'min-h-[200px] p-4',
             'text-foreground'
           )}
           plugins={[
@@ -86,19 +118,23 @@ export const MDXMarkdownEditor = forwardRef<
               },
             }),
             markdownShortcutPlugin(),
-            toolbarPlugin({
-              toolbarContents: () => (
-                <>
-                  <UndoRedo />
-                  <BoldItalicUnderlineToggles />
-                  <CodeToggle />
-                  <BlockTypeSelect />
-                  <ListsToggle />
-                  <CreateLink />
-                  <InsertCodeBlock />
-                </>
-              ),
-            }),
+            ...(isMinimal
+              ? []
+              : [
+                  toolbarPlugin({
+                    toolbarContents: () => (
+                      <>
+                        <UndoRedo />
+                        <BoldItalicUnderlineToggles />
+                        <CodeToggle />
+                        <BlockTypeSelect />
+                        <ListsToggle />
+                        <CreateLink />
+                        <InsertCodeBlock />
+                      </>
+                    ),
+                  }),
+                ]),
           ]}
         />
       </div>

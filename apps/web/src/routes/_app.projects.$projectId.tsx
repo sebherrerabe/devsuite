@@ -6,7 +6,7 @@ import {
 } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
-import { Loader2, ChevronRight, Plus } from 'lucide-react';
+import { Loader2, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Id } from '../../../../convex/_generated/dataModel';
 
@@ -93,12 +93,7 @@ function ProjectDetailLayout() {
           </div>
           <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Task
-          </Button>
-        </div>
+        <div className="flex items-center gap-2" />
       </div>
 
       {/* Tabs */}
