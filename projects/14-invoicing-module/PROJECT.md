@@ -13,7 +13,7 @@ estimated_complexity: 'medium'
 
 ## Summary
 
-Implement session-based invoicing with configurable rate cards. Invoicing is derivative (based on sessions), not a primary data source. Produces simple, auditable CSV outputs.
+Implement session-based invoicing with configurable rate cards and rounding policies. Invoicing is derivative (based on ended sessions + task effective time), not a primary data source. Produces simple, auditable CSV outputs via immutable invoice snapshots (including multi-rate lines per day when work spans rates).
 
 ## Objective
 
@@ -22,6 +22,7 @@ Enable users to generate invoices from tracked sessions for client billing.
 ## Key Deliverables
 
 - Rate card management (hourly rates per company/project)
+- Rounding configuration (company default + per-project override)
 - Invoice generation from sessions
 - Invoice preview page
 - Invoice period selection (typically monthly)
@@ -32,7 +33,7 @@ Enable users to generate invoices from tracked sessions for client billing.
 
 - [ ] Can configure rate cards
 - [ ] Can generate invoice for date range
-- [ ] Invoice shows session breakdown
+- [ ] Invoice shows per-day per-rate summary and session breakdown
 - [ ] Can export to CSV
 - [ ] Totals are calculated correctly
 
@@ -49,16 +50,18 @@ From spec section 2.11:
 
 ## Quick Links
 
-- [Scope](./SCOPE.md) _(to be created by AI PM)_
-- [Dependencies](./DEPENDENCIES.md) _(to be created by AI PM)_
-- [Tasks](./TASKS.md) _(to be created by AI PM)_
-- [Status](./STATUS.md) _(to be created by AI PM)_
+- [Scope](./SCOPE.md)
+- [Dependencies](./DEPENDENCIES.md)
+- [Tasks](./TASKS.md)
+- [Status](./STATUS.md)
 
 ## Notes for AI PM
 
 When decomposing this project:
 
 1. Rate cards are the configuration point
-2. Invoice is a view over sessions, not separate data
+2. Invoices are snapshots derived from sessions/tasks (not separate source-of-truth)
 3. CSV export is the primary output format
-4. Keep it simple - not accounting software
+4. Multi-project invoices imply multi-rate day lines
+5. Day grouping uses user timezone; sessions without tasks are not billable
+6. Keep it simple - not accounting software

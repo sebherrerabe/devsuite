@@ -111,6 +111,8 @@ export function ProjectTaskListsPanel({
     }));
   }, [listOrder]);
 
+  const fallbackListId = defaultListId ?? listModels[0]?.id ?? null;
+
   const tasksByList = useMemo(() => {
     const map = new Map<Id<'project_task_lists'>, TaskDoc[]>();
     if (!tasks) return map;
@@ -120,10 +122,8 @@ export function ProjectTaskListsPanel({
     }
 
     for (const task of tasks) {
-      const listId = task.listId;
-      const targetListId = map.has(listId)
-        ? listId
-        : (defaultListId ?? listModels[0]?.id);
+      const listId = task.listId ?? null;
+      const targetListId = listId && map.has(listId) ? listId : fallbackListId;
       if (!targetListId) continue;
       const bucket = map.get(targetListId) ?? [];
       bucket.push(task);
@@ -131,7 +131,7 @@ export function ProjectTaskListsPanel({
     }
 
     return map;
-  }, [tasks, listModels, defaultListId]);
+  }, [tasks, listModels, fallbackListId]);
 
   const taskMap = useMemo(() => {
     const map = new Map<Id<'tasks'>, TaskDoc>();
@@ -142,12 +142,12 @@ export function ProjectTaskListsPanel({
     return map;
   }, [tasks]);
 
-  const resolveListId = (task: TaskDoc): Id<'project_task_lists'> => {
-    const listId = task.listId;
-    if (tasksByList.has(listId)) {
+  const resolveListId = (task: TaskDoc): Id<'project_task_lists'> | null => {
+    const listId = task.listId ?? null;
+    if (listId && tasksByList.has(listId)) {
       return listId;
     }
-    return defaultListId ?? listModels[0]?.id ?? listId;
+    return fallbackListId ?? listId;
   };
 
   const flattenedByList = useMemo(() => {
@@ -246,6 +246,7 @@ export function ProjectTaskListsPanel({
     if (!activeTask) return;
 
     const activeListId = resolveListId(activeTask);
+    if (!activeListId) return;
 
     const overId = over.id as string;
     const isListDrop = typeof overId === 'string' && overId.startsWith('list:');
@@ -279,6 +280,7 @@ export function ProjectTaskListsPanel({
     if (!overTask) return;
 
     const targetListId = resolveListId(overTask);
+    if (!targetListId) return;
 
     if (targetListId !== activeListId) {
       const targetTasks = tasksByList.get(targetListId) ?? [];

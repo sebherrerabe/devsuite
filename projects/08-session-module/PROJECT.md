@@ -23,11 +23,12 @@ Enable users to track work sessions with start/end times, task associations, and
 
 - Convex functions: startSession, endSession, updateSession, listSessions, getSession
 - Session-Task junction operations
+- Task activity intervals within a session (explicit start/end slices; no double counting)
 - Active session timer UI
 - Session list/history view
 - Session detail view with task associations
 - Session creation (manual entry)
-- Time distribution hints UI (optional)
+- Time distribution / overlap handling UI (as needed for invoicing)
 
 ## Success Criteria
 
@@ -62,6 +63,7 @@ When decomposing this project:
 
 1. Active session timer is a key UI component
 2. Session-Task junction needs careful design
-3. Consider "quick session" flow vs detailed entry
-4. Time distribution hints are optional complexity
-5. This feeds into invoicing - accuracy matters
+3. Sessions may include tasks from multiple projects (parallel agents); design must not assume one project per session
+4. Consider "quick session" flow vs detailed entry
+5. Task activity intervals (explicit start/end slices, overlaps allowed) are needed for correct invoicing
+6. This feeds into invoicing - accuracy matters

@@ -17,8 +17,8 @@
 | 06  | [Project Module](./06-project-module/PROJECT.md)             | `pending` | 05         | 07                     | 6        |
 | 07  | [Task Module](./07-task-module/PROJECT.md)                   | `pending` | 06         | 08, 13, 16             | 7        |
 | 08  | [Session Module](./08-session-module/PROJECT.md)             | `pending` | 04, 07     | 13, 14                 | 8        |
-| 09  | [MCP Server Foundation](./09-mcp-server/PROJECT.md)          | `pending` | 02         | 10, 12                 | 5        |
-| 10  | [PR Review Module](./10-pr-review-module/PROJECT.md)         | `pending` | 05, 09     | 13                     | 9        |
+| 09  | [MCP Server Foundation](./09-mcp-server/PROJECT.md)          | `pending` | 02         | 12                     | 5        |
+| 10  | [PR Review Module](./10-pr-review-module/PROJECT.md)         | `pending` | 05         | 13                     | 9        |
 | 11  | [Inbox & Notifications](./11-inbox-module/PROJECT.md)        | `pending` | 04         | 15                     | 10       |
 | 12  | [GitHub Integration](./12-github-integration/PROJECT.md)     | `pending` | 05, 09     | 10, 11                 | 9        |
 | 13  | [Performance Signals](./13-performance-module/PROJECT.md)    | `pending` | 08, 10     | —                      | 11       |
@@ -46,7 +46,6 @@
 │   │   │   └── 11-inbox-module
 │   │   │       └── 15-notion-integration
 │   │   └── 09-mcp-server
-│   │       ├── 10-pr-review-module
 │   │       └── 12-github-integration
 │   └── 03-frontend-foundation
 │       └── (all UI work in 04-16)
@@ -71,7 +70,7 @@
 ### Stream C: MCP Server (Parallel after 02)
 
 ```
-02 → 09 → 12 → 10
+02 → 09 → 12
 ```
 
 ### Stream D: Secondary Features (After dependencies met)
@@ -79,6 +78,7 @@
 ```
 04 → 11 → 15
 07 → 16
+05 → 10
 ```
 
 ---

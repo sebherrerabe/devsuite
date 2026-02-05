@@ -86,7 +86,8 @@ export const MDXMarkdownEditor = forwardRef<
           readOnly={readOnly}
           className={cn(
             'mdxeditor',
-            isMinimal && 'text-[color:hsl(var(--foreground))]'
+            isMinimal &&
+              'mdxeditor--minimal text-[color:hsl(var(--foreground))]'
           )}
           contentEditableClassName={cn(
             'focus:outline-none',

@@ -2,12 +2,21 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import type { TaskStatus } from '@devsuite/shared';
 import type { Id } from '../../../../convex/_generated/dataModel';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -21,7 +30,9 @@ import {
   Trash2,
   ExternalLink as ExternalLinkIcon,
   Save,
+  Plus,
   Loader2,
+  GitPullRequest,
 } from 'lucide-react';
 import { MDXMarkdownEditor } from '@/components/markdown/mdx-markdown-editor';
 import { TaskTriStateButton } from '@/components/task-tristate-button';
@@ -31,7 +42,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { format } from 'date-fns';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { showToast } from '@/lib/toast';
 import type { Doc } from '../../../../convex/_generated/dataModel';
@@ -116,10 +127,21 @@ function TaskDetailContent({
   const updateTask = useMutation(api.tasks.updateTask);
   const addLink = useMutation(api.externalLinks.addExternalLink);
   const removeLink = useMutation(api.externalLinks.removeExternalLink);
+  const createPRReview = useMutation(api.prReviews.createPRReview);
   const sessionMetadata = useQuery(api.sessions.getTaskSessionMetadata, {
     companyId,
     taskId: task._id,
   });
+  const repositories = useQuery(api.repositories.getByCompany, { companyId });
+  const project = useQuery(
+    api.projects.getProject,
+    task.projectId ? { id: task.projectId } : 'skip'
+  );
+  const prReviews = useQuery(api.prReviews.listPRReviewsByTask, {
+    companyId,
+    taskId: task._id,
+  });
+  const navigate = useNavigate();
 
   const [formState, setFormState] = useState(() => ({
     title: task.title,
@@ -130,9 +152,40 @@ function TaskDetailContent({
     selectedTags: task.tagIds ?? [],
   }));
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [isCreateReviewOpen, setIsCreateReviewOpen] = useState(false);
+  const [isCreatingReview, setIsCreatingReview] = useState(false);
+  const [reviewFormState, setReviewFormState] = useState(() => ({
+    repositoryId: '' as Id<'repositories'> | '',
+    prUrl: '',
+    baseBranch: '',
+    headBranch: '',
+    title: '',
+  }));
   const hasSessionMetadata = (sessionMetadata?.sessionCount ?? 0) > 0;
   const triState = getTriState(formState.status);
   const nextTriState = getNextTriState(triState);
+
+  const defaultRepositoryId =
+    project?.repositoryIds?.length === 1 ? project.repositoryIds[0] : '';
+
+  useEffect(() => {
+    if (!isCreateReviewOpen) return;
+    if (!reviewFormState.repositoryId && defaultRepositoryId) {
+      setReviewFormState(prev => ({
+        ...prev,
+        repositoryId: defaultRepositoryId,
+      }));
+    }
+    if (!reviewFormState.title) {
+      setReviewFormState(prev => ({ ...prev, title: task.title }));
+    }
+  }, [
+    isCreateReviewOpen,
+    defaultRepositoryId,
+    reviewFormState.repositoryId,
+    reviewFormState.title,
+    task.title,
+  ]);
 
   const handleUpdate = (
     updates: Partial<{
@@ -187,6 +240,47 @@ function TaskDetailContent({
       showToast.error('Failed to save notes');
     } finally {
       setIsSavingNotes(false);
+    }
+  };
+
+  const handleCreatePRReview = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!reviewFormState.repositoryId) return;
+    if (
+      !reviewFormState.prUrl.trim() ||
+      !reviewFormState.baseBranch.trim() ||
+      !reviewFormState.headBranch.trim()
+    ) {
+      return;
+    }
+
+    setIsCreatingReview(true);
+    try {
+      const reviewId = await createPRReview({
+        companyId,
+        taskId: task._id,
+        repositoryId: reviewFormState.repositoryId,
+        prUrl: reviewFormState.prUrl.trim(),
+        baseBranch: reviewFormState.baseBranch.trim(),
+        headBranch: reviewFormState.headBranch.trim(),
+        title: reviewFormState.title.trim() || undefined,
+      });
+      showToast.success('PR review created');
+      setIsCreateReviewOpen(false);
+      setReviewFormState(prev => ({
+        repositoryId: prev.repositoryId,
+        prUrl: '',
+        baseBranch: '',
+        headBranch: '',
+        title: '',
+      }));
+      navigate({ to: '/reviews/$reviewId', params: { reviewId } });
+    } catch (error) {
+      showToast.error(
+        error instanceof Error ? error.message : 'Failed to create review'
+      );
+    } finally {
+      setIsCreatingReview(false);
     }
   };
 
@@ -445,6 +539,178 @@ function TaskDetailContent({
           </p>
         )}
       </div>
+
+      <Separator />
+
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+            <GitPullRequest className="h-3 w-3" /> PR Reviews
+          </Label>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setIsCreateReviewOpen(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Start PR review
+          </Button>
+        </div>
+
+        {prReviews === undefined ? (
+          <div className="space-y-2">
+            <div className="h-10 rounded bg-muted animate-pulse" />
+            <div className="h-10 rounded bg-muted animate-pulse" />
+          </div>
+        ) : prReviews.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No PR reviews linked to this task yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {prReviews.map(review => (
+              <Link
+                key={review._id}
+                to="/reviews/$reviewId"
+                params={{ reviewId: review._id }}
+                className="block"
+              >
+                <div className="flex items-center justify-between gap-3 p-2 rounded-md border bg-muted/30 hover:bg-muted/50">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {review.title || 'Untitled review'}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {review.prUrl}
+                    </p>
+                  </div>
+                  <div className="text-xs text-muted-foreground shrink-0">
+                    {formatShortDateTime(review.createdAt)}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Dialog open={isCreateReviewOpen} onOpenChange={setIsCreateReviewOpen}>
+        <DialogContent className="sm:max-w-[640px]">
+          <DialogHeader>
+            <DialogTitle>Start PR review</DialogTitle>
+            <DialogDescription>
+              This review will be linked to{' '}
+              <span className="font-medium">{task.title}</span>.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={handleCreatePRReview}
+            className="grid gap-4 md:grid-cols-2"
+          >
+            <div className="space-y-2">
+              <Label>Repository</Label>
+              <Select
+                value={reviewFormState.repositoryId}
+                onValueChange={val =>
+                  setReviewFormState(prev => ({
+                    ...prev,
+                    repositoryId: val as Id<'repositories'>,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a repository" />
+                </SelectTrigger>
+                <SelectContent>
+                  {repositories === undefined ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      Loading...
+                    </div>
+                  ) : repositories && repositories.length > 0 ? (
+                    repositories.map(repo => (
+                      <SelectItem key={repo._id} value={repo._id}>
+                        {repo.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      No repositories found
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>PR URL</Label>
+              <Input
+                placeholder="https://github.com/org/repo/pull/123"
+                value={reviewFormState.prUrl}
+                onChange={e =>
+                  setReviewFormState(prev => ({
+                    ...prev,
+                    prUrl: e.target.value,
+                  }))
+                }
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Base branch</Label>
+              <Input
+                placeholder="main"
+                value={reviewFormState.baseBranch}
+                onChange={e =>
+                  setReviewFormState(prev => ({
+                    ...prev,
+                    baseBranch: e.target.value,
+                  }))
+                }
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Head branch</Label>
+              <Input
+                placeholder="feature/my-change"
+                value={reviewFormState.headBranch}
+                onChange={e =>
+                  setReviewFormState(prev => ({
+                    ...prev,
+                    headBranch: e.target.value,
+                  }))
+                }
+                required
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label>Title (optional)</Label>
+              <Input
+                placeholder="Short summary"
+                value={reviewFormState.title}
+                onChange={e =>
+                  setReviewFormState(prev => ({
+                    ...prev,
+                    title: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <DialogFooter className="md:col-span-2">
+              <Button type="submit" disabled={isCreatingReview}>
+                {isCreatingReview && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Create review
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Separator />
 

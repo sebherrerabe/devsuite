@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global console, process */
 /**
  * Monitor what files Convex is touching that trigger rebuilds
  * Uses inotify-style monitoring via chokidar
@@ -38,7 +39,7 @@ const watcher = fs.watch(
     let stats = null;
     try {
       stats = fs.statSync(fullPath);
-    } catch (err) {
+    } catch {
       // File might have been deleted
     }
 

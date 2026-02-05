@@ -156,3 +156,12 @@
   padding: 1rem;
   color: var(--foreground);
 }
+
+.mdxeditor--minimal .mdxeditor-root-contenteditable {
+  padding: 0 !important;
+}
+
+.mdxeditor--minimal .mdxeditor-placeholder {
+  padding: 0 !important;
+  margin: 0 !important;
+}

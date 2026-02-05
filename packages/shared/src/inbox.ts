@@ -86,9 +86,115 @@ export type InboxItemContent = {
   url?: string;
   /** External identifier from the source system */
   externalId?: string;
-  /** Additional metadata from source system */
-  metadata?: Record<string, unknown>;
+  /**
+   * Structured metadata used for automation triggers, filtering, and forward
+   * compatibility. Should store external references only (identifiers/links),
+   * not mirrored content.
+   */
+  metadata?: InboxItemMetadata;
 };
+
+// ============================================================================
+// Inbox Item Metadata (Extensible)
+// ============================================================================
+
+/**
+ * Related entity for an inbox item (PR, issue, page, task, etc.)
+ *
+ * The schema is intentionally permissive (passthrough) to support future
+ * providers and new entity kinds without a breaking change.
+ */
+export const inboxItemEntitySchema = z
+  .object({
+    /** Entity kind identifier (e.g., "pull_request", "page") */
+    kind: z.string().min(1),
+    /** Provider-specific identifier for the entity */
+    externalId: z.string().optional(),
+    /** Canonical URL for the entity */
+    url: z.string().url().optional(),
+    /** Optional repo identifier for GitHub-sourced entities (e.g., "org/repo") */
+    repoFullName: z.string().min(1).optional(),
+    /** Optional PR number when kind is pull_request */
+    prNumber: z.number().int().positive().optional(),
+  })
+  .passthrough();
+
+export type InboxItemEntity = z.infer<typeof inboxItemEntitySchema>;
+
+/**
+ * Event classification for the inbox item.
+ *
+ * This is the primary "trigger surface" for automations (e.g., review requested,
+ * mentioned, commented, assigned).
+ */
+export const inboxItemEventSchema = z
+  .object({
+    /** Event kind identifier (e.g., "review_requested", "commented") */
+    kind: z.string().min(1),
+    /** Actor/login responsible for the event (if known) */
+    actor: z.string().optional(),
+    /** When the event occurred (unix ms) if known */
+    occurredAt: z.number().optional(),
+  })
+  .passthrough();
+
+export type InboxItemEvent = z.infer<typeof inboxItemEventSchema>;
+
+/**
+ * GitHub-specific metadata (thread-level dedupe, reason, etc.)
+ */
+export const inboxItemGithubMetadataSchema = z
+  .object({
+    /** Notification thread identifier from GitHub */
+    threadId: z.string().min(1).optional(),
+    /** GitHub notification "reason" (e.g., "review_requested", "mention") */
+    reason: z.string().min(1).optional(),
+    /** Repo full name when available (e.g., "org/repo") */
+    repoFullName: z.string().min(1).optional(),
+    /** Subject type when available (e.g., "PullRequest") */
+    subjectType: z.string().min(1).optional(),
+    /** Last update timestamp from provider (unix ms or ISO string) */
+    updatedAt: z.union([z.number(), z.string()]).optional(),
+  })
+  .passthrough();
+
+export type InboxItemGithubMetadata = z.infer<
+  typeof inboxItemGithubMetadataSchema
+>;
+
+/**
+ * Notion-specific metadata (page/comment identifiers, etc.)
+ */
+export const inboxItemNotionMetadataSchema = z
+  .object({
+    workspaceId: z.string().min(1).optional(),
+    pageId: z.string().min(1).optional(),
+    databaseId: z.string().min(1).optional(),
+    commentId: z.string().min(1).optional(),
+    updatedAt: z.union([z.number(), z.string()]).optional(),
+  })
+  .passthrough();
+
+export type InboxItemNotionMetadata = z.infer<
+  typeof inboxItemNotionMetadataSchema
+>;
+
+/**
+ * Inbox item metadata schema (extensible)
+ *
+ * Uses z.passthrough() to allow additional provider-specific fields for forward
+ * compatibility.
+ */
+export const inboxItemMetadataSchema = z
+  .object({
+    entity: inboxItemEntitySchema.optional(),
+    event: inboxItemEventSchema.optional(),
+    github: inboxItemGithubMetadataSchema.optional(),
+    notion: inboxItemNotionMetadataSchema.optional(),
+  })
+  .passthrough();
+
+export type InboxItemMetadata = z.infer<typeof inboxItemMetadataSchema>;
 
 /**
  * Zod schema for InboxItemContent
@@ -98,7 +204,7 @@ export const inboxItemContentSchema = z.object({
   body: z.string().optional(),
   url: z.string().url().optional(),
   externalId: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: inboxItemMetadataSchema.optional(),
 });
 
 // ============================================================================

@@ -123,6 +123,7 @@ Define types and Zod schemas for the unified inbox system.
 - [ ] `InboxItem` type with all fields
 - [ ] `InboxItemType` enum (notification, pr_review, mention, etc.)
 - [ ] `InboxItemSource` enum (github, notion, internal)
+- [ ] `InboxItemContent.metadata` supports `entity` + `event` classification with provider-specific passthrough fields
 - [ ] `InboxItemSchema` Zod schema
 
 **Notes**:

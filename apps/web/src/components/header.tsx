@@ -1,8 +1,10 @@
 import { Link } from '@tanstack/react-router';
+import { useState } from 'react';
 import { CompanySwitcher } from './company-switcher';
 import { PrivacyModeToggle } from './privacy-mode-toggle';
 import { Button } from '@/components/ui/button';
 import { SessionWidget } from './session-widget';
+import { Sidebar } from './sidebar';
 import { authClient, signOut } from '@/lib/auth';
 import {
   DropdownMenu,
@@ -12,10 +14,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, LogOut } from 'lucide-react';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { User, LogOut, Menu } from 'lucide-react';
 
 export function Header() {
   const { data: session } = authClient.useSession();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
@@ -25,15 +29,48 @@ export function Header() {
   return (
     <header className="fixed top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-14 items-center px-4 md:px-6">
-        <div className="flex items-center gap-4 md:gap-8">
+        <div className="flex items-center gap-3 md:gap-6">
+          <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden"
+                aria-label="Open navigation menu"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 p-0">
+              <div className="flex h-full flex-col">
+                <div className="flex items-center gap-2 border-b px-4 py-3">
+                  <img src="/logo.svg" alt="DevSuite" className="h-6 w-auto" />
+                  <span className="text-sm font-semibold">DevSuite</span>
+                </div>
+                <div className="border-b px-4 py-3">
+                  <CompanySwitcher />
+                </div>
+                <div className="flex-1 overflow-y-auto px-2 py-2">
+                  <Sidebar
+                    isCollapsed={false}
+                    showToggle={false}
+                    onItemSelect={() => setIsMobileMenuOpen(false)}
+                    className="h-full"
+                  />
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
           <Link to="/" className="flex items-center gap-2">
             <img src="/logo.svg" alt="DevSuite" className="h-8 w-auto" />
           </Link>
-          <CompanySwitcher />
+          <div className="hidden md:flex">
+            <CompanySwitcher />
+          </div>
         </div>
 
-        <div className="flex flex-1 items-center justify-center px-4">
-          <SessionWidget />
+        <div className="flex flex-1 items-center justify-center px-1 sm:px-2 md:px-4">
+          <SessionWidget showOnMobile />
         </div>
 
         <div className="ml-auto flex items-center gap-2">

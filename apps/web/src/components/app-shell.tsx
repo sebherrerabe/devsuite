@@ -146,41 +146,47 @@ export function AppShell() {
       <GlobalCommandPalette />
       <Header />
       <div className="flex-1 overflow-hidden pt-14">
-        <ResizablePanelGroup
-          orientation="horizontal"
-          onLayoutChanged={handleLayoutChanged}
-        >
-          <ResizablePanel
-            panelRef={sidebarRef}
-            defaultSize={`${initialSidebarSize}%`}
-            minSize={`${SIDEBAR_MIN_SIZE}%`}
-            maxSize={`${SIDEBAR_MAX_SIZE}%`}
-            collapsible={true}
-            collapsedSize={`${SIDEBAR_COLLAPSED_SIZE_PX}px`}
-            onResize={handleResize}
-            className={cn(
-              'hidden md:block',
-              // Only animate width if NOT dragging.
-              // This ensures smooth toggle button animation but instant drag response.
-              !isDragging &&
-                'transition-[flex-basis,width] duration-300 ease-in-out',
-              isCollapsed && 'min-w-[50px]'
-            )}
+        <div className="md:hidden h-full w-full overflow-y-auto p-4">
+          <main className="h-full w-full">
+            <Outlet />
+          </main>
+        </div>
+        <div className="hidden md:flex h-full w-full">
+          <ResizablePanelGroup
+            orientation="horizontal"
+            onLayoutChanged={handleLayoutChanged}
           >
-            <Sidebar isCollapsed={isCollapsed} onToggle={toggleSidebar} />
-          </ResizablePanel>
-          <ResizableHandle
-            className="hidden md:flex"
-            withHandle
-            onMouseDown={handleDragStart}
-            onTouchStart={handleDragStart}
-          />
-          <ResizablePanel>
-            <main className="h-full w-full overflow-y-auto p-4 md:p-6">
-              <Outlet />
-            </main>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+            <ResizablePanel
+              panelRef={sidebarRef}
+              defaultSize={`${initialSidebarSize}%`}
+              minSize={`${SIDEBAR_MIN_SIZE}%`}
+              maxSize={`${SIDEBAR_MAX_SIZE}%`}
+              collapsible={true}
+              collapsedSize={`${SIDEBAR_COLLAPSED_SIZE_PX}px`}
+              onResize={handleResize}
+              className={cn(
+                // Only animate width if NOT dragging.
+                // This ensures smooth toggle button animation but instant drag response.
+                !isDragging &&
+                  'transition-[flex-basis,width] duration-300 ease-in-out',
+                isCollapsed && 'min-w-[50px]'
+              )}
+            >
+              <Sidebar isCollapsed={isCollapsed} onToggle={toggleSidebar} />
+            </ResizablePanel>
+            <ResizableHandle
+              className="hidden md:flex"
+              withHandle
+              onMouseDown={handleDragStart}
+              onTouchStart={handleDragStart}
+            />
+            <ResizablePanel>
+              <main className="h-full w-full overflow-y-auto p-4 md:p-6">
+                <Outlet />
+              </main>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
       </div>
     </div>
   );

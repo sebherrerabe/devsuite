@@ -13,7 +13,7 @@ Define TypeScript types for all core domain entities:
 - **Session**: id, companyId, startTime, endTime, summary, taskIds
 - **SessionTask**: sessionId, taskId, notes, timeDistribution
 - **ExternalLink**: type (github_pr, github_issue, notion, ticktick, url), identifier, url
-- **InboxItem**: id, companyId, type, source, content, isRead, isArchived
+- **InboxItem**: id, companyId, type, source, content (title/url/externalId + metadata.entity/event), isRead, isArchived
 - **PRReview**: id, repositoryId, prIdentifier, content, metadata, createdAt
 - **PerformanceSignal**: type, value, entityId, timestamp
 - **Invoice**: id, companyId, periodStart, periodEnd, sessions, rateCard, total

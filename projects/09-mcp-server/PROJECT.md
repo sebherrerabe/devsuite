@@ -5,7 +5,7 @@ status: 'pending'
 priority: 5
 assigned_pm: null
 depends_on: ['02-convex-foundation']
-unlocks: ['10-pr-review-module', '12-github-integration']
+unlocks: ['12-github-integration']
 estimated_complexity: 'high'
 ---
 

@@ -28,8 +28,37 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { debugLog, debugGroup, debugWarn } from '@/lib/debug';
-import type { SessionDetail } from '@devsuite/shared';
-import type { Id } from '../../../../convex/_generated/dataModel';
+import type { Doc, Id } from '../../../../convex/_generated/dataModel';
+
+type SessionDurationSummary = {
+  effectiveDurationMs: number;
+  activeTaskDurationMs: number;
+  unallocatedDurationMs: number;
+  hasOverlap: boolean;
+  hasUnallocatedTime?: boolean;
+};
+
+type SessionTaskSummary = {
+  taskId: Id<'tasks'>;
+  activeDurationMs: number;
+  wasActive: boolean;
+  wasCompleted: boolean;
+  firstActivatedAt: number | null;
+  lastDeactivatedAt: number | null;
+};
+
+type ProjectSummary = {
+  projectId: Id<'projects'>;
+  activeDurationMs: number;
+};
+
+type SessionDetail = {
+  session: Doc<'sessions'>;
+  events: Doc<'sessionEvents'>[];
+  durationSummary: SessionDurationSummary;
+  taskSummaries: SessionTaskSummary[];
+  projectSummaries: ProjectSummary[];
+};
 
 export const Route = createFileRoute('/_app/sessions/$sessionId')({
   component: SessionDetailPage,
@@ -559,7 +588,7 @@ function SessionDetailContent({
                     No projects assigned
                   </span>
                 ) : (
-                  session.projectIds.map(projectId => (
+                  session.projectIds.map((projectId: Id<'projects'>) => (
                     <Badge key={projectId} variant="outline">
                       {projectMap.get(projectId) ?? projectId}
                     </Badge>

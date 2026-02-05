@@ -59,7 +59,13 @@ type TaskGroup = {
   listOrder: number;
 };
 
-export function SessionWidget() {
+export function SessionWidget({
+  triggerClassName,
+  showOnMobile = false,
+}: {
+  triggerClassName?: string;
+  showOnMobile?: boolean;
+}) {
   const { currentCompany } = useCurrentCompany();
   const companyId = currentCompany?._id;
 
@@ -181,7 +187,7 @@ export function SessionWidget() {
     if (!tasks) return [];
     const filtered = tasks.filter(task => {
       if (allowedProjectIds) {
-        return task.projectId !== null && allowedProjectIds.has(task.projectId);
+        return !!task.projectId && allowedProjectIds.has(task.projectId);
       }
       return true;
     });
@@ -585,17 +591,22 @@ export function SessionWidget() {
             variant="outline"
             size="sm"
             className={cn(
-              'hidden h-8 gap-2 border-primary/20 font-mono text-xs md:flex',
-              status === 'RUNNING' && 'border-primary/40 bg-primary/5'
+              'h-8 gap-2 border-primary/20 font-mono text-[11px] sm:text-xs px-2 sm:px-3',
+              showOnMobile ? 'flex' : 'hidden md:flex',
+              status === 'RUNNING' && 'border-primary/40 bg-primary/5',
+              triggerClassName
             )}
           >
             <Timer className="h-3 w-3 text-primary" />
             <span className="text-primary">
               {isLoading ? '...' : formatDurationMs(displayDurationMs)}
             </span>
-            <span className="text-muted-foreground">|</span>
-            <span className="text-muted-foreground">
+            <span className="hidden sm:inline text-muted-foreground">|</span>
+            <span className="hidden sm:inline text-muted-foreground">
               {status === 'IDLE' ? 'No session' : status}
+            </span>
+            <span className="sm:hidden text-muted-foreground">
+              {status === 'IDLE' ? 'Idle' : status}
             </span>
           </Button>
         </PopoverTrigger>

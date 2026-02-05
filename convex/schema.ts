@@ -364,10 +364,12 @@ export default defineSchema({
   prReviews: defineTable({
     companyId: v.id('companies'),
     repositoryId: v.id('repositories'),
-    prIdentifier: v.string(),
+    taskId: v.optional(v.union(v.id('tasks'), v.null())),
     prUrl: v.string(),
-    prTitle: v.optional(v.string()),
-    content: v.string(),
+    baseBranch: v.string(),
+    headBranch: v.string(),
+    title: v.optional(v.string()),
+    contentMarkdown: v.string(),
     metadata: v.optional(
       v.object({
         riskAreas: v.optional(
@@ -427,9 +429,23 @@ export default defineSchema({
   })
     .index('by_companyId', ['companyId'])
     .index('by_companyId_deletedAt', ['companyId', 'deletedAt'])
+    .index('by_companyId_deletedAt_createdAt', [
+      'companyId',
+      'deletedAt',
+      'createdAt',
+    ])
     .index('by_repositoryId', ['repositoryId'])
     .index('by_repositoryId_deletedAt', ['repositoryId', 'deletedAt'])
-    .index('by_prIdentifier', ['prIdentifier']),
+    .index('by_repositoryId_deletedAt_createdAt', [
+      'repositoryId',
+      'deletedAt',
+      'createdAt',
+    ])
+    .index('by_taskId_deletedAt_createdAt', [
+      'taskId',
+      'deletedAt',
+      'createdAt',
+    ]),
 
   /**
    * PerformanceSignal entities - company-scoped performance metrics

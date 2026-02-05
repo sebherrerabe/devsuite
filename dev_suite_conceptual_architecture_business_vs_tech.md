@@ -129,12 +129,21 @@ DevSuite does **not** store external content — only links.
 
 DevSuite provides a **unified inbox** that aggregates:
 
-- External notifications (GitHub, Notion)
+- External notifications (e.g., GitHub, Notion)
 - Internal events (PR review ready, task blocked, etc.)
+
+The inbox is intentionally **action-oriented**:
+
+- Items represent **notification threads / actionable units**, not a raw event stream
+- When new activity occurs, the corresponding item is **updated** (de-duped) rather than duplicated
+- Items store **external references only** (identifiers/links) plus lightweight classification to power:
+  - Filtering (source, type/event kind, related entity)
+  - UI affordances (icons/badges)
+  - Automation triggers (e.g., “review requested” → create a task + PR review record)
 
 Inbox items can be:
 
-- Read
+- Read / Unread
 - Archived
 
 They are scoped by company and privacy mode.

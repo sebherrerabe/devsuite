@@ -19,7 +19,7 @@ export function CompanySwitcher() {
       <Button
         variant="outline"
         role="combobox"
-        className="w-[200px] justify-between"
+        className="w-[160px] sm:w-[180px] md:w-[200px] lg:w-[220px] justify-between"
         disabled
       >
         <div className="flex items-center gap-2 truncate">
@@ -37,7 +37,7 @@ export function CompanySwitcher() {
         <Button
           variant="outline"
           role="combobox"
-          className="w-[200px] justify-between"
+          className="w-[160px] sm:w-[180px] md:w-[200px] lg:w-[220px] justify-between"
         >
           <div className="flex items-center gap-2 truncate">
             <Building2 className="h-4 w-4 shrink-0 opacity-50" />
@@ -48,7 +48,7 @@ export function CompanySwitcher() {
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-[200px]">
+      <DropdownMenuContent className="w-[160px] sm:w-[180px] md:w-[200px] lg:w-[220px]">
         <DropdownMenuLabel>Companies</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {companies.length === 0 ? (
