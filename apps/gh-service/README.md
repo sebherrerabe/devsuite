@@ -29,6 +29,7 @@ Node.js service for GitHub integration workflows.
 - `DEVSUITE_GH_OAUTH_SCOPES` (default: `repo,read:org,gist,notifications`)
 - `DEVSUITE_GH_SERVICE_BACKEND_TOKEN` (required for notification ingest/sync)
 - `DEVSUITE_CONVEX_SITE_URL` (required for notification ingest/sync)
+- `DEVSUITE_GH_SERVICE_NOTIFICATION_POLL_INTERVAL_MS` (optional; default `60000` in `development`, `300000` in `production`)
 
 ## Running
 
@@ -54,3 +55,6 @@ and returns PR metadata + diff (+ optional checks) for the authenticated user.
 
 `/github/notifications/sync` accepts optional `{ "limit": 1-100 }` and performs
 an immediate fetch + route + ingest cycle for the authenticated user.
+
+Sync telemetry (last attempt/success + counters) is persisted in Convex and can be
+queried by the web app for status visibility.

@@ -32,6 +32,51 @@ export default defineSchema({
     .index('by_createdAt', ['createdAt'])
     .index('by_userId', ['userId']),
 
+  /**
+   * Integration audit events - append-only audit trail for integration settings
+   */
+  integrationAuditEvents: defineTable({
+    companyId: v.id('companies'),
+    userId: v.string(),
+    integration: v.union(v.literal('github')),
+    action: v.union(
+      v.literal('github_org_mapping_created'),
+      v.literal('github_org_mapping_updated')
+    ),
+    metadata: v.optional(v.any()),
+    createdAt: v.number(),
+  })
+    .index('by_companyId', ['companyId'])
+    .index('by_companyId_createdAt', ['companyId', 'createdAt'])
+    .index('by_userId_createdAt', ['userId', 'createdAt']),
+
+  /**
+   * GitHub notification sync telemetry - one mutable row per user
+   */
+  githubNotificationSyncStatus: defineTable({
+    userId: v.string(),
+    githubUser: v.union(v.string(), v.null()),
+    status: v.union(
+      v.literal('success'),
+      v.literal('skipped_no_routes'),
+      v.literal('error')
+    ),
+    hasRouteMappings: v.boolean(),
+    companiesMatched: v.number(),
+    notificationsFetched: v.number(),
+    notificationsFiltered: v.number(),
+    notificationsReceived: v.number(),
+    notificationsRouted: v.number(),
+    notificationsUnmatched: v.number(),
+    deliveriesCreated: v.number(),
+    deliveriesUpdated: v.number(),
+    lastAttemptAt: v.number(),
+    lastSuccessAt: v.union(v.number(), v.null()),
+    errorCode: v.union(v.string(), v.null()),
+    errorMessage: v.union(v.string(), v.null()),
+    updatedAt: v.number(),
+  }).index('by_userId', ['userId']),
+
   // ============================================================================
   // Company-Scoped Entities
   // ============================================================================

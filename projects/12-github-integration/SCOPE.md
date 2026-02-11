@@ -68,6 +68,6 @@ Tokens are encrypted at rest, decrypted only inside the service process, never r
 
 ## Open Questions
 
-- [ ] Confirm default polling cadence (`60s` dev, `5m` prod) (owner: backend)
-- [ ] Confirm encryption key management strategy (KMS vs env key) (owner: backend)
-- [ ] Confirm fail policy for unknown org notifications (drop vs quarantine) (owner: PM)
+- [x] Confirm default polling cadence (`60s` dev, `5m` prod) (owner: backend)
+- [x] Confirm encryption key management strategy (env key in v1; KMS deferred) (owner: backend)
+- [x] Confirm fail policy for unknown org notifications (drop/ignore in v1) (owner: PM)

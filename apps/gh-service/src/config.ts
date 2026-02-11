@@ -20,7 +20,7 @@ const envSchema = z.object({
     .number()
     .int()
     .min(10_000)
-    .default(60_000),
+    .optional(),
   DEVSUITE_GH_SERVICE_NOTIFICATION_BATCH_SIZE: z.coerce
     .number()
     .int()
@@ -92,7 +92,8 @@ export function loadConfig(
     notificationPollEnabled:
       parsed.DEVSUITE_GH_SERVICE_NOTIFICATION_POLL_ENABLED !== 'false',
     notificationPollIntervalMs:
-      parsed.DEVSUITE_GH_SERVICE_NOTIFICATION_POLL_INTERVAL_MS,
+      parsed.DEVSUITE_GH_SERVICE_NOTIFICATION_POLL_INTERVAL_MS ??
+      (parsed.NODE_ENV === 'production' ? 300_000 : 60_000),
     notificationBatchSize: parsed.DEVSUITE_GH_SERVICE_NOTIFICATION_BATCH_SIZE,
     oauthClientId: parsed.DEVSUITE_GH_OAUTH_CLIENT_ID,
     oauthScopes,

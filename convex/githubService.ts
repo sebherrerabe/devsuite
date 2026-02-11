@@ -1,6 +1,20 @@
-import { internalMutation, internalQuery } from './_generated/server';
+import { internalMutation, internalQuery, query } from './_generated/server';
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
+
+interface UserIdentity {
+  subject: string;
+}
+
+async function getUserId(ctx: {
+  auth: { getUserIdentity: () => Promise<UserIdentity | null> };
+}) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new Error('Unauthorized');
+  }
+  return identity.subject;
+}
 
 function normalizeOrgLogin(value: string): string | null {
   const trimmed = value.trim().toLowerCase();
@@ -219,6 +233,96 @@ const githubNotificationInput = v.object({
   updatedAt: v.optional(v.union(v.number(), v.null())),
   unread: v.boolean(),
   apiUrl: v.optional(v.union(v.string(), v.null())),
+});
+
+const notificationSyncTelemetryInput = v.object({
+  githubUser: v.optional(v.union(v.string(), v.null())),
+  status: v.union(
+    v.literal('success'),
+    v.literal('skipped_no_routes'),
+    v.literal('error')
+  ),
+  hasRouteMappings: v.boolean(),
+  companiesMatched: v.number(),
+  notificationsFetched: v.number(),
+  notificationsFiltered: v.number(),
+  notificationsReceived: v.number(),
+  notificationsRouted: v.number(),
+  notificationsUnmatched: v.number(),
+  deliveriesCreated: v.number(),
+  deliveriesUpdated: v.number(),
+  attemptedAt: v.number(),
+  errorCode: v.optional(v.union(v.string(), v.null())),
+  errorMessage: v.optional(v.union(v.string(), v.null())),
+});
+
+export const recordNotificationSyncTelemetry = internalMutation({
+  args: {
+    userId: v.string(),
+    telemetry: notificationSyncTelemetryInput,
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query('githubNotificationSyncStatus')
+      .withIndex('by_userId', q => q.eq('userId', args.userId))
+      .first();
+
+    const now = Date.now();
+    const nextLastSuccessAt =
+      args.telemetry.status === 'success'
+        ? args.telemetry.attemptedAt
+        : (existing?.lastSuccessAt ?? null);
+
+    const patch = {
+      userId: args.userId,
+      githubUser: args.telemetry.githubUser ?? null,
+      status: args.telemetry.status,
+      hasRouteMappings: args.telemetry.hasRouteMappings,
+      companiesMatched: args.telemetry.companiesMatched,
+      notificationsFetched: args.telemetry.notificationsFetched,
+      notificationsFiltered: args.telemetry.notificationsFiltered,
+      notificationsReceived: args.telemetry.notificationsReceived,
+      notificationsRouted: args.telemetry.notificationsRouted,
+      notificationsUnmatched: args.telemetry.notificationsUnmatched,
+      deliveriesCreated: args.telemetry.deliveriesCreated,
+      deliveriesUpdated: args.telemetry.deliveriesUpdated,
+      lastAttemptAt: args.telemetry.attemptedAt,
+      lastSuccessAt: nextLastSuccessAt,
+      errorCode: args.telemetry.errorCode ?? null,
+      errorMessage: args.telemetry.errorMessage ?? null,
+      updatedAt: now,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+      return existing._id;
+    }
+
+    return await ctx.db.insert('githubNotificationSyncStatus', patch);
+  },
+});
+
+export const getMyNotificationSyncTelemetry = internalQuery({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('githubNotificationSyncStatus')
+      .withIndex('by_userId', q => q.eq('userId', args.userId))
+      .first();
+  },
+});
+
+export const getNotificationSyncTelemetryForCurrentUser = query({
+  args: {},
+  handler: async ctx => {
+    const userId = await getUserId(ctx);
+    return await ctx.db
+      .query('githubNotificationSyncStatus')
+      .withIndex('by_userId', q => q.eq('userId', userId))
+      .first();
+  },
 });
 
 export const ingestNotifications = internalMutation({

@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
 import { clearTimeout, setTimeout } from 'node:timers';
+import type { Logger } from './logger.js';
+import { maskUserId } from './logging-utils.js';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -19,11 +21,17 @@ interface CommandResult {
   stderr: string;
 }
 
+export interface CommandAuditContext {
+  actorId: string;
+  logger: Logger;
+}
+
 export interface PrDiscoverParams {
   token: string;
   repo: string;
   state: 'open' | 'closed' | 'merged' | 'all';
   limit: number;
+  audit?: CommandAuditContext;
 }
 
 export interface DiscoveredPr {
@@ -44,6 +52,7 @@ export interface PullRequestBundleParams {
   repo: string;
   number: number;
   includeChecks: boolean;
+  audit?: CommandAuditContext;
 }
 
 export interface PullRequestBundleFile {
@@ -106,7 +115,8 @@ function runCommand(
   commandClass: AllowedCommand,
   token: string,
   args: string[],
-  timeoutMs = DEFAULT_TIMEOUT_MS
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  audit?: CommandAuditContext
 ): Promise<CommandResult> {
   if (!allowedCommands.includes(commandClass)) {
     throw new GhRunnerError(
@@ -116,6 +126,7 @@ function runCommand(
   }
 
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
     const child = spawn('gh', args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
@@ -140,6 +151,14 @@ function runCommand(
 
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
+      if (audit) {
+        audit.logger.warn('gh command execution completed', {
+          actor: maskUserId(audit.actorId),
+          commandClass,
+          outcome: 'timeout',
+          durationMs: Date.now() - startedAt,
+        });
+      }
       reject(
         new GhRunnerError(
           'COMMAND_FAILED',
@@ -150,11 +169,29 @@ function runCommand(
 
     child.once('error', error => {
       clearTimeout(timer);
+      if (audit) {
+        audit.logger.error('gh command execution failed', {
+          actor: maskUserId(audit.actorId),
+          commandClass,
+          outcome: 'spawn_error',
+          durationMs: Date.now() - startedAt,
+          error: error.message,
+        });
+      }
       reject(new GhRunnerError('COMMAND_FAILED', error.message));
     });
 
     child.once('close', code => {
       clearTimeout(timer);
+      if (audit) {
+        audit.logger.info('gh command execution completed', {
+          actor: maskUserId(audit.actorId),
+          commandClass,
+          outcome: (code ?? 1) === 0 ? 'success' : 'failure',
+          exitCode: code ?? 1,
+          durationMs: Date.now() - startedAt,
+        });
+      }
       resolve({
         exitCode: code ?? 1,
         stdout,
@@ -174,9 +211,16 @@ async function runJsonCommand(
   commandClass: AllowedCommand,
   token: string,
   args: string[],
-  invalidOutputMessage: string
+  invalidOutputMessage: string,
+  audit?: CommandAuditContext
 ): Promise<unknown> {
-  const result = await runCommand(commandClass, token, args);
+  const result = await runCommand(
+    commandClass,
+    token,
+    args,
+    DEFAULT_TIMEOUT_MS,
+    audit
+  );
   if (result.exitCode !== 0) {
     throw new GhRunnerError('COMMAND_FAILED', getFailureReason(result));
   }
@@ -252,6 +296,7 @@ interface GhNotificationItem {
 export interface FetchNotificationsParams {
   token: string;
   limit: number;
+  audit?: CommandAuditContext;
 }
 
 function parseUpdatedAt(value: unknown): number | null {
@@ -452,7 +497,8 @@ function normalizeBundleMetadata(raw: unknown): PullRequestBundleMetadata {
 async function fetchPullRequestMetadata(
   token: string,
   repo: string,
-  number: number
+  number: number,
+  audit?: CommandAuditContext
 ): Promise<PullRequestBundleMetadata> {
   const fieldsWithCommits =
     'title,body,author,state,baseRefName,headRefName,files,additions,deletions,commits,createdAt,updatedAt';
@@ -462,7 +508,8 @@ async function fetchPullRequestMetadata(
       'pr-view',
       token,
       ['pr', 'view', `${number}`, '--repo', repo, '--json', fieldsWithCommits],
-      'GitHub CLI returned invalid PR metadata JSON'
+      'GitHub CLI returned invalid PR metadata JSON',
+      audit
     );
 
     return normalizeBundleMetadata(raw);
@@ -490,7 +537,8 @@ async function fetchPullRequestMetadata(
         '--json',
         'title,body,author,state,baseRefName,headRefName,files,additions,deletions,createdAt,updatedAt',
       ],
-      'GitHub CLI returned invalid PR metadata JSON'
+      'GitHub CLI returned invalid PR metadata JSON',
+      audit
     );
 
     const metadata = normalizeBundleMetadata(raw);
@@ -519,7 +567,8 @@ export async function discoverPullRequests(
       '--json',
       'number,title,url,state,isDraft,createdAt,updatedAt,author,headRefName,baseRefName',
     ],
-    'GitHub CLI returned invalid JSON'
+    'GitHub CLI returned invalid JSON',
+    params.audit
   );
 
   if (!Array.isArray(raw)) {
@@ -576,16 +625,17 @@ export async function fetchPullRequestBundleData(
   const metadata = await fetchPullRequestMetadata(
     params.token,
     params.repo,
-    params.number
+    params.number,
+    params.audit
   );
 
-  const diffResult = await runCommand('pr-diff', params.token, [
-    'pr',
-    'diff',
-    `${params.number}`,
-    '--repo',
-    params.repo,
-  ]);
+  const diffResult = await runCommand(
+    'pr-diff',
+    params.token,
+    ['pr', 'diff', `${params.number}`, '--repo', params.repo],
+    DEFAULT_TIMEOUT_MS,
+    params.audit
+  );
 
   if (diffResult.exitCode !== 0) {
     throw new GhRunnerError('COMMAND_FAILED', getFailureReason(diffResult));
@@ -598,7 +648,8 @@ export async function fetchPullRequestBundleData(
         'pr-checks',
         params.token,
         ['pr', 'checks', `${params.number}`, '--repo', params.repo, '--json'],
-        'GitHub CLI returned invalid PR checks JSON'
+        'GitHub CLI returned invalid PR checks JSON',
+        params.audit
       );
     } catch {
       checks = null;
@@ -622,7 +673,8 @@ export async function fetchNotifications(
       'api',
       `/notifications?all=true&participating=false&per_page=${params.limit}`,
     ],
-    'GitHub CLI returned invalid notifications JSON'
+    'GitHub CLI returned invalid notifications JSON',
+    params.audit
   );
 
   if (!Array.isArray(raw)) {

@@ -1,5 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQuery } from 'convex/react';
+import { api } from '../../../../convex/_generated/api';
 import {
   CardFooter,
   Card,
@@ -113,6 +115,24 @@ function getSessionUserId(sessionData: unknown): string | null {
 
 function formatServiceError(error: unknown): string {
   if (error instanceof GhServiceRequestError) {
+    if (error.code === 'BACKEND_NOT_CONFIGURED') {
+      return 'GitHub notification backend is not configured. Set DEVSUITE_GH_SERVICE_BACKEND_TOKEN in gh-service and Convex, then restart services.';
+    }
+    if (error.code === 'NOT_CONNECTED') {
+      return 'GitHub is not connected for this account. Start login again from this page.';
+    }
+    if (error.code === 'LOGIN_PENDING') {
+      return 'GitHub login is still pending. Complete the browser device flow and refresh status.';
+    }
+    if (error.code === 'TOKEN_INVALID') {
+      return 'Stored GitHub token is invalid. Reconnect your GitHub account.';
+    }
+    if (error.code === 'UNAUTHORIZED') {
+      return 'Request was rejected by gh-service. Verify DEVSUITE_GH_SERVICE_TOKEN matches between client and service.';
+    }
+    if (error.code === 'COMMAND_FAILED') {
+      return `GitHub CLI request failed: ${error.message}`;
+    }
     return error.requestId
       ? `${error.message} (request ${error.requestId})`
       : error.message;
@@ -183,6 +203,9 @@ function clearLoginCooldown(userId: string): void {
 function IntegrationsSettingsPage() {
   const { data: authSession } = authClient.useSession();
   const userId = useMemo(() => getSessionUserId(authSession), [authSession]);
+  const persistedSyncTelemetry = useQuery(
+    api.githubService.getNotificationSyncTelemetryForCurrentUser
+  );
 
   const [connection, setConnection] = useState<GhConnectionStatus | null>(null);
   const [runtime, setRuntime] = useState<GhRuntimeSnapshot | null>(null);
@@ -310,6 +333,32 @@ function IntegrationsSettingsPage() {
     ? Math.max(0, loginCooldownUntil - clockMs)
     : 0;
   const isLoginCoolingDown = loginCooldownRemainingMs > 0;
+  const displayedSyncResult = useMemo(() => {
+    if (lastSyncResult) {
+      return lastSyncResult;
+    }
+    if (!persistedSyncTelemetry) {
+      return null;
+    }
+    return {
+      githubUser: persistedSyncTelemetry.githubUser,
+      status: persistedSyncTelemetry.status,
+      companiesMatched: persistedSyncTelemetry.companiesMatched,
+      hasRouteMappings: persistedSyncTelemetry.hasRouteMappings,
+      notificationsFetched: persistedSyncTelemetry.notificationsFetched,
+      notificationsFiltered: persistedSyncTelemetry.notificationsFiltered,
+      notificationsReceived: persistedSyncTelemetry.notificationsReceived,
+      notificationsRouted: persistedSyncTelemetry.notificationsRouted,
+      notificationsUnmatched: persistedSyncTelemetry.notificationsUnmatched,
+      deliveriesCreated: persistedSyncTelemetry.deliveriesCreated,
+      deliveriesUpdated: persistedSyncTelemetry.deliveriesUpdated,
+      attemptedAt: persistedSyncTelemetry.lastAttemptAt,
+      errorCode: persistedSyncTelemetry.errorCode,
+      errorMessage: persistedSyncTelemetry.errorMessage,
+    } satisfies GhNotificationSyncResult;
+  }, [lastSyncResult, persistedSyncTelemetry]);
+
+  const lastSuccessfulSyncAt = persistedSyncTelemetry?.lastSuccessAt ?? null;
 
   const handleStartLogin = async () => {
     if (!userId) {
@@ -508,13 +557,26 @@ function IntegrationsSettingsPage() {
             </Alert>
           )}
 
-          {lastSyncResult && (
+          {displayedSyncResult && displayedSyncResult.status === 'error' && (
+            <Alert variant="destructive">
+              <AlertDescription>
+                Last sync failed:{' '}
+                {displayedSyncResult.errorMessage ?? 'Unknown sync error'}.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {displayedSyncResult && displayedSyncResult.status !== 'error' && (
             <Alert>
               <AlertDescription>
-                Last sync: fetched {lastSyncResult.notificationsFetched}, routed{' '}
-                {lastSyncResult.notificationsFiltered}, created{' '}
-                {lastSyncResult.deliveriesCreated}, updated{' '}
-                {lastSyncResult.deliveriesUpdated}.
+                Last sync ({formatTimestamp(displayedSyncResult.attemptedAt)}):
+                fetched {displayedSyncResult.notificationsFetched}, routed{' '}
+                {displayedSyncResult.notificationsFiltered}, created{' '}
+                {displayedSyncResult.deliveriesCreated}, updated{' '}
+                {displayedSyncResult.deliveriesUpdated}.
+                {lastSuccessfulSyncAt
+                  ? ` Last successful sync: ${formatTimestamp(lastSuccessfulSyncAt)}.`
+                  : ''}
               </AlertDescription>
             </Alert>
           )}

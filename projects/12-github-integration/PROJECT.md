@@ -1,7 +1,7 @@
 ---
 id: '12-github-integration'
 title: 'GitHub Integration'
-status: 'in-progress'
+status: 'review'
 priority: 9
 assigned_pm: null
 depends_on: ['05-repository-module', '09-mcp-server']
@@ -31,12 +31,12 @@ Deliver a production-ready GitHub integration with zero local bridge setup, per-
 
 ## Success Criteria
 
-- [ ] No local bridge process or terminal pairing required
-- [ ] User can connect GitHub from the web app and remain connected across sessions
-- [ ] GitHub operations are isolated per user and cannot leak auth context
-- [ ] Notifications route to the correct company using configured org mapping
-- [ ] MCP PR discovery works on demand with user-scoped authorization
-- [ ] Secrets/tokens are encrypted at rest and not exposed in logs or UI
+- [x] No local bridge process or terminal pairing required
+- [x] User can connect GitHub from the web app and remain connected across sessions
+- [x] GitHub operations are isolated per user and cannot leak auth context
+- [x] Notifications route to the correct company using configured org mapping
+- [x] MCP PR discovery works on demand with user-scoped authorization
+- [x] Secrets/tokens are encrypted at rest and not exposed in logs or UI
 
 ## Execution Plan (Phase Order)
 

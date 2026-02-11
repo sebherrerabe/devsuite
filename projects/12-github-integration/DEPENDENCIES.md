@@ -4,34 +4,34 @@
 
 ### From 04-company-module
 
-- [ ] Company membership and access checks
-- [ ] Company settings surface to store GitHub org login mappings
+- [x] Company membership and access checks
+- [x] Company settings surface to store GitHub org login mappings
 
 ### From 05-repository-module
 
-- [ ] Company-scoped repository metadata (provider, owner/repo URL)
+- [x] Company-scoped repository metadata (provider, owner/repo URL)
 
 ### From 09-mcp-server
 
-- [ ] MCP auth model for agent-only PR discovery tools
-- [ ] Tool interface contract for PR discovery payloads
+- [x] MCP auth model for agent-only PR discovery tools
+- [x] Tool interface contract for PR discovery payloads
 
 ### From Auth Layer
 
-- [ ] Reliable user identity/session verification in Node service
-- [ ] Service-to-backend auth between Node service and Convex HTTP/actions
+- [x] Reliable user identity/session verification in Node service
+- [x] Service-to-backend auth between Node service and Convex HTTP/actions
 
 ## Produced Outputs
 
 ### For 10-pr-review-module
 
-- [ ] User-authorized PR discovery for linked repos
-- [ ] Stable normalized PR payload for review workflows
+- [x] User-authorized PR discovery for linked repos
+- [x] Stable normalized PR payload for review workflows
 
 ### For 11-inbox-module
 
-- [ ] Notification sync records with idempotent upsert semantics
-- [ ] Last-sync/health metadata for UI and ops
+- [x] Notification sync records with idempotent upsert semantics
+- [x] Last-sync/health metadata for UI and ops
 
 ## External Dependencies
 
@@ -42,5 +42,4 @@
 
 ## Blocking Issues
 
-- Final choice for encryption key source
-- Final policy for unmatched-org notifications
+- None

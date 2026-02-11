@@ -1,9 +1,11 @@
 import { ConnectionManager } from './connection-manager.js';
 import { ConvexBackendClient } from './convex-backend-client.js';
 import { fetchNotifications } from './gh-runner.js';
+import type { Logger } from './logger.js';
 
 export interface NotificationSyncResult {
   githubUser: string | null;
+  status: 'success' | 'skipped_no_routes' | 'error';
   companiesMatched: number;
   hasRouteMappings: boolean;
   notificationsFetched: number;
@@ -13,6 +15,9 @@ export interface NotificationSyncResult {
   notificationsUnmatched: number;
   deliveriesCreated: number;
   deliveriesUpdated: number;
+  attemptedAt: number;
+  errorCode: string | null;
+  errorMessage: string | null;
 }
 
 function buildAllowedOrgSet(
@@ -35,7 +40,9 @@ export async function syncUserNotifications(options: {
   backendClient: ConvexBackendClient;
   userId: string;
   batchSize: number;
+  logger?: Logger;
 }): Promise<NotificationSyncResult> {
+  const attemptedAt = Date.now();
   const session = await options.connectionManager.getAuthenticatedToken(
     options.userId
   );
@@ -43,10 +50,11 @@ export async function syncUserNotifications(options: {
   const allowedOrgLogins = buildAllowedOrgSet(routes);
 
   if (allowedOrgLogins.size === 0) {
-    return {
+    const telemetry = {
       githubUser: session.githubUser,
-      companiesMatched: routes.length,
+      status: 'skipped_no_routes' as const,
       hasRouteMappings: false,
+      companiesMatched: routes.length,
       notificationsFetched: 0,
       notificationsFiltered: 0,
       notificationsReceived: 0,
@@ -54,12 +62,25 @@ export async function syncUserNotifications(options: {
       notificationsUnmatched: 0,
       deliveriesCreated: 0,
       deliveriesUpdated: 0,
+      attemptedAt,
+      errorCode: null,
+      errorMessage: null,
     };
+    await options.backendClient.recordSyncTelemetry(options.userId, telemetry);
+    return telemetry;
   }
 
   const fetched = await fetchNotifications({
     token: session.token,
     limit: options.batchSize,
+    ...(options.logger
+      ? {
+          audit: {
+            actorId: options.userId,
+            logger: options.logger,
+          },
+        }
+      : {}),
   });
 
   const notifications = fetched.filter(item => {
@@ -74,10 +95,11 @@ export async function syncUserNotifications(options: {
     notifications
   );
 
-  return {
+  const telemetry = {
     githubUser: session.githubUser,
-    companiesMatched: routes.length,
+    status: 'success' as const,
     hasRouteMappings: true,
+    companiesMatched: routes.length,
     notificationsFetched: fetched.length,
     notificationsFiltered: notifications.length,
     notificationsReceived: result.notificationsReceived,
@@ -85,5 +107,11 @@ export async function syncUserNotifications(options: {
     notificationsUnmatched: result.notificationsUnmatched,
     deliveriesCreated: result.deliveriesCreated,
     deliveriesUpdated: result.deliveriesUpdated,
+    attemptedAt,
+    errorCode: null,
+    errorMessage: null,
   };
+
+  await options.backendClient.recordSyncTelemetry(options.userId, telemetry);
+  return telemetry;
 }

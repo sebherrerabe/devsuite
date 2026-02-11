@@ -26,6 +26,23 @@ export interface CompanyRoute {
   githubOrgLogins: string[];
 }
 
+export interface GithubNotificationSyncTelemetry {
+  githubUser?: string | null;
+  status: 'success' | 'skipped_no_routes' | 'error';
+  hasRouteMappings: boolean;
+  companiesMatched: number;
+  notificationsFetched: number;
+  notificationsFiltered: number;
+  notificationsReceived: number;
+  notificationsRouted: number;
+  notificationsUnmatched: number;
+  deliveriesCreated: number;
+  deliveriesUpdated: number;
+  attemptedAt: number;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+}
+
 export class ConvexBackendError extends Error {
   constructor(
     readonly statusCode: number,
@@ -72,6 +89,16 @@ export class ConvexBackendClient {
     });
 
     return parseIngestNotificationsResult(payload);
+  }
+
+  async recordSyncTelemetry(
+    userId: string,
+    telemetry: GithubNotificationSyncTelemetry
+  ): Promise<void> {
+    await this.post('/github/service/sync-telemetry', {
+      userId,
+      telemetry,
+    });
   }
 
   private async post(

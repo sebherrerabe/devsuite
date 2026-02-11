@@ -67,6 +67,17 @@ export const create = mutation({
       updatedAt: now,
     });
 
+    await ctx.db.insert('integrationAuditEvents', {
+      companyId,
+      userId,
+      integration: 'github',
+      action: 'github_org_mapping_created',
+      metadata: {
+        githubOrgLogins,
+      },
+      createdAt: now,
+    });
+
     const defaultProjectId = await ensureDefaultProjectId(ctx, companyId);
     await ensureDefaultListId(ctx, companyId, defaultProjectId);
     await ensureDefaultRateCardId(ctx, companyId);
@@ -109,11 +120,30 @@ export const update = mutation({
         company.metadata && typeof company.metadata === 'object'
           ? (company.metadata as Record<string, unknown>)
           : {};
+      const previousGithubOrgLogins = Array.isArray(
+        (metadata as { githubOrgLogins?: unknown }).githubOrgLogins
+      )
+        ? ((metadata as { githubOrgLogins: unknown[] }).githubOrgLogins.filter(
+            value => typeof value === 'string'
+          ) as string[])
+        : [];
 
       updates.metadata = {
         ...metadata,
         githubOrgLogins,
       };
+
+      await ctx.db.insert('integrationAuditEvents', {
+        companyId: company._id,
+        userId,
+        integration: 'github',
+        action: 'github_org_mapping_updated',
+        metadata: {
+          previousGithubOrgLogins,
+          githubOrgLogins,
+        },
+        createdAt: Date.now(),
+      });
     }
 
     await ctx.db.patch(args.id, updates);

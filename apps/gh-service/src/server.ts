@@ -343,6 +343,10 @@ export function createGhServiceServer(
           repo: parsedBody.data.repo,
           state: parsedBody.data.state,
           limit: parsedBody.data.limit,
+          audit: {
+            actorId: auth.userId,
+            logger,
+          },
         });
 
         logger.info('pr-discover requested', {
@@ -381,6 +385,10 @@ export function createGhServiceServer(
           repo: parsedBody.data.repo,
           number: parsedBody.data.number,
           includeChecks: parsedBody.data.includeChecks,
+          audit: {
+            actorId: auth.userId,
+            logger,
+          },
         });
 
         logger.info('pr-bundle-data requested', {
@@ -422,12 +430,39 @@ export function createGhServiceServer(
             parsedBody.error.issues[0]?.message ?? 'Invalid request body';
           throw new HttpError(400, 'INVALID_INPUT', message);
         }
-
         const syncResult = await syncUserNotifications({
           connectionManager,
           backendClient,
           userId: auth.userId,
           batchSize: parsedBody.data.limit ?? config.notificationBatchSize,
+          logger,
+        }).catch(async (error: unknown) => {
+          if (
+            error instanceof ConnectionManagerError ||
+            error instanceof GhRunnerError
+          ) {
+            try {
+              await backendClient.recordSyncTelemetry(auth.userId, {
+                githubUser: null,
+                status: 'error',
+                hasRouteMappings: false,
+                companiesMatched: 0,
+                notificationsFetched: 0,
+                notificationsFiltered: 0,
+                notificationsReceived: 0,
+                notificationsRouted: 0,
+                notificationsUnmatched: 0,
+                deliveriesCreated: 0,
+                deliveriesUpdated: 0,
+                attemptedAt: Date.now(),
+                errorCode: error.code,
+                errorMessage: error.message,
+              });
+            } catch {
+              // Ignore telemetry write failures.
+            }
+          }
+          throw error;
         });
 
         logger.info('notifications-sync requested', {

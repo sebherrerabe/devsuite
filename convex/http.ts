@@ -68,6 +68,23 @@ interface GithubNotificationPayload {
   apiUrl?: string | null;
 }
 
+interface GithubSyncTelemetryPayload {
+  githubUser?: string | null;
+  status: 'success' | 'skipped_no_routes' | 'error';
+  hasRouteMappings: boolean;
+  companiesMatched: number;
+  notificationsFetched: number;
+  notificationsFiltered: number;
+  notificationsReceived: number;
+  notificationsRouted: number;
+  notificationsUnmatched: number;
+  deliveriesCreated: number;
+  deliveriesUpdated: number;
+  attemptedAt: number;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+}
+
 function parseNotificationsPayload(
   value: unknown
 ): GithubNotificationPayload[] | null {
@@ -167,6 +184,103 @@ function parseNotificationsPayload(
   return parsed;
 }
 
+function parseSyncTelemetryPayload(
+  value: unknown
+): GithubSyncTelemetryPayload | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const payload = value as {
+    githubUser?: unknown;
+    status?: unknown;
+    hasRouteMappings?: unknown;
+    companiesMatched?: unknown;
+    notificationsFetched?: unknown;
+    notificationsFiltered?: unknown;
+    notificationsReceived?: unknown;
+    notificationsRouted?: unknown;
+    notificationsUnmatched?: unknown;
+    deliveriesCreated?: unknown;
+    deliveriesUpdated?: unknown;
+    attemptedAt?: unknown;
+    errorCode?: unknown;
+    errorMessage?: unknown;
+  };
+
+  if (
+    payload.status !== 'success' &&
+    payload.status !== 'skipped_no_routes' &&
+    payload.status !== 'error'
+  ) {
+    return null;
+  }
+
+  const numericFields = [
+    payload.companiesMatched,
+    payload.notificationsFetched,
+    payload.notificationsFiltered,
+    payload.notificationsReceived,
+    payload.notificationsRouted,
+    payload.notificationsUnmatched,
+    payload.deliveriesCreated,
+    payload.deliveriesUpdated,
+    payload.attemptedAt,
+  ];
+
+  if (
+    typeof payload.hasRouteMappings !== 'boolean' ||
+    numericFields.some(value => typeof value !== 'number')
+  ) {
+    return null;
+  }
+
+  if (
+    payload.githubUser !== undefined &&
+    payload.githubUser !== null &&
+    typeof payload.githubUser !== 'string'
+  ) {
+    return null;
+  }
+  if (
+    payload.errorCode !== undefined &&
+    payload.errorCode !== null &&
+    typeof payload.errorCode !== 'string'
+  ) {
+    return null;
+  }
+  if (
+    payload.errorMessage !== undefined &&
+    payload.errorMessage !== null &&
+    typeof payload.errorMessage !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    status: payload.status,
+    hasRouteMappings: payload.hasRouteMappings,
+    companiesMatched: payload.companiesMatched as number,
+    notificationsFetched: payload.notificationsFetched as number,
+    notificationsFiltered: payload.notificationsFiltered as number,
+    notificationsReceived: payload.notificationsReceived as number,
+    notificationsRouted: payload.notificationsRouted as number,
+    notificationsUnmatched: payload.notificationsUnmatched as number,
+    deliveriesCreated: payload.deliveriesCreated as number,
+    deliveriesUpdated: payload.deliveriesUpdated as number,
+    attemptedAt: payload.attemptedAt as number,
+    ...(payload.githubUser !== undefined
+      ? { githubUser: payload.githubUser }
+      : {}),
+    ...(payload.errorCode !== undefined
+      ? { errorCode: payload.errorCode }
+      : {}),
+    ...(payload.errorMessage !== undefined
+      ? { errorMessage: payload.errorMessage }
+      : {}),
+  };
+}
+
 const ghServiceListCompanyRoutes = httpAction(async (ctx, request) => {
   if (request.method !== 'POST') {
     return jsonResponse(405, { error: 'Method not allowed' });
@@ -250,6 +364,53 @@ const ghServiceIngestNotifications = httpAction(async (ctx, request) => {
   return jsonResponse(200, result as Record<string, unknown>);
 });
 
+const ghServiceRecordSyncTelemetry = httpAction(async (ctx, request) => {
+  if (request.method !== 'POST') {
+    return jsonResponse(405, { error: 'Method not allowed' });
+  }
+
+  const authError = authorizeGhServiceRequest(request);
+  if (authError) {
+    return authError;
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonResponse(400, { error: 'Invalid JSON body' });
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return jsonResponse(400, { error: 'Invalid payload' });
+  }
+
+  const userId =
+    typeof (payload as { userId?: unknown }).userId === 'string'
+      ? (payload as { userId: string }).userId.trim()
+      : '';
+  const telemetry = parseSyncTelemetryPayload(
+    (payload as { telemetry?: unknown }).telemetry
+  );
+
+  if (!userId) {
+    return jsonResponse(400, { error: 'userId is required' });
+  }
+  if (!telemetry) {
+    return jsonResponse(400, { error: 'telemetry payload is invalid' });
+  }
+
+  const id = await ctx.runMutation(
+    internal.githubService.recordNotificationSyncTelemetry,
+    {
+      userId,
+      telemetry,
+    }
+  );
+
+  return jsonResponse(200, { id });
+});
+
 http.route({
   path: '/github/service/company-routes',
   method: 'POST',
@@ -260,6 +421,12 @@ http.route({
   path: '/github/service/ingest-notifications',
   method: 'POST',
   handler: ghServiceIngestNotifications,
+});
+
+http.route({
+  path: '/github/service/sync-telemetry',
+  method: 'POST',
+  handler: ghServiceRecordSyncTelemetry,
 });
 
 export default http;

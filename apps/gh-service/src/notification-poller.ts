@@ -100,6 +100,7 @@ export class NotificationPoller {
         backendClient: this.options.backendClient,
         userId,
         batchSize: this.options.batchSize,
+        logger: this.options.logger,
       });
 
       if (!result.hasRouteMappings) {
@@ -128,6 +129,7 @@ export class NotificationPoller {
       });
     } catch (error) {
       if (error instanceof ConnectionManagerError) {
+        await this.recordErrorTelemetry(userId, error.code, error.message);
         this.options.logger.warn(
           'notification poll skipped for disconnected user',
           {
@@ -150,6 +152,7 @@ export class NotificationPoller {
       }
 
       if (error instanceof GhRunnerError) {
+        await this.recordErrorTelemetry(userId, error.code, error.message);
         this.options.logger.warn(
           'notification poll GitHub CLI request failed',
           {
@@ -162,10 +165,42 @@ export class NotificationPoller {
         return;
       }
 
+      await this.recordErrorTelemetry(
+        userId,
+        'UNKNOWN_ERROR',
+        error instanceof Error ? error.message : 'unknown error'
+      );
       this.options.logger.error('notification poll failed for user', {
         userId,
         error: error instanceof Error ? error.message : 'unknown error',
       });
+    }
+  }
+
+  private async recordErrorTelemetry(
+    userId: string,
+    errorCode: string,
+    errorMessage: string
+  ): Promise<void> {
+    try {
+      await this.options.backendClient.recordSyncTelemetry(userId, {
+        githubUser: null,
+        status: 'error',
+        hasRouteMappings: false,
+        companiesMatched: 0,
+        notificationsFetched: 0,
+        notificationsFiltered: 0,
+        notificationsReceived: 0,
+        notificationsRouted: 0,
+        notificationsUnmatched: 0,
+        deliveriesCreated: 0,
+        deliveriesUpdated: 0,
+        attemptedAt: Date.now(),
+        errorCode,
+        errorMessage,
+      });
+    } catch {
+      // Ignore telemetry write failures to avoid interrupting polling.
     }
   }
 }

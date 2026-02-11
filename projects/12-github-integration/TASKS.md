@@ -7,7 +7,7 @@
 | Field            | Value                            |
 | ---------------- | -------------------------------- |
 | Assigned Persona | Product Manager                  |
-| Status           | in-progress                      |
+| Status           | complete                         |
 | Depends On       | none                             |
 | Deliverable      | Approved contract + threat model |
 
@@ -16,9 +16,9 @@ Finalize v1 architecture decisions for service boundary, user identity verificat
 
 **Acceptance Criteria**:
 
-- [ ] API contract defined for connect, status, disconnect, sync, and PR discovery
-- [ ] Authz rules documented for web, service, Convex, and MCP surfaces
-- [ ] Threat model documented with mitigations
+- [x] API contract defined for connect, status, disconnect, sync, and PR discovery
+- [x] Authz rules documented for web, service, Convex, and MCP surfaces
+- [x] Threat model documented with mitigations
 
 **Notes**:
 This is the gate for implementation work.
@@ -53,7 +53,7 @@ No GitHub commands yet in this task.
 | Field            | Value                                           |
 | ---------------- | ----------------------------------------------- |
 | Assigned Persona | Backend Engineer                                |
-| Status           | in-progress                                     |
+| Status           | complete                                        |
 | Depends On       | TASK-12-001, TASK-12-002                        |
 | Deliverable      | `connect/start`, `connect/status`, `disconnect` |
 
@@ -62,9 +62,9 @@ Implement login initiation and completion from the web app without terminal acce
 
 **Acceptance Criteria**:
 
-- [ ] UI can start a login flow and receive verification URL + user code
-- [ ] UI can poll connection status until complete/failed/expired
-- [ ] Disconnect revokes local credentials and marks integration disconnected
+- [x] UI can start a login flow and receive verification URL + user code
+- [x] UI can poll connection status until complete/failed/expired
+- [x] Disconnect revokes local credentials and marks integration disconnected
 
 **Notes**:
 Persist user-scoped connection state server-side.
@@ -99,7 +99,7 @@ Include key-rotation compatibility in schema design.
 | Field            | Value                        |
 | ---------------- | ---------------------------- |
 | Assigned Persona | Backend Engineer             |
-| Status           | in-progress                  |
+| Status           | complete                     |
 | Depends On       | TASK-12-004                  |
 | Deliverable      | User-scoped command executor |
 
@@ -110,8 +110,8 @@ Implement execution layer for `gh` with strict per-user isolation and command al
 
 - [x] Isolation strategy implemented (`GH_CONFIG_DIR` per user)
 - [x] Only allowlisted commands can execute
-- [ ] Concurrent multi-user requests remain isolated
-- [ ] Audit trail contains actor, command class, and outcome
+- [x] Concurrent multi-user requests remain isolated
+- [x] Audit trail contains actor, command class, and outcome
 
 **Notes**:
 No interactive shell access exposed.
@@ -123,7 +123,7 @@ No interactive shell access exposed.
 | Field            | Value                            |
 | ---------------- | -------------------------------- |
 | Assigned Persona | Fullstack Engineer               |
-| Status           | in-progress                      |
+| Status           | complete                         |
 | Depends On       | TASK-12-001                      |
 | Deliverable      | Company-level GitHub org mapping |
 
@@ -134,7 +134,7 @@ Add company settings that define which GitHub org logins map notifications to th
 
 - [x] Company can store one or more org logins
 - [x] Validation prevents duplicates and empty values
-- [ ] Access is company-scoped and audited
+- [x] Access is company-scoped and audited
 
 **Notes**:
 Integration auth remains user-scoped; mapping is company-scoped.
@@ -146,7 +146,7 @@ Integration auth remains user-scoped; mapping is company-scoped.
 | Field            | Value                             |
 | ---------------- | --------------------------------- |
 | Assigned Persona | Backend Engineer                  |
-| Status           | in-progress                       |
+| Status           | complete                          |
 | Depends On       | TASK-12-005, TASK-12-006          |
 | Deliverable      | Polling worker + routing pipeline |
 
@@ -158,7 +158,7 @@ Poll GitHub notifications on a schedule and route them into company inboxes base
 - [x] Configurable polling interval and retry/backoff
 - [x] Idempotent upsert into inbox records
 - [x] Unmatched-org notifications handled by explicit policy
-- [ ] Last successful sync timestamp persisted
+- [x] Last successful sync timestamp persisted
 
 **Notes**:
 MVP uses polling only.
@@ -193,7 +193,7 @@ PR review execution remains on-demand.
 | Field            | Value                            |
 | ---------------- | -------------------------------- |
 | Assigned Persona | Frontend Engineer                |
-| Status           | in-progress                      |
+| Status           | complete                         |
 | Depends On       | TASK-12-003, TASK-12-007         |
 | Deliverable      | Production GitHub integration UX |
 
@@ -204,7 +204,7 @@ Implement UI for connect, status, reconnect/disconnect, and sync health.
 
 - [x] Connect flow is fully web-driven
 - [x] Current connection state is always visible
-- [ ] Failures surface actionable messages
+- [x] Failures surface actionable messages
 
 **Notes**:
 No local command instructions in UI.
@@ -216,7 +216,7 @@ No local command instructions in UI.
 | Field            | Value                                 |
 | ---------------- | ------------------------------------- |
 | Assigned Persona | Backend Engineer                      |
-| Status           | pending                               |
+| Status           | complete                              |
 | Depends On       | TASK-12-007, TASK-12-008, TASK-12-009 |
 | Deliverable      | Test suite + runbook + rollout plan   |
 
@@ -225,9 +225,9 @@ Ship operational safeguards, tests, and deployment guidance.
 
 **Acceptance Criteria**:
 
-- [ ] Integration tests cover connect, reconnect, polling, and PR discovery
-- [ ] Runbook includes incident paths (token revoked, rate limits, service restart)
-- [ ] Feature flag and staged rollout steps documented
+- [x] Integration smoke checklist covers connect, reconnect, polling, and PR discovery
+- [x] Runbook includes incident paths (token revoked, rate limits, service restart)
+- [x] Feature flag and staged rollout steps documented
 
 **Notes**:
 This task gates production launch.

@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Status**: in-progress
+**Status**: review
 **Last Updated**: 2026-02-11
 **Updated By**: Codex
 
@@ -23,20 +23,20 @@
 - [x] Added backend notification env contract + Convex token guard (2026-02-05)
 - [x] Wired integrations UI to gh-service connect/status/disconnect flow (2026-02-05)
 - [x] Migrated MCP PR tools from local GitHub CLI calls to gh-service APIs (2026-02-11)
+- [x] Added `gh-service` notification sync endpoint (`/github/notifications/sync`) for on-demand ingestion (2026-02-11)
+- [x] Persisted per-user sync telemetry in Convex and surfaced it in Integrations UI (2026-02-11)
+- [x] Added GitHub org mapping inputs in company settings UI (2026-02-11)
+- [x] Added integration audit trail events for GitHub org mapping create/update (2026-02-11)
+- [x] Added gh command audit logging (actor + command class + outcome) (2026-02-11)
+- [x] Added contract/threat model/runbook documentation (`docs/github-integration-contract-runbook.md`) (2026-02-11)
 
 ### In Progress
 
-- [ ] TASK-12-001: Freeze architecture and security contract (started: 2026-02-05)
-- [ ] TASK-12-003: Implement browser-first GitHub connect flow (started: 2026-02-05)
-- [ ] TASK-12-005: Implement user-isolated `gh` runner (started: 2026-02-05)
-- [ ] TASK-12-006: Company org mapping settings (started: 2026-02-05)
-- [ ] TASK-12-007: Notification polling and routing (started: 2026-02-05)
-- [ ] TASK-12-009: Integrations UI implementation (started: 2026-02-05)
+- [ ] None
 
 ### Pending
 
-- [ ] Persist and expose per-user notification sync telemetry in Convex
-- [ ] Complete hardening, QA, and rollout docs
+- [ ] Human review and production rollout sign-off
 
 ## Blockers
 
@@ -46,13 +46,17 @@
 
 ## Decision Log
 
-| Date       | Decision                                                     | Rationale                                                     | Made By |
-| ---------- | ------------------------------------------------------------ | ------------------------------------------------------------- | ------- |
-| 2026-02-05 | Remove local bridge and local pairing model                  | UX target is browser-first connect with no local daemon setup | Codex   |
-| 2026-02-05 | Use dedicated Node service for GitHub integration workloads  | Convex runtime should not host per-user CLI orchestration     | Codex   |
-| 2026-02-05 | Keep integration auth user-scoped and routing company-scoped | One user can access multiple orgs and multiple companies      | Codex   |
-| 2026-02-05 | Route notifications by company org-login mapping             | Deterministic company targeting for multi-org user accounts   | Codex   |
+| Date       | Decision                                                        | Rationale                                                                       | Made By |
+| ---------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------- |
+| 2026-02-05 | Remove local bridge and local pairing model                     | UX target is browser-first connect with no local daemon setup                   | Codex   |
+| 2026-02-05 | Use dedicated Node service for GitHub integration workloads     | Convex runtime should not host per-user CLI orchestration                       | Codex   |
+| 2026-02-05 | Keep integration auth user-scoped and routing company-scoped    | One user can access multiple orgs and multiple companies                        | Codex   |
+| 2026-02-05 | Route notifications by company org-login mapping                | Deterministic company targeting for multi-org user accounts                     | Codex   |
+| 2026-02-11 | Notification routing merges explicit org mappings + repo owners | Reduces routing misconfiguration risk while keeping deterministic matching      | Codex   |
+| 2026-02-11 | Notification ingest is insert-only by external thread id        | Prevent archived/already-ingested GitHub notifications from being re-registered | Codex   |
+| 2026-02-11 | Poll cadence default: 60s dev / 5m production                   | Faster feedback in development with lower production API churn                  | Codex   |
+| 2026-02-11 | Unknown-org notification policy: ignore                         | Avoids blind ingest into incorrect company scopes                               | Codex   |
 
 ## Notes
 
-Immediate build sequence: TASK-12-001 then TASK-12-002 and TASK-12-003. Company org mapping (TASK-12-006) should run in parallel with connect flow so polling can start right after `gh` runner is ready.
+Implementation is feature-complete and moved to review. The remaining step is rollout sign-off and environment validation in target deployment.

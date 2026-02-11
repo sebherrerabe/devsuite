@@ -41,6 +41,7 @@ export interface GhStatusEnvelope extends GhConnectionEnvelope {
 
 export interface GhNotificationSyncResult {
   githubUser: string | null;
+  status: 'success' | 'skipped_no_routes' | 'error';
   companiesMatched: number;
   hasRouteMappings: boolean;
   notificationsFetched: number;
@@ -50,6 +51,9 @@ export interface GhNotificationSyncResult {
   notificationsUnmatched: number;
   deliveriesCreated: number;
   deliveriesUpdated: number;
+  attemptedAt: number;
+  errorCode: string | null;
+  errorMessage: string | null;
 }
 
 export interface GhNotificationSyncEnvelope {
