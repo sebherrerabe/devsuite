@@ -37,6 +37,21 @@ export default defineSchema({
   // ============================================================================
 
   /**
+   * User settings - company scoped per user
+   */
+  userSettings: defineTable({
+    companyId: v.id('companies'),
+    userId: v.string(),
+    timezone: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    deletedAt: v.union(v.number(), v.null()),
+  })
+    .index('by_companyId', ['companyId'])
+    .index('by_companyId_userId', ['companyId', 'userId'])
+    .index('by_userId', ['userId']),
+
+  /**
    * Repository entities - company-scoped, external references only
    */
   repositories: defineTable({
@@ -73,6 +88,8 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
     repositoryIds: v.array(v.id('repositories')),
+    /** Billing rate card override (null/undefined means use company default) */
+    rateCardId: v.optional(v.union(v.id('rateCards'), v.null())),
     // UX fields
     slug: v.optional(v.string()), // Auto-generated from name on create
     color: v.optional(v.string()), // Color label for UI
@@ -487,19 +504,52 @@ export default defineSchema({
     companyId: v.id('companies'),
     periodStart: v.number(),
     periodEnd: v.number(),
+    timezone: v.string(),
     sessionIds: v.array(v.id('sessions')),
-    rateCardId: v.id('rateCards'),
+    currency: v.string(),
     totalMinutes: v.number(),
     totalCents: v.number(),
-    currency: v.string(),
     status: v.union(
       v.literal('draft'),
-      v.literal('sent'),
-      v.literal('paid'),
-      v.literal('voided')
+      v.literal('finalized'),
+      v.literal('cancelled')
     ),
-    notes: v.union(v.string(), v.null()),
-    invoiceNumber: v.union(v.string(), v.null()),
+    days: v.array(
+      v.object({
+        date: v.string(),
+        totalMinutes: v.number(),
+        totalCents: v.number(),
+        lines: v.array(
+          v.object({
+            rateCents: v.number(),
+            currency: v.string(),
+            roundingIncrementMinutes: v.number(),
+            roundingMode: v.union(
+              v.literal('floor'),
+              v.literal('ceil'),
+              v.literal('nearest')
+            ),
+            rawMinutes: v.number(),
+            billedMinutes: v.number(),
+            amountCents: v.number(),
+            projects: v.array(
+              v.object({
+                projectId: v.id('projects'),
+                projectName: v.string(),
+                tasks: v.array(
+                  v.object({
+                    taskId: v.id('tasks'),
+                    title: v.string(),
+                  })
+                ),
+              })
+            ),
+            sessionIds: v.array(v.id('sessions')),
+          })
+        ),
+      })
+    ),
+    cancelledAt: v.union(v.number(), v.null()),
     createdAt: v.number(),
     updatedAt: v.number(),
     deletedAt: v.union(v.number(), v.null()),
@@ -507,8 +557,21 @@ export default defineSchema({
     .index('by_companyId', ['companyId'])
     .index('by_companyId_deletedAt', ['companyId', 'deletedAt'])
     .index('by_status', ['status'])
-    .index('by_periodStart', ['periodStart'])
-    .index('by_rateCardId', ['rateCardId']),
+    .index('by_periodStart', ['periodStart']),
+
+  /**
+   * Invoice session linkage (to prevent double invoicing)
+   */
+  invoiceSessions: defineTable({
+    companyId: v.id('companies'),
+    invoiceId: v.id('invoices'),
+    sessionId: v.id('sessions'),
+    createdAt: v.number(),
+    deletedAt: v.union(v.number(), v.null()),
+  })
+    .index('by_companyId', ['companyId'])
+    .index('by_companyId_sessionId', ['companyId', 'sessionId'])
+    .index('by_invoiceId', ['invoiceId']),
 
   /**
    * RateCard entities - company-scoped billing rate configurations
@@ -518,6 +581,12 @@ export default defineSchema({
     name: v.string(),
     hourlyRateCents: v.number(),
     currency: v.string(),
+    roundingIncrementMinutes: v.number(),
+    roundingMode: v.union(
+      v.literal('floor'),
+      v.literal('ceil'),
+      v.literal('nearest')
+    ),
     description: v.union(v.string(), v.null()),
     isDefault: v.boolean(),
     createdAt: v.number(),

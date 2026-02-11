@@ -139,7 +139,7 @@
 - MCP tool definitions
 - Agent authentication
 - Convex client integration
-- Local tooling integration (GitHub CLI)
+- GitHub service integration (gh-service APIs)
 - PR review workflow automation
 
 **Does NOT**:
@@ -153,7 +153,7 @@
 - Node.js
 - MCP SDK
 - Convex client
-- GitHub CLI
+- DevSuite GitHub service
 
 **Key Constraints**:
 

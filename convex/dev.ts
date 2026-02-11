@@ -96,6 +96,8 @@ export const seed = mutation({
       name: 'Default Rate',
       hourlyRateCents: 10000, // $100/hour
       currency: 'USD',
+      roundingIncrementMinutes: 60,
+      roundingMode: 'floor',
       description: 'Default rate card for demo',
       isDefault: true,
       createdAt: now,
@@ -123,6 +125,7 @@ export const seed = mutation({
       name: 'Demo Project',
       description: 'A sample project for development',
       repositoryIds: [repositoryId],
+      rateCardId,
       slug: 'demo-project',
       isDefault: false,
       notesMarkdown: null,

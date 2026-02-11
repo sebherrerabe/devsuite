@@ -8,6 +8,7 @@ import {
   createSoftDeletePatch,
 } from './lib/helpers';
 import { ensureDefaultListId } from './projectTaskLists';
+import { ensureDefaultRateCardId } from './lib/billing';
 
 /**
  * User identity type from Convex auth
@@ -153,6 +154,7 @@ export async function ensureDefaultProjectId(
     companyId,
     name: DEFAULT_PROJECT_NAME,
     repositoryIds: [],
+    rateCardId: await ensureDefaultRateCardId(ctx, companyId),
     slug: generateSlug(DEFAULT_PROJECT_NAME),
     isFavorite: false,
     isPinned: false,
@@ -233,11 +235,13 @@ export const createProject = mutation({
     }
 
     const now = Date.now();
+    const rateCardId = await ensureDefaultRateCardId(ctx, args.companyId);
     const projectId = await ctx.db.insert('projects', {
       companyId: args.companyId,
       name: trimmedName,
       ...(args.description && { description: args.description.trim() }),
       repositoryIds: args.repositoryIds ?? [],
+      rateCardId,
       slug,
       ...(args.color && { color: args.color }),
       ...(args.emoji && { emoji: args.emoji }),

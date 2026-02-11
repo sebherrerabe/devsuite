@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -56,6 +57,9 @@ function SessionsPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [includeDiscarded, setIncludeDiscarded] = useState(false);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<
+    Id<'sessions'>[]
+  >([]);
 
   const sessions = useQuery(
     api.sessions.listSessions,
@@ -105,6 +109,41 @@ function SessionsPage() {
       return true;
     });
   }, [sessions, projectFilter, startDate, endDate]);
+
+  const toggleSession = (sessionId: Id<'sessions'>) => {
+    setSelectedSessionIds(prev =>
+      prev.includes(sessionId)
+        ? prev.filter(id => id !== sessionId)
+        : [...prev, sessionId]
+    );
+  };
+
+  const toggleAllVisible = () => {
+    const visibleIds = filteredSessions.map(session => session._id);
+    const allSelected =
+      visibleIds.length > 0 &&
+      visibleIds.every(id => selectedSessionIds.includes(id));
+    if (allSelected) {
+      setSelectedSessionIds(prev =>
+        prev.filter(id => !visibleIds.includes(id))
+      );
+    } else {
+      setSelectedSessionIds(prev =>
+        Array.from(new Set([...prev, ...visibleIds]))
+      );
+    }
+  };
+
+  const handleCreateInvoice = () => {
+    if (selectedSessionIds.length === 0) return;
+    navigate({
+      to: '/invoicing/new',
+      search: {
+        sessionIds: selectedSessionIds as unknown as string[],
+        includeAllInRange: false,
+      },
+    });
+  };
 
   const matchIds = useMemo(
     () => routerState.matches.map(match => match.routeId),
@@ -319,6 +358,18 @@ function SessionsPage() {
         </Button>
       </div>
 
+      {selectedSessionIds.length > 0 && (
+        <div className="flex items-center justify-between rounded-md border p-3 bg-muted/20">
+          <span className="text-sm text-muted-foreground">
+            {selectedSessionIds.length} session
+            {selectedSessionIds.length > 1 ? 's' : ''} selected
+          </span>
+          <Button size="sm" onClick={handleCreateInvoice}>
+            Create Invoice
+          </Button>
+        </div>
+      )}
+
       {sessions === undefined ? (
         <div className="flex h-64 items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -332,6 +383,17 @@ function SessionsPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[40px]">
+                  <Checkbox
+                    checked={
+                      filteredSessions.length > 0 &&
+                      filteredSessions.every(session =>
+                        selectedSessionIds.includes(session._id)
+                      )
+                    }
+                    onCheckedChange={toggleAllVisible}
+                  />
+                </TableHead>
                 <TableHead>Start</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Projects</TableHead>
@@ -358,6 +420,12 @@ function SessionsPage() {
                     className="cursor-pointer"
                     onClick={() => handleOpenSession(session._id, 'row')}
                   >
+                    <TableCell onClick={e => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedSessionIds.includes(session._id)}
+                        onCheckedChange={() => toggleSession(session._id)}
+                      />
+                    </TableCell>
                     <TableCell className="text-sm">
                       <div className="flex flex-col">
                         <span>{formatShortDateTime(session.startAt)}</span>

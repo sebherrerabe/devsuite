@@ -264,7 +264,7 @@ Goals:
 
 DevSuite stores review artifacts (e.g., markdown reports) and only minimal external references (PR URL/ID). It does not attempt to clone or mirror GitHub content.
 
-> Note: richer PR metadata (diff stats, review context, branch state, etc.) should be obtained from the **MCP server itself**, since it is the component running the local GitHub CLI workflow.
+> Note: richer PR metadata (diff stats, review context, branch state, etc.) should be obtained through the **DevSuite GitHub service**, with MCP tools consuming the service APIs.
 
 ---
 
@@ -412,13 +412,13 @@ A separate Node.js process acting as an AI-facing control plane.
 - Expose DevSuite operations as MCP tools
 - Authenticate agents via static token
 - Call Convex functions
-- Run local tooling (e.g. GitHub CLI)
+- Call integration services (e.g. DevSuite gh-service)
 
 ### PR review source of truth
 
 PR review automation is executed here (via your existing PR-review workflow). The MCP server is responsible for:
 
-- Fetching PR context using the local GitHub CLI
+- Fetching PR context through gh-service APIs
 - Generating review reports with agents
 - Returning richer PR metadata when needed
 
@@ -436,7 +436,7 @@ DevSuite stores the resulting artifacts (reports) and references (PR IDs/URLs). 
 ### GitHub
 
 - Read-only
-- Via GitHub CLI
+- Via DevSuite GitHub service
 - No organisation OAuth
 
 Used for:

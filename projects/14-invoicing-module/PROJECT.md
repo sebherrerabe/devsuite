@@ -1,7 +1,7 @@
 ---
 id: '14-invoicing-module'
 title: 'Invoicing Module'
-status: 'pending'
+status: 'in-progress'
 priority: 12
 assigned_pm: null
 depends_on: ['04-company-module', '08-session-module']
@@ -31,11 +31,11 @@ Enable users to generate invoices from tracked sessions for client billing.
 
 ## Success Criteria
 
-- [ ] Can configure rate cards
-- [ ] Can generate invoice for date range
-- [ ] Invoice shows per-day per-rate summary and session breakdown
-- [ ] Can export to CSV
-- [ ] Totals are calculated correctly
+- [x] Can configure rate cards
+- [x] Can generate invoice for date range
+- [x] Invoice shows per-day per-rate summary and session breakdown
+- [x] Can export to CSV
+- [x] Totals are calculated correctly
 
 ## Architecture Reference
 

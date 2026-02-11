@@ -168,6 +168,12 @@ Invoice day groups are computed in the user’s timezone. If billable time cross
 
 If billable time partially overlaps the selected invoice range, it is split and only the overlapping portion is included.
 
+### Rounding policy
+
+- Rounding is applied **per day/per rate line** after computing the effective-time union.
+- Supported increments: any positive integer minutes (company default; optional project override).
+- Default policy: **60-minute increments, floor**.
+
 ## Task Activity Interval Model (Draft)
 
 Effective time is derived from explicit **task activity intervals** within a session.
@@ -207,10 +213,4 @@ Effective time is derived from explicit **task activity intervals** within a ses
 
 ## Open Questions
 
-- Session attribution:
-  - Do sessions have an explicit `projectId`, or is project attribution derived only via tasks?
-  - How are task activity intervals represented (events vs slices; can a task have multiple intervals)?
-- Preview controls:
-  - Can a user manually exclude specific sessions from a preview before finalizing?
-- Rounding:
-  - What rounding increments are supported (minute/6/15/30/etc), and where is rounding applied (per line/day vs invoice total)?
+- None.

@@ -2,8 +2,9 @@
 
 ## Current State
 
-- Status: `pending`
-- Last updated: 2026-02-04
+- Status: `review`
+- Last updated: 2026-02-05
+- Implementation landed for invoice generation (backend + UI) including manual session selection; lint/typecheck pass.
 
 ## Decisions (Confirmed)
 
@@ -25,17 +26,12 @@
 - Task overview list is grouped by project with separators, ordered alphabetically by project and task, and deduped within each project per day/rate line.
 - Rates, rounding, time totals, and included sessions are snapshotted at invoice finalization.
 - Sessions are excluded from new invoices only if linked to a **non-cancelled** invoice (cancelled invoices do not block re-invoicing).
+- Rounding applies **per day/per rate line**, supports any positive minute increment, defaulting to **60-minute floor**.
 
 ## Open Questions
 
-See `projects/14-invoicing-module/SCOPE.md` (Open Questions section). Key unresolved items:
-
-- Task activity interval model + overlap allocation across projects
-- Supported rounding increments + where rounding applies
-- Preview exclusions
+- None.
 
 ## Next Actions
 
-- Resolve TASK-14-001 decisions.
-- Draft UX spec (TASK-14-002).
-- Implement schema + preview/finalize flows (TASK-14-003/004).
+- Review and accept the module.

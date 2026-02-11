@@ -20,6 +20,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { EmojiPickerWrapper } from '@/components/ui/emoji-picker';
 import { MDXMarkdownEditor } from '@/components/markdown/mdx-markdown-editor';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { Id } from '../../../../convex/_generated/dataModel';
 
@@ -51,7 +58,12 @@ function ProjectSettingsPage() {
     api.repositories.getByCompany,
     companyId ? { companyId } : 'skip'
   );
+  const projectRate = useQuery(
+    api.rateCards.getProjectRate,
+    companyId ? { companyId, projectId: projectIdTyped } : 'skip'
+  );
   const updateProject = useMutation(api.projects.updateProject);
+  const setProjectRate = useMutation(api.rateCards.setProjectRate);
   const softDeleteProject = useMutation(api.projects.softDeleteProject);
 
   const [name, setName] = useState('');
@@ -63,6 +75,13 @@ function ProjectSettingsPage() {
   );
   const [notesMarkdown, setNotesMarkdown] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [useDefaultRate, setUseDefaultRate] = useState(true);
+  const [billingRate, setBillingRate] = useState('0');
+  const [billingCurrency, setBillingCurrency] = useState('USD');
+  const [roundingIncrement, setRoundingIncrement] = useState('60');
+  const [roundingMode, setRoundingMode] = useState<
+    'floor' | 'ceil' | 'nearest'
+  >('floor');
 
   useEffect(() => {
     if (project) {
@@ -73,6 +92,18 @@ function ProjectSettingsPage() {
       setNotesMarkdown(project.notesMarkdown || '');
     }
   }, [project]);
+
+  useEffect(() => {
+    if (projectRate?.rateCard) {
+      setUseDefaultRate(projectRate.isDefault);
+      setBillingRate((projectRate.rateCard.hourlyRateCents / 100).toFixed(2));
+      setBillingCurrency(projectRate.rateCard.currency);
+      setRoundingIncrement(
+        String(projectRate.rateCard.roundingIncrementMinutes)
+      );
+      setRoundingMode(projectRate.rateCard.roundingMode);
+    }
+  }, [projectRate]);
 
   const handleUpdateGeneral = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -131,6 +162,38 @@ function ProjectSettingsPage() {
         ? prev.filter(id => id !== repoId)
         : [...prev, repoId]
     );
+  };
+
+  const handleBillingSave = async () => {
+    if (!companyId || !project) return;
+    if (useDefaultRate) {
+      await setProjectRate({
+        companyId,
+        projectId: project._id,
+        useDefault: true,
+      });
+      showToast.success('Project billing set to default');
+      return;
+    }
+    const rateCents = Math.round(Number(billingRate) * 100);
+    const rounding = Number(roundingIncrement);
+    if (!Number.isFinite(rateCents) || rateCents < 0) {
+      showToast.error('Hourly rate must be a valid number');
+      return;
+    }
+    if (!Number.isFinite(rounding) || rounding <= 0) {
+      showToast.error('Rounding increment must be a positive number');
+      return;
+    }
+    await setProjectRate({
+      companyId,
+      projectId: project._id,
+      hourlyRateCents: rateCents,
+      currency: billingCurrency.trim().toUpperCase(),
+      roundingIncrementMinutes: rounding,
+      roundingMode,
+    });
+    showToast.success('Project billing updated');
   };
 
   if (!project) return null;
@@ -259,6 +322,81 @@ function ProjectSettingsPage() {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Save General
+            </Button>
+          </CardFooter>
+        </Card>
+
+        {/* Billing Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Billing</CardTitle>
+            <CardDescription>
+              Override the default billing rate for this project.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={useDefaultRate}
+                onCheckedChange={checked => setUseDefaultRate(Boolean(checked))}
+              />
+              <Label>Use company default rate</Label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Hourly rate</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={billingRate}
+                  onChange={e => setBillingRate(e.target.value)}
+                  disabled={useDefaultRate}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Currency</Label>
+                <Input
+                  value={billingCurrency}
+                  onChange={e => setBillingCurrency(e.target.value)}
+                  disabled={useDefaultRate}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Rounding increment (minutes)</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={roundingIncrement}
+                  onChange={e => setRoundingIncrement(e.target.value)}
+                  disabled={useDefaultRate}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Rounding mode</Label>
+                <Select
+                  value={roundingMode}
+                  onValueChange={value =>
+                    setRoundingMode(value as 'floor' | 'ceil' | 'nearest')
+                  }
+                  disabled={useDefaultRate}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="floor">Floor</SelectItem>
+                    <SelectItem value="nearest">Nearest</SelectItem>
+                    <SelectItem value="ceil">Ceil</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-end">
+            <Button onClick={handleBillingSave} disabled={isSubmitting}>
+              <Save className="mr-2 h-4 w-4" />
+              Save Billing
             </Button>
           </CardFooter>
         </Card>

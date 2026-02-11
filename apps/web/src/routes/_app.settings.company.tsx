@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
@@ -22,6 +22,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -34,10 +41,38 @@ import { CompanyRepositories } from '@/components/company-repositories';
 import { TagsSettings } from '@/components/tags-settings';
 import { useCurrentCompany } from '@/lib/company-context';
 import { Separator } from '@/components/ui/separator';
+import { Label } from '@/components/ui/label';
 
 export const Route = createFileRoute('/_app/settings/company')({
   component: CompanySettingsPage,
 });
+
+function parseGithubOrgLoginsInput(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,]+/)
+        .map(item => item.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function formatGithubOrgLoginsInput(company: Doc<'companies'> | null): string {
+  if (!company?.metadata || typeof company.metadata !== 'object') {
+    return '';
+  }
+
+  const value = (company.metadata as { githubOrgLogins?: unknown })
+    .githubOrgLogins;
+  if (!Array.isArray(value)) {
+    return '';
+  }
+
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .join(', ');
+}
 
 function CompanySettingsPage() {
   const { currentCompany } = useCurrentCompany();
@@ -45,6 +80,11 @@ function CompanySettingsPage() {
   const createCompany = useMutation(api.companies.create);
   const updateCompany = useMutation(api.companies.update);
   const removeCompany = useMutation(api.companies.remove);
+  const defaultRateCard = useQuery(
+    api.rateCards.getDefault,
+    currentCompany?._id ? { companyId: currentCompany._id } : 'skip'
+  );
+  const setDefaultRateCard = useMutation(api.rateCards.setDefault);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -52,7 +92,24 @@ function CompanySettingsPage() {
   const [selectedCompany, setSelectedCompany] =
     useState<Doc<'companies'> | null>(null);
   const [name, setName] = useState('');
+  const [githubOrgLoginsInput, setGithubOrgLoginsInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [billingRate, setBillingRate] = useState('0');
+  const [billingCurrency, setBillingCurrency] = useState('USD');
+  const [roundingIncrement, setRoundingIncrement] = useState('60');
+  const [roundingMode, setRoundingMode] = useState<
+    'floor' | 'ceil' | 'nearest'
+  >('floor');
+  const [isBillingSubmitting, setIsBillingSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (defaultRateCard) {
+      setBillingRate((defaultRateCard.hourlyRateCents / 100).toFixed(2));
+      setBillingCurrency(defaultRateCard.currency);
+      setRoundingIncrement(String(defaultRateCard.roundingIncrementMinutes));
+      setRoundingMode(defaultRateCard.roundingMode);
+    }
+  }, [defaultRateCard]);
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -60,10 +117,14 @@ function CompanySettingsPage() {
 
     setIsSubmitting(true);
     try {
-      await createCompany({ name: name.trim() });
+      await createCompany({
+        name: name.trim(),
+        githubOrgLogins: parseGithubOrgLoginsInput(githubOrgLoginsInput),
+      });
       showToast.success('Company created successfully');
       setIsCreateOpen(false);
       setName('');
+      setGithubOrgLoginsInput('');
     } catch (err) {
       showToast.error('Failed to create company');
       console.error('Error creating company:', err);
@@ -78,11 +139,16 @@ function CompanySettingsPage() {
 
     setIsSubmitting(true);
     try {
-      await updateCompany({ id: selectedCompany._id, name: name.trim() });
+      await updateCompany({
+        id: selectedCompany._id,
+        name: name.trim(),
+        githubOrgLogins: parseGithubOrgLoginsInput(githubOrgLoginsInput),
+      });
       showToast.success('Company updated successfully');
       setIsEditOpen(false);
       setSelectedCompany(null);
       setName('');
+      setGithubOrgLoginsInput('');
     } catch (err) {
       showToast.error('Failed to update company');
       console.error('Error updating company:', err);
@@ -111,12 +177,45 @@ function CompanySettingsPage() {
   const openEdit = (company: Doc<'companies'>) => {
     setSelectedCompany(company);
     setName(company.name);
+    setGithubOrgLoginsInput(formatGithubOrgLoginsInput(company));
     setIsEditOpen(true);
   };
 
   const openDelete = (company: Doc<'companies'>) => {
     setSelectedCompany(company);
     setIsDeleteOpen(true);
+  };
+
+  const handleBillingSave = async () => {
+    if (!currentCompany) return;
+    const rateCents = Math.round(Number(billingRate) * 100);
+    const rounding = Number(roundingIncrement);
+    if (!Number.isFinite(rateCents) || rateCents < 0) {
+      showToast.error('Hourly rate must be a valid number');
+      return;
+    }
+    if (!Number.isFinite(rounding) || rounding <= 0) {
+      showToast.error('Rounding increment must be a positive number');
+      return;
+    }
+
+    setIsBillingSubmitting(true);
+    try {
+      await setDefaultRateCard({
+        companyId: currentCompany._id,
+        hourlyRateCents: rateCents,
+        currency: billingCurrency.trim().toUpperCase(),
+        roundingIncrementMinutes: rounding,
+        roundingMode,
+      });
+      showToast.success('Billing defaults updated');
+    } catch (error) {
+      showToast.error(
+        error instanceof Error ? error.message : 'Failed to update billing'
+      );
+    } finally {
+      setIsBillingSubmitting(false);
+    }
   };
 
   return (
@@ -131,6 +230,7 @@ function CompanySettingsPage() {
         <Button
           onClick={() => {
             setName('');
+            setGithubOrgLoginsInput('');
             setIsCreateOpen(true);
           }}
         >
@@ -223,11 +323,31 @@ function CompanySettingsPage() {
                 autoFocus
               />
             </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="create-org-logins"
+                className="text-sm font-medium"
+              >
+                GitHub org logins (optional)
+              </label>
+              <Input
+                id="create-org-logins"
+                placeholder="acme-org, acme-platform"
+                value={githubOrgLoginsInput}
+                onChange={e => setGithubOrgLoginsInput(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Used to route GitHub notifications into this company inbox.
+              </p>
+            </div>
             <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsCreateOpen(false)}
+                onClick={() => {
+                  setIsCreateOpen(false);
+                  setGithubOrgLoginsInput('');
+                }}
                 disabled={isSubmitting}
               >
                 Cancel
@@ -265,7 +385,20 @@ function CompanySettingsPage() {
                 autoFocus
               />
             </div>
-
+            <div className="space-y-2">
+              <label htmlFor="edit-org-logins" className="text-sm font-medium">
+                GitHub org logins (optional)
+              </label>
+              <Input
+                id="edit-org-logins"
+                placeholder="acme-org, acme-platform"
+                value={githubOrgLoginsInput}
+                onChange={e => setGithubOrgLoginsInput(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Comma-separated org logins used for GitHub notification routing.
+              </p>
+            </div>
             {selectedCompany && (
               <CompanyRepositories companyId={selectedCompany._id} />
             )}
@@ -274,7 +407,10 @@ function CompanySettingsPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsEditOpen(false)}
+                onClick={() => {
+                  setIsEditOpen(false);
+                  setGithubOrgLoginsInput('');
+                }}
                 disabled={isSubmitting}
               >
                 Cancel
@@ -339,6 +475,73 @@ function CompanySettingsPage() {
 
             <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
               <TagsSettings companyId={currentCompany._id} />
+            </div>
+
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-4">
+              <div>
+                <h4 className="text-base font-semibold">Billing Defaults</h4>
+                <p className="text-sm text-muted-foreground">
+                  Configure the default hourly rate and rounding policy.
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Hourly rate</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={billingRate}
+                    onChange={e => setBillingRate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Currency</Label>
+                  <Input
+                    value={billingCurrency}
+                    onChange={e => setBillingCurrency(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Rounding increment (minutes)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={roundingIncrement}
+                    onChange={e => setRoundingIncrement(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Rounding mode</Label>
+                  <Select
+                    value={roundingMode}
+                    onValueChange={value =>
+                      setRoundingMode(value as 'floor' | 'ceil' | 'nearest')
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="floor">Floor</SelectItem>
+                      <SelectItem value="nearest">Nearest</SelectItem>
+                      <SelectItem value="ceil">Ceil</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleBillingSave}
+                  disabled={isBillingSubmitting}
+                >
+                  {isBillingSubmitting && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Save Billing Defaults
+                </Button>
+              </div>
             </div>
           </div>
         </>

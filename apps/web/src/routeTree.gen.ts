@@ -19,17 +19,21 @@ import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppSessionsRouteImport } from './routes/_app.sessions'
 import { Route as AppReviewsRouteImport } from './routes/_app.reviews'
 import { Route as AppProjectsRouteImport } from './routes/_app.projects'
+import { Route as AppInvoicingRouteImport } from './routes/_app.invoicing'
 import { Route as AppInboxRouteImport } from './routes/_app.inbox'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app.settings.index'
 import { Route as AppSessionsIndexRouteImport } from './routes/_app.sessions.index'
 import { Route as AppReviewsIndexRouteImport } from './routes/_app.reviews.index'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
+import { Route as AppInvoicingIndexRouteImport } from './routes/_app.invoicing.index'
 import { Route as AppSettingsProfileRouteImport } from './routes/_app.settings.profile'
 import { Route as AppSettingsIntegrationsRouteImport } from './routes/_app.settings.integrations'
 import { Route as AppSettingsCompanyRouteImport } from './routes/_app.settings.company'
 import { Route as AppSessionsSessionIdRouteImport } from './routes/_app.sessions.$sessionId'
 import { Route as AppReviewsReviewIdRouteImport } from './routes/_app.reviews.$reviewId'
 import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects.$projectId'
+import { Route as AppInvoicingNewRouteImport } from './routes/_app.invoicing.new'
+import { Route as AppInvoicingInvoiceIdRouteImport } from './routes/_app.invoicing.$invoiceId'
 import { Route as AppProjectsProjectIdTasksRouteImport } from './routes/_app.projects.$projectId.tasks'
 import { Route as AppProjectsProjectIdSettingsRouteImport } from './routes/_app.projects.$projectId.settings'
 import { Route as AppProjectsProjectIdSessionsRouteImport } from './routes/_app.projects.$projectId.sessions'
@@ -83,6 +87,11 @@ const AppProjectsRoute = AppProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => AppRoute,
 } as any)
+const AppInvoicingRoute = AppInvoicingRouteImport.update({
+  id: '/invoicing',
+  path: '/invoicing',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppInboxRoute = AppInboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
@@ -107,6 +116,11 @@ const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppProjectsRoute,
+} as any)
+const AppInvoicingIndexRoute = AppInvoicingIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppInvoicingRoute,
 } as any)
 const AppSettingsProfileRoute = AppSettingsProfileRouteImport.update({
   id: '/profile',
@@ -138,6 +152,16 @@ const AppProjectsProjectIdRoute = AppProjectsProjectIdRouteImport.update({
   path: '/$projectId',
   getParentRoute: () => AppProjectsRoute,
 } as any)
+const AppInvoicingNewRoute = AppInvoicingNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AppInvoicingRoute,
+} as any)
+const AppInvoicingInvoiceIdRoute = AppInvoicingInvoiceIdRouteImport.update({
+  id: '/$invoiceId',
+  path: '/$invoiceId',
+  getParentRoute: () => AppInvoicingRoute,
+} as any)
 const AppProjectsProjectIdTasksRoute =
   AppProjectsProjectIdTasksRouteImport.update({
     id: '/tasks',
@@ -161,6 +185,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/inbox': typeof AppInboxRoute
+  '/invoicing': typeof AppInvoicingRouteWithChildren
   '/projects': typeof AppProjectsRouteWithChildren
   '/reviews': typeof AppReviewsRouteWithChildren
   '/sessions': typeof AppSessionsRouteWithChildren
@@ -168,12 +193,15 @@ export interface FileRoutesByFullPath {
   '/tasks': typeof AppTasksRoute
   '/auth/sign-in': typeof AuthSignInRoute
   '/auth/sign-up': typeof AuthSignUpRoute
+  '/invoicing/$invoiceId': typeof AppInvoicingInvoiceIdRoute
+  '/invoicing/new': typeof AppInvoicingNewRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRouteWithChildren
   '/reviews/$reviewId': typeof AppReviewsReviewIdRoute
   '/sessions/$sessionId': typeof AppSessionsSessionIdRoute
   '/settings/company': typeof AppSettingsCompanyRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/settings/profile': typeof AppSettingsProfileRoute
+  '/invoicing/': typeof AppInvoicingIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
   '/reviews/': typeof AppReviewsIndexRoute
   '/sessions/': typeof AppSessionsIndexRoute
@@ -189,12 +217,15 @@ export interface FileRoutesByTo {
   '/auth/sign-in': typeof AuthSignInRoute
   '/auth/sign-up': typeof AuthSignUpRoute
   '/': typeof AppIndexRoute
+  '/invoicing/$invoiceId': typeof AppInvoicingInvoiceIdRoute
+  '/invoicing/new': typeof AppInvoicingNewRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRouteWithChildren
   '/reviews/$reviewId': typeof AppReviewsReviewIdRoute
   '/sessions/$sessionId': typeof AppSessionsSessionIdRoute
   '/settings/company': typeof AppSettingsCompanyRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/settings/profile': typeof AppSettingsProfileRoute
+  '/invoicing': typeof AppInvoicingIndexRoute
   '/projects': typeof AppProjectsIndexRoute
   '/reviews': typeof AppReviewsIndexRoute
   '/sessions': typeof AppSessionsIndexRoute
@@ -208,6 +239,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/_app/inbox': typeof AppInboxRoute
+  '/_app/invoicing': typeof AppInvoicingRouteWithChildren
   '/_app/projects': typeof AppProjectsRouteWithChildren
   '/_app/reviews': typeof AppReviewsRouteWithChildren
   '/_app/sessions': typeof AppSessionsRouteWithChildren
@@ -216,12 +248,15 @@ export interface FileRoutesById {
   '/auth/sign-in': typeof AuthSignInRoute
   '/auth/sign-up': typeof AuthSignUpRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/invoicing/$invoiceId': typeof AppInvoicingInvoiceIdRoute
+  '/_app/invoicing/new': typeof AppInvoicingNewRoute
   '/_app/projects/$projectId': typeof AppProjectsProjectIdRouteWithChildren
   '/_app/reviews/$reviewId': typeof AppReviewsReviewIdRoute
   '/_app/sessions/$sessionId': typeof AppSessionsSessionIdRoute
   '/_app/settings/company': typeof AppSettingsCompanyRoute
   '/_app/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/_app/settings/profile': typeof AppSettingsProfileRoute
+  '/_app/invoicing/': typeof AppInvoicingIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
   '/_app/reviews/': typeof AppReviewsIndexRoute
   '/_app/sessions/': typeof AppSessionsIndexRoute
@@ -236,6 +271,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/inbox'
+    | '/invoicing'
     | '/projects'
     | '/reviews'
     | '/sessions'
@@ -243,12 +279,15 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/auth/sign-in'
     | '/auth/sign-up'
+    | '/invoicing/$invoiceId'
+    | '/invoicing/new'
     | '/projects/$projectId'
     | '/reviews/$reviewId'
     | '/sessions/$sessionId'
     | '/settings/company'
     | '/settings/integrations'
     | '/settings/profile'
+    | '/invoicing/'
     | '/projects/'
     | '/reviews/'
     | '/sessions/'
@@ -264,12 +303,15 @@ export interface FileRouteTypes {
     | '/auth/sign-in'
     | '/auth/sign-up'
     | '/'
+    | '/invoicing/$invoiceId'
+    | '/invoicing/new'
     | '/projects/$projectId'
     | '/reviews/$reviewId'
     | '/sessions/$sessionId'
     | '/settings/company'
     | '/settings/integrations'
     | '/settings/profile'
+    | '/invoicing'
     | '/projects'
     | '/reviews'
     | '/sessions'
@@ -282,6 +324,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/auth'
     | '/_app/inbox'
+    | '/_app/invoicing'
     | '/_app/projects'
     | '/_app/reviews'
     | '/_app/sessions'
@@ -290,12 +333,15 @@ export interface FileRouteTypes {
     | '/auth/sign-in'
     | '/auth/sign-up'
     | '/_app/'
+    | '/_app/invoicing/$invoiceId'
+    | '/_app/invoicing/new'
     | '/_app/projects/$projectId'
     | '/_app/reviews/$reviewId'
     | '/_app/sessions/$sessionId'
     | '/_app/settings/company'
     | '/_app/settings/integrations'
     | '/_app/settings/profile'
+    | '/_app/invoicing/'
     | '/_app/projects/'
     | '/_app/reviews/'
     | '/_app/sessions/'
@@ -382,6 +428,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/invoicing': {
+      id: '/_app/invoicing'
+      path: '/invoicing'
+      fullPath: '/invoicing'
+      preLoaderRoute: typeof AppInvoicingRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/inbox': {
       id: '/_app/inbox'
       path: '/inbox'
@@ -416,6 +469,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/projects/'
       preLoaderRoute: typeof AppProjectsIndexRouteImport
       parentRoute: typeof AppProjectsRoute
+    }
+    '/_app/invoicing/': {
+      id: '/_app/invoicing/'
+      path: '/'
+      fullPath: '/invoicing/'
+      preLoaderRoute: typeof AppInvoicingIndexRouteImport
+      parentRoute: typeof AppInvoicingRoute
     }
     '/_app/settings/profile': {
       id: '/_app/settings/profile'
@@ -459,6 +519,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsProjectIdRouteImport
       parentRoute: typeof AppProjectsRoute
     }
+    '/_app/invoicing/new': {
+      id: '/_app/invoicing/new'
+      path: '/new'
+      fullPath: '/invoicing/new'
+      preLoaderRoute: typeof AppInvoicingNewRouteImport
+      parentRoute: typeof AppInvoicingRoute
+    }
+    '/_app/invoicing/$invoiceId': {
+      id: '/_app/invoicing/$invoiceId'
+      path: '/$invoiceId'
+      fullPath: '/invoicing/$invoiceId'
+      preLoaderRoute: typeof AppInvoicingInvoiceIdRouteImport
+      parentRoute: typeof AppInvoicingRoute
+    }
     '/_app/projects/$projectId/tasks': {
       id: '/_app/projects/$projectId/tasks'
       path: '/tasks'
@@ -482,6 +556,22 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface AppInvoicingRouteChildren {
+  AppInvoicingInvoiceIdRoute: typeof AppInvoicingInvoiceIdRoute
+  AppInvoicingNewRoute: typeof AppInvoicingNewRoute
+  AppInvoicingIndexRoute: typeof AppInvoicingIndexRoute
+}
+
+const AppInvoicingRouteChildren: AppInvoicingRouteChildren = {
+  AppInvoicingInvoiceIdRoute: AppInvoicingInvoiceIdRoute,
+  AppInvoicingNewRoute: AppInvoicingNewRoute,
+  AppInvoicingIndexRoute: AppInvoicingIndexRoute,
+}
+
+const AppInvoicingRouteWithChildren = AppInvoicingRoute._addFileChildren(
+  AppInvoicingRouteChildren,
+)
 
 interface AppProjectsProjectIdRouteChildren {
   AppProjectsProjectIdSessionsRoute: typeof AppProjectsProjectIdSessionsRoute
@@ -560,6 +650,7 @@ const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppInboxRoute: typeof AppInboxRoute
+  AppInvoicingRoute: typeof AppInvoicingRouteWithChildren
   AppProjectsRoute: typeof AppProjectsRouteWithChildren
   AppReviewsRoute: typeof AppReviewsRouteWithChildren
   AppSessionsRoute: typeof AppSessionsRouteWithChildren
@@ -570,6 +661,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppInboxRoute: AppInboxRoute,
+  AppInvoicingRoute: AppInvoicingRouteWithChildren,
   AppProjectsRoute: AppProjectsRouteWithChildren,
   AppReviewsRoute: AppReviewsRouteWithChildren,
   AppSessionsRoute: AppSessionsRouteWithChildren,

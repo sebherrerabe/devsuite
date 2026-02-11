@@ -2,6 +2,7 @@ import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import { ensureDefaultListId } from './projectTaskLists';
 import { ensureDefaultProjectId } from './projects';
+import { ensureDefaultRateCardId } from './lib/billing';
 
 /**
  * User identity type from Convex auth
@@ -24,15 +25,43 @@ async function getUserId(ctx: {
   return identity.subject;
 }
 
+function normalizeGithubOrgLogins(values: string[]): string[] {
+  const unique = new Set<string>();
+
+  for (const value of values) {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      continue;
+    }
+
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(normalized)) {
+      throw new Error(`Invalid GitHub org login: ${value}`);
+    }
+
+    unique.add(normalized);
+  }
+
+  return Array.from(unique);
+}
+
 export const create = mutation({
-  args: { name: v.string() },
+  args: {
+    name: v.string(),
+    githubOrgLogins: v.optional(v.array(v.string())),
+  },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
     const now = Date.now();
+    const githubOrgLogins = normalizeGithubOrgLogins(
+      args.githubOrgLogins ?? []
+    );
     const companyId = await ctx.db.insert('companies', {
       name: args.name,
       userId,
       isDeleted: false,
+      metadata: {
+        githubOrgLogins,
+      },
       deletedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -40,13 +69,18 @@ export const create = mutation({
 
     const defaultProjectId = await ensureDefaultProjectId(ctx, companyId);
     await ensureDefaultListId(ctx, companyId, defaultProjectId);
+    await ensureDefaultRateCardId(ctx, companyId);
 
     return companyId;
   },
 });
 
 export const update = mutation({
-  args: { id: v.id('companies'), name: v.string() },
+  args: {
+    id: v.id('companies'),
+    name: v.string(),
+    githubOrgLogins: v.optional(v.array(v.string())),
+  },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
     const company = await ctx.db.get(args.id);
@@ -59,10 +93,30 @@ export const update = mutation({
       throw new Error('Unauthorized');
     }
 
-    await ctx.db.patch(args.id, {
-      name: args.name,
+    const trimmedName = args.name.trim();
+    if (!trimmedName) {
+      throw new Error('Company name cannot be empty');
+    }
+
+    const updates: Record<string, unknown> = {
       updatedAt: Date.now(),
-    });
+      name: trimmedName,
+    };
+
+    if (args.githubOrgLogins !== undefined) {
+      const githubOrgLogins = normalizeGithubOrgLogins(args.githubOrgLogins);
+      const metadata =
+        company.metadata && typeof company.metadata === 'object'
+          ? (company.metadata as Record<string, unknown>)
+          : {};
+
+      updates.metadata = {
+        ...metadata,
+        githubOrgLogins,
+      };
+    }
+
+    await ctx.db.patch(args.id, updates);
   },
 });
 

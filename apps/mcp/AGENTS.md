@@ -2,7 +2,7 @@
 
 ## Purpose
 
-MCP server is the AI-facing control plane for DevSuite. It exposes safe tools that call into Convex and local tooling (e.g., GitHub CLI).
+MCP server is the AI-facing control plane for DevSuite. It exposes safe tools that call into Convex and external services (e.g., DevSuite gh-service).
 
 ## Rules (non-negotiable)
 

@@ -77,6 +77,18 @@ export default [
     },
   },
 
+  // Node.js config for GH service
+  {
+    files: ['apps/gh-service/**/*.{ts,js}'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        Buffer: 'readonly',
+      },
+    },
+  },
+
   // Node.js config for Convex backend
   {
     files: ['convex/**/*.{ts,js}'],

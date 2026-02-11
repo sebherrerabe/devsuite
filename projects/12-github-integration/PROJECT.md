@@ -1,60 +1,54 @@
 ---
 id: '12-github-integration'
 title: 'GitHub Integration'
-status: 'pending'
+status: 'in-progress'
 priority: 9
 assigned_pm: null
 depends_on: ['05-repository-module', '09-mcp-server']
-unlocks: []
-estimated_complexity: 'medium'
+unlocks: ['10-pr-review-module', '11-inbox-module']
+estimated_complexity: 'high'
 ---
 
 # GitHub Integration
 
 ## Summary
 
-Implement GitHub integration for PR discovery, review history, and notifications. Uses GitHub CLI for local authentication - no organization OAuth required. This is read-only integration focused on surfacing GitHub activity in DevSuite.
+Build a dedicated Node.js GitHub integration service that runs GitHub CLI operations server-side with strict per-user isolation. Users connect GitHub from the web UI through a browser-first device flow, and DevSuite stores only secure integration state plus normalized references for notifications and PR discovery.
 
 ## Objective
 
-Connect DevSuite to GitHub for PR awareness and notifications without complex OAuth setup.
+Deliver a production-ready GitHub integration with zero local bridge setup, per-user secure auth, and reliable notifications plus PR discovery.
 
 ## Key Deliverables
 
-- GitHub CLI wrapper in MCP server
-- PR discovery (open PRs for linked repos)
-- GitHub notification sync to inbox
-- PR metadata fetching for reviews
-- Link generation to GitHub web
+- New Node.js GitHub integration service (`apps/gh-service`)
+- Browser-first connect/disconnect UX in web app
+- Per-user isolated GitHub execution model on server
+- Company-level org mapping for notification routing
+- Notification polling pipeline with idempotent inbox ingest
+- PR discovery endpoints for MCP tools
+- Security, observability, and runbook docs
 
 ## Success Criteria
 
-- [ ] Can list open PRs for a repository
-- [ ] GitHub notifications appear in inbox
-- [ ] PR links open correct GitHub page
-- [ ] Works with gh CLI authentication
-- [ ] Handles rate limiting gracefully
+- [ ] No local bridge process or terminal pairing required
+- [ ] User can connect GitHub from the web app and remain connected across sessions
+- [ ] GitHub operations are isolated per user and cannot leak auth context
+- [ ] Notifications route to the correct company using configured org mapping
+- [ ] MCP PR discovery works on demand with user-scoped authorization
+- [ ] Secrets/tokens are encrypted at rest and not exposed in logs or UI
 
-## Architecture Reference
+## Execution Plan (Phase Order)
 
-From spec section 6:
-
-- Read-only integration
-- Via GitHub CLI (no OAuth)
-- Used for PR discovery, review history, notifications
+1. Phase 1: Contract + service skeleton + auth boundary
+2. Phase 2: Browser-first GitHub connect/disconnect
+3. Phase 3: User-scoped `gh` execution engine
+4. Phase 4: Notification polling + company routing
+5. Phase 5: MCP PR discovery + hardening + rollout
 
 ## Quick Links
 
-- [Scope](./SCOPE.md) _(to be created by AI PM)_
-- [Dependencies](./DEPENDENCIES.md) _(to be created by AI PM)_
-- [Tasks](./TASKS.md) _(to be created by AI PM)_
-- [Status](./STATUS.md) _(to be created by AI PM)_
-
-## Notes for AI PM
-
-When decomposing this project:
-
-1. GitHub CLI must be installed and authenticated
-2. Focus on read operations only
-3. Rate limiting is a real concern
-4. Notification sync can be polling-based initially
+- [Scope](./SCOPE.md)
+- [Dependencies](./DEPENDENCIES.md)
+- [Tasks](./TASKS.md)
+- [Status](./STATUS.md)

@@ -175,6 +175,40 @@ export const createPerformanceSignalInputSchema = z.object({
 // Rate Card Entity
 // ============================================================================
 
+// ============================================================================
+// Rounding
+// ============================================================================
+
+/**
+ * Rounding modes for billable time.
+ */
+export const roundingModeValues = ['floor', 'ceil', 'nearest'] as const;
+
+export type RoundingMode = (typeof roundingModeValues)[number];
+
+/**
+ * Zod schema for RoundingMode
+ */
+export const roundingModeSchema = z.enum(roundingModeValues);
+
+/**
+ * Rounding configuration for billing.
+ */
+export type RoundingConfig = {
+  /** Increment in minutes (e.g., 1, 6, 15, 30, 60) */
+  incrementMinutes: number;
+  /** Rounding strategy */
+  mode: RoundingMode;
+};
+
+/**
+ * Zod schema for RoundingConfig
+ */
+export const roundingConfigSchema = z.object({
+  incrementMinutes: z.number().int().positive(),
+  mode: roundingModeSchema,
+});
+
 /**
  * A rate card defining billing configuration for a company.
  * Rate cards determine how sessions are billed.
@@ -190,6 +224,10 @@ export type RateCard = {
   hourlyRateCents: number;
   /** Currency code (ISO 4217) */
   currency: string;
+  /** Rounding increment in minutes */
+  roundingIncrementMinutes: number;
+  /** Rounding mode */
+  roundingMode: RoundingMode;
   /** Optional description */
   description: string | null;
   /** Whether this is the default rate card for the company */
@@ -210,6 +248,8 @@ export const rateCardSchema = z
     name: z.string().min(1).max(200),
     hourlyRateCents: z.number().int().nonnegative(),
     currency: z.string().length(3), // ISO 4217
+    roundingIncrementMinutes: z.number().int().positive(),
+    roundingMode: roundingModeSchema,
     description: z.string().max(1000).nullable(),
     isDefault: z.boolean(),
     createdAt: timestampSchema,
@@ -233,6 +273,10 @@ export type CreateRateCardInput = {
   hourlyRateCents: number;
   /** Currency code (ISO 4217) */
   currency: string;
+  /** Rounding increment in minutes */
+  roundingIncrementMinutes: number;
+  /** Rounding mode */
+  roundingMode: RoundingMode;
   /** Optional description */
   description?: string | null;
   /** Whether this is the default rate card */
@@ -247,6 +291,8 @@ export const createRateCardInputSchema = z.object({
   name: z.string().min(1).max(200),
   hourlyRateCents: z.number().int().nonnegative(),
   currency: z.string().length(3),
+  roundingIncrementMinutes: z.number().int().positive(),
+  roundingMode: roundingModeSchema,
   description: z.string().max(1000).nullable().optional(),
   isDefault: z.boolean().optional(),
 });
@@ -261,6 +307,10 @@ export type UpdateRateCardInput = {
   hourlyRateCents?: number;
   /** Updated currency */
   currency?: string;
+  /** Updated rounding increment in minutes */
+  roundingIncrementMinutes?: number;
+  /** Updated rounding mode */
+  roundingMode?: RoundingMode;
   /** Updated description */
   description?: string | null;
   /** Updated default status */
@@ -274,6 +324,8 @@ export const updateRateCardInputSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   hourlyRateCents: z.number().int().nonnegative().optional(),
   currency: z.string().length(3).optional(),
+  roundingIncrementMinutes: z.number().int().positive().optional(),
+  roundingMode: roundingModeSchema.optional(),
   description: z.string().max(1000).nullable().optional(),
   isDefault: z.boolean().optional(),
 });
@@ -285,7 +337,7 @@ export const updateRateCardInputSchema = z.object({
 /**
  * Invoice status values
  */
-export const invoiceStatusValues = ['draft', 'sent', 'paid', 'voided'] as const;
+export const invoiceStatusValues = ['draft', 'finalized', 'cancelled'] as const;
 
 export type InvoiceStatus = (typeof invoiceStatusValues)[number];
 
@@ -297,6 +349,49 @@ export const invoiceStatusSchema = z.enum(invoiceStatusValues);
 // ============================================================================
 // Invoice Entity
 // ============================================================================
+
+export type InvoiceTaskRef = {
+  taskId: TaskId;
+  title: string;
+};
+
+export type InvoiceProjectGroup = {
+  projectId: ProjectId;
+  projectName: string;
+  tasks: InvoiceTaskRef[];
+};
+
+export type InvoiceDayLine = {
+  /** Hourly rate in cents for this line */
+  rateCents: number;
+  /** Currency code */
+  currency: string;
+  /** Rounding increment in minutes */
+  roundingIncrementMinutes: number;
+  /** Rounding mode */
+  roundingMode: RoundingMode;
+  /** Raw (unrounded) minutes */
+  rawMinutes: number;
+  /** Billed (rounded) minutes */
+  billedMinutes: number;
+  /** Amount in cents for this line */
+  amountCents: number;
+  /** Task overview grouped by project */
+  projects: InvoiceProjectGroup[];
+  /** Sessions that contributed to this line */
+  sessionIds: SessionId[];
+};
+
+export type InvoiceDayGroup = {
+  /** Date in YYYY-MM-DD (user timezone) */
+  date: string;
+  /** Total billed minutes for the day */
+  totalMinutes: number;
+  /** Total amount in cents for the day */
+  totalCents: number;
+  /** Per-rate lines */
+  lines: InvoiceDayLine[];
+};
 
 /**
  * An invoice representing billable work for a period.
@@ -311,22 +406,22 @@ export type Invoice = {
   periodStart: Timestamp;
   /** End of the billing period (Unix ms) */
   periodEnd: Timestamp;
+  /** Timezone used for day grouping */
+  timezone: string;
   /** Session IDs included in this invoice */
   sessionIds: SessionId[];
-  /** Rate card used for billing */
-  rateCardId: RateCardId;
   /** Total billable minutes */
   totalMinutes: number;
   /** Total amount in cents */
   totalCents: number;
-  /** Currency code (copied from rate card for historical accuracy) */
+  /** Currency code (copied from rates for historical accuracy) */
   currency: string;
   /** Invoice status */
   status: InvoiceStatus;
-  /** Optional notes */
-  notes: string | null;
-  /** Optional invoice number (for external reference) */
-  invoiceNumber: string | null;
+  /** Snapshot day groups */
+  days: InvoiceDayGroup[];
+  /** Cancel timestamp (when status === cancelled) */
+  cancelledAt?: Timestamp | null;
   /** When the invoice was created (Unix ms) */
   createdAt: Timestamp;
   /** When the invoice was last updated (Unix ms) */
@@ -342,14 +437,44 @@ export const invoiceSchema = z
     companyId: companyIdSchema,
     periodStart: timestampSchema,
     periodEnd: timestampSchema,
+    timezone: z.string().min(1),
     sessionIds: z.array(sessionIdSchema),
-    rateCardId: rateCardIdSchema,
-    totalMinutes: z.number().int().nonnegative(),
-    totalCents: z.number().int().nonnegative(),
+    totalMinutes: z.number().nonnegative(),
+    totalCents: z.number().nonnegative(),
     currency: z.string().length(3),
     status: invoiceStatusSchema,
-    notes: z.string().max(5000).nullable(),
-    invoiceNumber: z.string().max(100).nullable(),
+    days: z.array(
+      z.object({
+        date: z.string().min(1),
+        totalMinutes: z.number().nonnegative(),
+        totalCents: z.number().nonnegative(),
+        lines: z.array(
+          z.object({
+            rateCents: z.number().int().nonnegative(),
+            currency: z.string().length(3),
+            roundingIncrementMinutes: z.number().int().positive(),
+            roundingMode: roundingModeSchema,
+            rawMinutes: z.number().nonnegative(),
+            billedMinutes: z.number().nonnegative(),
+            amountCents: z.number().int().nonnegative(),
+            projects: z.array(
+              z.object({
+                projectId: idSchema,
+                projectName: z.string(),
+                tasks: z.array(
+                  z.object({
+                    taskId: idSchema,
+                    title: z.string(),
+                  })
+                ),
+              })
+            ),
+            sessionIds: z.array(sessionIdSchema),
+          })
+        ),
+      })
+    ),
+    cancelledAt: timestampSchema.nullable().optional(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
   })
@@ -369,22 +494,20 @@ export type CreateInvoiceInput = {
   periodStart: Timestamp;
   /** End of the billing period */
   periodEnd: Timestamp;
+  /** Timezone used for day grouping */
+  timezone: string;
   /** Session IDs to include */
   sessionIds: SessionId[];
-  /** Rate card to use for billing */
-  rateCardId: RateCardId;
   /** Total billable minutes (calculated from sessions) */
   totalMinutes: number;
   /** Total amount in cents (calculated from minutes and rate) */
   totalCents: number;
   /** Currency code */
   currency: string;
+  /** Snapshot day groups */
+  days: InvoiceDayGroup[];
   /** Initial status (defaults to draft) */
   status?: InvoiceStatus;
-  /** Optional notes */
-  notes?: string | null;
-  /** Optional invoice number */
-  invoiceNumber?: string | null;
 };
 
 /**
@@ -394,45 +517,59 @@ export const createInvoiceInputSchema = z.object({
   companyId: companyIdSchema,
   periodStart: timestampSchema,
   periodEnd: timestampSchema,
+  timezone: z.string().min(1),
   sessionIds: z.array(sessionIdSchema),
-  rateCardId: rateCardIdSchema,
-  totalMinutes: z.number().int().nonnegative(),
-  totalCents: z.number().int().nonnegative(),
+  totalMinutes: z.number().nonnegative(),
+  totalCents: z.number().nonnegative(),
   currency: z.string().length(3),
+  days: z.array(
+    z.object({
+      date: z.string().min(1),
+      totalMinutes: z.number().nonnegative(),
+      totalCents: z.number().nonnegative(),
+      lines: z.array(
+        z.object({
+          rateCents: z.number().int().nonnegative(),
+          currency: z.string().length(3),
+          roundingIncrementMinutes: z.number().int().positive(),
+          roundingMode: roundingModeSchema,
+          rawMinutes: z.number().nonnegative(),
+          billedMinutes: z.number().nonnegative(),
+          amountCents: z.number().int().nonnegative(),
+          projects: z.array(
+            z.object({
+              projectId: idSchema,
+              projectName: z.string(),
+              tasks: z.array(
+                z.object({
+                  taskId: idSchema,
+                  title: z.string(),
+                })
+              ),
+            })
+          ),
+          sessionIds: z.array(sessionIdSchema),
+        })
+      ),
+    })
+  ),
   status: invoiceStatusSchema.optional(),
-  notes: z.string().max(5000).nullable().optional(),
-  invoiceNumber: z.string().max(100).nullable().optional(),
 });
 
 /**
  * Input for updating an existing invoice
  */
 export type UpdateInvoiceInput = {
-  /** Updated session IDs (only for draft invoices) */
-  sessionIds?: SessionId[];
-  /** Updated rate card (only for draft invoices) */
-  rateCardId?: RateCardId;
-  /** Updated total minutes (recalculated) */
-  totalMinutes?: number;
-  /** Updated total cents (recalculated) */
-  totalCents?: number;
   /** Updated status */
   status?: InvoiceStatus;
-  /** Updated notes */
-  notes?: string | null;
-  /** Updated invoice number */
-  invoiceNumber?: string | null;
+  /** Cancel timestamp */
+  cancelledAt?: Timestamp | null;
 };
 
 /**
  * Zod schema for updating an invoice
  */
 export const updateInvoiceInputSchema = z.object({
-  sessionIds: z.array(sessionIdSchema).optional(),
-  rateCardId: rateCardIdSchema.optional(),
-  totalMinutes: z.number().int().nonnegative().optional(),
-  totalCents: z.number().int().nonnegative().optional(),
   status: invoiceStatusSchema.optional(),
-  notes: z.string().max(5000).nullable().optional(),
-  invoiceNumber: z.string().max(100).nullable().optional(),
+  cancelledAt: timestampSchema.nullable().optional(),
 });

@@ -85,7 +85,7 @@ It mirrors the workflow of an existing `pr-review` MCP tool and provides:
 - a UI to browse reviews by company, project, repo, or date
 - visibility into how much review work you actually do
 
-Richer PR context (diffs, metadata, branch state) is obtained from the **MCP server**, which runs the local GitHub CLI workflow.
+Richer PR context (diffs, metadata, branch state) is obtained through the **DevSuite GitHub service**, consumed by MCP tools.
 
 DevSuite stores the results — not the raw GitHub data.
 
@@ -136,7 +136,7 @@ Responsible for:
 - Separate Node.js process
 - Authenticated via local token
 - Talks to Convex
-- Runs local tooling (GitHub CLI)
+- Calls external services (including DevSuite GitHub service)
 - Exposes DevSuite operations to AI agents
 
 ---

@@ -47,7 +47,7 @@ From spec section 5:
 - Exposes DevSuite operations as MCP tools
 - Authenticates agents via static token
 - Calls Convex functions
-- Runs local tooling (GitHub CLI)
+- Calls integration services (including DevSuite gh-service)
 - Agents can read and modify, never delete
 
 ## Quick Links
