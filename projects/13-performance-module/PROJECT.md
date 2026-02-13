@@ -1,7 +1,7 @@
 ---
 id: '13-performance-module'
 title: 'Performance Signals'
-status: 'pending'
+status: 'complete'
 priority: 11
 assigned_pm: null
 depends_on: ['08-session-module', '10-pr-review-module']
@@ -31,11 +31,11 @@ Provide visibility into work patterns through objective metrics.
 
 ## Success Criteria
 
-- [ ] Signals are collected automatically
-- [ ] Dashboard shows key metrics
-- [ ] Can filter by date range
-- [ ] Can filter by project/company
-- [ ] No judgement labels ("good"/"bad")
+- [x] Signals are collected automatically
+- [x] Dashboard shows key metrics
+- [x] Can filter by date range
+- [x] Can filter by project/company
+- [x] No judgement labels ("good"/"bad")
 
 ## Architecture Reference
 

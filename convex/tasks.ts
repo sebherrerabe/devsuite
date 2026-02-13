@@ -22,6 +22,7 @@ import {
   createRestorePatch,
 } from './lib/helpers';
 import { ensureDefaultListId } from './projectTaskLists';
+import { insertPerformanceSignal } from './lib/performanceSignalIngestion';
 
 // ============================================================================
 // Helper Functions
@@ -444,6 +445,12 @@ export const updateTask = mutation({
     const companyId = requireCompanyId(args.companyId);
     const task = await ctx.db.get(args.taskId);
     assertCompanyScoped(task, companyId, 'tasks');
+    const now = Date.now();
+    const willBeDone =
+      args.status !== undefined
+        ? args.status === 'done'
+        : task.status === 'done';
+    const shouldRecordTaskCompletion = task.status !== 'done' && willBeDone;
 
     // Validate complexityScore range if provided
     if (
@@ -464,7 +471,7 @@ export const updateTask = mutation({
       tagIds?: Id<'tags'>[];
       updatedAt: number;
     } = {
-      updatedAt: Date.now(),
+      updatedAt: now,
     };
 
     if (args.title !== undefined) {
@@ -490,6 +497,18 @@ export const updateTask = mutation({
     }
 
     await ctx.db.patch(args.taskId, updates);
+
+    if (shouldRecordTaskCompletion) {
+      await insertPerformanceSignal(ctx, {
+        companyId,
+        type: 'tasks_completed',
+        value: 1,
+        entityType: 'task',
+        entityId: args.taskId,
+        timestamp: now,
+      });
+    }
+
     return args.taskId;
   },
 });

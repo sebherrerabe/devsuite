@@ -89,6 +89,18 @@ export default [
     },
   },
 
+  // Node.js config for Notion service
+  {
+    files: ['apps/notion-service/**/*.{ts,js}'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        Buffer: 'readonly',
+      },
+    },
+  },
+
   // Node.js config for Convex backend
   {
     files: ['convex/**/*.{ts,js}'],

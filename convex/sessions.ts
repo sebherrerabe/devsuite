@@ -25,6 +25,9 @@ import {
   assertSessionNotTerminal,
 } from './lib/sessionValidation';
 import { deriveSessionDurations } from './lib/sessionDerivation';
+import { deriveActiveSegments } from './lib/sessionIntervals';
+import { countContextSwitchesFromTaskActivations } from './lib/performanceMetrics';
+import { insertPerformanceSignal } from './lib/performanceSignalIngestion';
 
 type SessionEventType =
   | 'SESSION_STARTED'
@@ -659,6 +662,8 @@ export const finishSession = mutation({
     assertCanFinish(session.status);
 
     const now = Date.now();
+    const events = await loadSessionEvents(ctx, args.sessionId);
+
     await ctx.db.patch(args.sessionId, {
       status: 'FINISHED',
       endAt: now,
@@ -673,6 +678,45 @@ export const finishSession = mutation({
       type: 'SESSION_FINISHED',
       payload: {},
       clientTimestamp: args.clientTimestamp ?? null,
+    });
+
+    const { segments } = deriveActiveSegments({
+      sessionStatus: 'FINISHED',
+      sessionStartAt: session.startAt,
+      sessionEndAt: now,
+      events,
+      nowMs: now,
+    });
+    const focusDurationMs = segments.reduce(
+      (sum, segment) => sum + Math.max(0, segment.endAt - segment.startAt),
+      0
+    );
+    const contextSwitchMetrics =
+      countContextSwitchesFromTaskActivations(events);
+
+    await insertPerformanceSignal(ctx, {
+      companyId,
+      type: 'session_duration',
+      value: Math.max(0, (now - session.startAt) / 60000),
+      entityType: 'session',
+      entityId: args.sessionId,
+      timestamp: now,
+    });
+    await insertPerformanceSignal(ctx, {
+      companyId,
+      type: 'focus_time',
+      value: Math.max(0, focusDurationMs / 60000),
+      entityType: 'session',
+      entityId: args.sessionId,
+      timestamp: now,
+    });
+    await insertPerformanceSignal(ctx, {
+      companyId,
+      type: 'context_switches',
+      value: contextSwitchMetrics.count,
+      entityType: 'session',
+      entityId: args.sessionId,
+      timestamp: now,
     });
 
     return args.sessionId;
@@ -853,10 +897,12 @@ export const markTaskDone = mutation({
 
     const task = await ctx.db.get(args.taskId);
     assertCompanyScoped(task, companyId, 'tasks');
+    const wasAlreadyDone = task.status === 'done';
+    const now = Date.now();
 
     await ctx.db.patch(args.taskId, {
       status: 'done',
-      updatedAt: Date.now(),
+      updatedAt: now,
     });
 
     await appendSessionEvent(ctx, {
@@ -868,6 +914,17 @@ export const markTaskDone = mutation({
       payload: { taskId: args.taskId },
       clientTimestamp: args.clientTimestamp ?? null,
     });
+
+    if (!wasAlreadyDone) {
+      await insertPerformanceSignal(ctx, {
+        companyId,
+        type: 'tasks_completed',
+        value: 1,
+        entityType: 'task',
+        entityId: args.taskId,
+        timestamp: now,
+      });
+    }
 
     return args.sessionId;
   },

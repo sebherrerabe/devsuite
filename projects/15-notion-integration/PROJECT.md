@@ -1,7 +1,7 @@
 ---
 id: '15-notion-integration'
 title: 'Notion Integration'
-status: 'pending'
+status: 'planning'
 priority: 13
 assigned_pm: null
 depends_on: ['11-inbox-module']
@@ -13,26 +13,28 @@ estimated_complexity: 'low'
 
 ## Summary
 
-Implement minimal Notion integration for links and notifications. This is not a full Notion sync - only explicit linking and notification forwarding.
+Implement minimal Notion integration for links and notifications with UI-first pairing. This is not a full Notion sync - only explicit linking, metadata validation, and notification forwarding into the inbox.
 
 ## Objective
 
-Allow tasks to link to Notion pages and surface Notion notifications in the inbox.
+Allow users to pair Notion from the UI, link tasks to Notion pages, and surface Notion updates in the inbox with strict tenant isolation.
 
 ## Key Deliverables
 
-- Notion API client setup
-- Link validation (verify Notion page exists)
-- Notification polling/webhook
-- Inbox item creation from Notion updates
-- Company-specific configuration
+- UI-only Notion OAuth pairing flow (connect/status/disconnect)
+- Notion API client + encrypted token lifecycle management
+- Link validation (verify Notion page exists and fetch display title)
+- Webhook ingestion for Notion events and inbox item creation
+- Company-scoped routing and auditable integration settings
 
 ## Success Criteria
 
-- [ ] Can link a task to a Notion page
-- [ ] Link shows page title
-- [ ] Notion updates appear in inbox
-- [ ] Works with Notion API token
+- [ ] User can connect and disconnect Notion from the Integrations UI without manual token copy/paste
+- [ ] Each company is paired to exactly one Notion workspace
+- [ ] Task can link to a Notion page and resolve page title when access is granted
+- [ ] Notion updates appear as company-scoped inbox items
+- [ ] Integration stores external references only (IDs/URLs/titles), not mirrored Notion content
+- [ ] Requested Notion capabilities are limited to minimum viable read scopes
 
 ## Architecture Reference
 
@@ -44,16 +46,17 @@ From spec section 6:
 
 ## Quick Links
 
-- [Scope](./SCOPE.md) _(to be created by AI PM)_
-- [Dependencies](./DEPENDENCIES.md) _(to be created by AI PM)_
-- [Tasks](./TASKS.md) _(to be created by AI PM)_
-- [Status](./STATUS.md) _(to be created by AI PM)_
+- [Scope](./SCOPE.md)
+- [Dependencies](./DEPENDENCIES.md)
+- [Tasks](./TASKS.md)
+- [Status](./STATUS.md)
 
 ## Notes for AI PM
 
 When decomposing this project:
 
-1. Notion API requires integration token
-2. Keep scope minimal - links and notifications only
-3. Page metadata fetch for display
-4. Consider rate limiting
+1. Pairing must be fully UI-driven via OAuth (no manual integration token entry).
+2. Keep scope minimal - links and notifications only.
+3. One company maps to one Notion org/workspace.
+4. Minimum Notion capabilities: `read content`, `read comments`; `user info without email` optional.
+5. Prefer webhook-first notification ingestion with idempotent delivery handling.

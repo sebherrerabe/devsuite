@@ -15,6 +15,7 @@ import {
   createSoftDeletePatch,
   requireCompanyId,
 } from './lib/helpers';
+import { insertPerformanceSignal } from './lib/performanceSignalIngestion';
 
 // ============================================================================
 // Query Functions
@@ -175,6 +176,17 @@ export const createPRReview = mutation({
     }
 
     const reviewId = await ctx.db.insert('prReviews', reviewDoc);
+
+    if (args.taskId) {
+      await insertPerformanceSignal(ctx, {
+        companyId,
+        type: 'pr_reviews_completed',
+        value: 1,
+        entityType: 'task',
+        entityId: args.taskId,
+        timestamp: now,
+      });
+    }
 
     return reviewId;
   },

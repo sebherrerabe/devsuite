@@ -6,6 +6,7 @@ import {
   Inbox,
   FolderKanban,
   Clock,
+  Activity,
   FileSearch,
   Receipt,
   Settings,
@@ -36,6 +37,7 @@ const navItems: NavItemConfig[] = [
   { label: 'Inbox', icon: Inbox, to: '/inbox' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },
   { label: 'Sessions', icon: Clock, to: '/sessions' },
+  { label: 'Performance', icon: Activity, to: '/performance' },
   { label: 'PR Reviews', icon: FileSearch, to: '/reviews' },
   { label: 'Invoicing', icon: Receipt, to: '/invoicing' },
 ];

@@ -6,25 +6,25 @@
 
 ## Quick Reference
 
-| ID  | Project                                                      | Status    | Depends On | Unlocks                | Priority |
-| --- | ------------------------------------------------------------ | --------- | ---------- | ---------------------- | -------- |
-| 00  | [Scaffolding](./00-scaffolding/PROJECT.md)                   | `pending` | —          | 01, 02, 03             | 1        |
-| 01  | [Shared Types & Schemas](./01-shared-types/PROJECT.md)       | `pending` | 00         | 02, 03, 04+            | 2        |
-| 02  | [Convex Foundation](./02-convex-foundation/PROJECT.md)       | `pending` | 00, 01     | 04, 05, 06, 07, 08, 09 | 3        |
-| 03  | [Frontend Foundation](./03-frontend-foundation/PROJECT.md)   | `pending` | 00, 01     | 04, 05, 06, 07, 08     | 3        |
-| 04  | [Company Module](./04-company-module/PROJECT.md)             | `pending` | 02, 03     | 05, 06, 08, 11, 14     | 4        |
-| 05  | [Repository Module](./05-repository-module/PROJECT.md)       | `pending` | 04         | 06, 10, 12             | 5        |
-| 06  | [Project Module](./06-project-module/PROJECT.md)             | `pending` | 05         | 07                     | 6        |
-| 07  | [Task Module](./07-task-module/PROJECT.md)                   | `pending` | 06         | 08, 13, 16             | 7        |
-| 08  | [Session Module](./08-session-module/PROJECT.md)             | `pending` | 04, 07     | 13, 14                 | 8        |
-| 09  | [MCP Server Foundation](./09-mcp-server/PROJECT.md)          | `pending` | 02         | 12                     | 5        |
-| 10  | [PR Review Module](./10-pr-review-module/PROJECT.md)         | `pending` | 05         | 13                     | 9        |
-| 11  | [Inbox & Notifications](./11-inbox-module/PROJECT.md)        | `pending` | 04         | 15                     | 10       |
-| 12  | [GitHub Integration](./12-github-integration/PROJECT.md)     | `pending` | 05, 09     | 10, 11                 | 9        |
-| 13  | [Performance Signals](./13-performance-module/PROJECT.md)    | `pending` | 08, 10     | —                      | 11       |
-| 14  | [Invoicing Module](./14-invoicing-module/PROJECT.md)         | `pending` | 04, 08     | —                      | 12       |
-| 15  | [Notion Integration](./15-notion-integration/PROJECT.md)     | `pending` | 11         | —                      | 13       |
-| 16  | [TickTick Integration](./16-ticktick-integration/PROJECT.md) | `pending` | 07         | —                      | 13       |
+| ID  | Project                                                      | Status     | Depends On | Unlocks                | Priority |
+| --- | ------------------------------------------------------------ | ---------- | ---------- | ---------------------- | -------- |
+| 00  | [Scaffolding](./00-scaffolding/PROJECT.md)                   | `pending`  | —          | 01, 02, 03             | 1        |
+| 01  | [Shared Types & Schemas](./01-shared-types/PROJECT.md)       | `pending`  | 00         | 02, 03, 04+            | 2        |
+| 02  | [Convex Foundation](./02-convex-foundation/PROJECT.md)       | `pending`  | 00, 01     | 04, 05, 06, 07, 08, 09 | 3        |
+| 03  | [Frontend Foundation](./03-frontend-foundation/PROJECT.md)   | `pending`  | 00, 01     | 04, 05, 06, 07, 08     | 3        |
+| 04  | [Company Module](./04-company-module/PROJECT.md)             | `pending`  | 02, 03     | 05, 06, 08, 11, 14     | 4        |
+| 05  | [Repository Module](./05-repository-module/PROJECT.md)       | `pending`  | 04         | 06, 10, 12             | 5        |
+| 06  | [Project Module](./06-project-module/PROJECT.md)             | `pending`  | 05         | 07                     | 6        |
+| 07  | [Task Module](./07-task-module/PROJECT.md)                   | `pending`  | 06         | 08, 13, 16             | 7        |
+| 08  | [Session Module](./08-session-module/PROJECT.md)             | `pending`  | 04, 07     | 13, 14                 | 8        |
+| 09  | [MCP Server Foundation](./09-mcp-server/PROJECT.md)          | `pending`  | 02         | 12                     | 5        |
+| 10  | [PR Review Module](./10-pr-review-module/PROJECT.md)         | `pending`  | 05         | 13                     | 9        |
+| 11  | [Inbox & Notifications](./11-inbox-module/PROJECT.md)        | `pending`  | 04         | 15                     | 10       |
+| 12  | [GitHub Integration](./12-github-integration/PROJECT.md)     | `pending`  | 05, 09     | 10, 11                 | 9        |
+| 13  | [Performance Signals](./13-performance-module/PROJECT.md)    | `complete` | 08, 10     | —                      | 11       |
+| 14  | [Invoicing Module](./14-invoicing-module/PROJECT.md)         | `pending`  | 04, 08     | —                      | 12       |
+| 15  | [Notion Integration](./15-notion-integration/PROJECT.md)     | `planning` | 11         | —                      | 13       |
+| 16  | [TickTick Integration](./16-ticktick-integration/PROJECT.md) | `pending`  | 07         | —                      | 13       |
 
 ---
 

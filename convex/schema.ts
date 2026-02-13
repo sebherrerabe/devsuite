@@ -38,10 +38,12 @@ export default defineSchema({
   integrationAuditEvents: defineTable({
     companyId: v.id('companies'),
     userId: v.string(),
-    integration: v.union(v.literal('github')),
+    integration: v.union(v.literal('github'), v.literal('notion')),
     action: v.union(
       v.literal('github_org_mapping_created'),
-      v.literal('github_org_mapping_updated')
+      v.literal('github_org_mapping_updated'),
+      v.literal('notion_workspace_connected'),
+      v.literal('notion_workspace_disconnected')
     ),
     metadata: v.optional(v.any()),
     createdAt: v.number(),
@@ -76,6 +78,26 @@ export default defineSchema({
     errorMessage: v.union(v.string(), v.null()),
     updatedAt: v.number(),
   }).index('by_userId', ['userId']),
+
+  /**
+   * Notion workspace connections - company-scoped, one active workspace per company.
+   * Credentials stay in service storage; Convex stores routing/audit metadata only.
+   */
+  notionCompanyConnections: defineTable({
+    companyId: v.id('companies'),
+    userId: v.string(),
+    workspaceId: v.string(),
+    workspaceName: v.union(v.string(), v.null()),
+    workspaceIcon: v.union(v.string(), v.null()),
+    botId: v.union(v.string(), v.null()),
+    ownerType: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    deletedAt: v.union(v.number(), v.null()),
+  })
+    .index('by_companyId_deletedAt', ['companyId', 'deletedAt'])
+    .index('by_workspaceId_deletedAt', ['workspaceId', 'deletedAt'])
+    .index('by_userId_deletedAt', ['userId', 'deletedAt']),
 
   // ============================================================================
   // Company-Scoped Entities

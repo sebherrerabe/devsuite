@@ -45,6 +45,11 @@ import { format } from 'date-fns';
 import { useEffect, useState, type FormEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { showToast } from '@/lib/toast';
+import { authClient } from '@/lib/auth';
+import {
+  NotionServiceRequestError,
+  resolveNotionLink,
+} from '@/lib/notion-service-client';
 import type { Doc } from '../../../../convex/_generated/dataModel';
 import { formatDurationMs, formatShortDateTime } from '@/lib/time';
 import {
@@ -52,6 +57,68 @@ import {
   getTriState,
   triStateToStatus,
 } from '@/lib/task-tristate';
+
+function getSessionUserId(sessionData: unknown): string | null {
+  if (!sessionData || typeof sessionData !== 'object') {
+    return null;
+  }
+
+  const root = sessionData as {
+    session?: { userId?: unknown } | null;
+    user?: { id?: unknown } | null;
+  };
+
+  if (
+    root.session &&
+    typeof root.session.userId === 'string' &&
+    root.session.userId.trim()
+  ) {
+    return root.session.userId.trim();
+  }
+
+  if (root.user && typeof root.user.id === 'string' && root.user.id.trim()) {
+    return root.user.id.trim();
+  }
+
+  return null;
+}
+
+function isNotionUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    return host === 'notion.so' || host.endsWith('.notion.so');
+  } catch {
+    return false;
+  }
+}
+
+function formatNotionLinkError(error: unknown): string {
+  if (error instanceof NotionServiceRequestError) {
+    if (error.code === 'NOT_CONNECTED') {
+      return 'Connect Notion for this company before linking Notion pages.';
+    }
+    if (error.code === 'LINK_INVALID') {
+      return 'Notion link is invalid or not shared with your integration.';
+    }
+    if (error.code === 'TOKEN_INVALID') {
+      return 'Stored Notion token is invalid. Reconnect Notion and try again.';
+    }
+    if (error.code === 'NOT_CONFIGURED') {
+      return 'Notion OAuth is not configured in notion-service.';
+    }
+    if (error.code === 'UNAUTHORIZED') {
+      return 'Notion service rejected this request. Check notion-service auth configuration.';
+    }
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Failed to resolve Notion link';
+}
 
 interface TaskDetailProps {
   taskId: Id<'tasks'> | null;
@@ -142,6 +209,8 @@ function TaskDetailContent({
     taskId: task._id,
   });
   const navigate = useNavigate();
+  const { data: authSession } = authClient.useSession();
+  const userId = getSessionUserId(authSession);
 
   const [formState, setFormState] = useState(() => ({
     title: task.title,
@@ -152,6 +221,7 @@ function TaskDetailContent({
     selectedTags: task.tagIds ?? [],
   }));
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [isResolvingNotionLink, setIsResolvingNotionLink] = useState(false);
   const [isCreateReviewOpen, setIsCreateReviewOpen] = useState(false);
   const [isCreatingReview, setIsCreatingReview] = useState(false);
   const [reviewFormState, setReviewFormState] = useState(() => ({
@@ -207,23 +277,59 @@ function TaskDetailContent({
   const handleAddLink = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const url = formData.get('url') as string;
-    const linkTitle = formData.get('title') as string;
+    const url = String(formData.get('url') ?? '').trim();
+    const linkTitle = String(formData.get('title') ?? '').trim();
 
-    if (!url || !linkTitle) return;
+    if (!url) {
+      return;
+    }
 
     try {
+      const notionLink = isNotionUrl(url);
+      let type: 'url' | 'notion' = notionLink ? 'notion' : 'url';
+      let resolvedTitle = linkTitle;
+      let identifier: string | undefined;
+
+      if (notionLink) {
+        if (!userId) {
+          showToast.error(
+            'Unable to resolve your user identity. Sign out/in and try again.'
+          );
+          return;
+        }
+
+        setIsResolvingNotionLink(true);
+        try {
+          const resolved = await resolveNotionLink(userId, companyId, url);
+          type = 'notion';
+          resolvedTitle = resolved.link.title || linkTitle || 'Notion link';
+          identifier = resolved.link.identifier;
+        } finally {
+          setIsResolvingNotionLink(false);
+        }
+      } else if (!resolvedTitle) {
+        showToast.error('Link title is required');
+        return;
+      }
+
       await addLink({
         companyId,
         taskId: task._id,
-        type: 'url',
+        type,
         url,
-        title: linkTitle,
+        title: resolvedTitle,
+        ...(identifier ? { identifier } : {}),
       });
       e.currentTarget.reset();
       showToast.success('Link added');
-    } catch {
+    } catch (error) {
+      if (isNotionUrl(url)) {
+        showToast.error(formatNotionLinkError(error));
+        return;
+      }
       showToast.error('Failed to add link');
+    } finally {
+      setIsResolvingNotionLink(false);
     }
   };
 
@@ -757,9 +863,8 @@ function TaskDetailContent({
         >
           <Input
             name="title"
-            placeholder="Link title (e.g. GitHub PR)"
+            placeholder="Link title (optional for Notion URLs)"
             className="h-8 text-sm"
-            required
           />
           <div className="flex gap-2">
             <Input
@@ -768,10 +873,22 @@ function TaskDetailContent({
               className="h-8 text-sm flex-1"
               required
             />
-            <Button type="submit" size="sm" className="h-8">
+            <Button
+              type="submit"
+              size="sm"
+              className="h-8"
+              disabled={isResolvingNotionLink}
+            >
+              {isResolvingNotionLink && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               Add
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Notion links are validated automatically when the workspace is
+            connected.
+          </p>
         </form>
       </div>
     </div>

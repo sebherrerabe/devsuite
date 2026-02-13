@@ -1,0 +1,670 @@
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
+import { randomUUID } from 'node:crypto';
+import { URL } from 'node:url';
+import { z } from 'zod';
+import type { NotionServiceConfig } from './config.js';
+import { HttpError, authenticateRequest } from './auth.js';
+import type { Logger } from './logger.js';
+import type {
+  ConvexBackendClient,
+  NotionWebhookEventPayload,
+} from './convex-backend-client.js';
+import {
+  NotionConnectionManager,
+  NotionConnectionManagerError,
+} from './notion-connection-manager.js';
+import { ConvexBackendError } from './convex-backend-client.js';
+import { maskUserId, sanitizeLogMessage } from './logging-utils.js';
+import { verifyNotionWebhookSignature } from './notion-webhook.js';
+
+interface ErrorBody {
+  error: {
+    code: string;
+    message: string;
+    requestId: string;
+  };
+}
+
+interface JsonObject {
+  [key: string]: unknown;
+}
+
+const notionCompanyInputSchema = z.object({
+  companyId: z.string().trim().min(1, 'companyId is required'),
+});
+
+const notionLinkResolveInputSchema = notionCompanyInputSchema.extend({
+  url: z
+    .string()
+    .trim()
+    .min(1, 'url is required')
+    .url('url must be a valid URL'),
+});
+
+function sendJson(
+  res: ServerResponse,
+  statusCode: number,
+  payload: JsonObject
+): void {
+  res.statusCode = statusCode;
+  res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.end(JSON.stringify(payload));
+}
+
+function normalizeOriginHeader(
+  value: string | string[] | undefined
+): string | null {
+  if (!value) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+  return value;
+}
+
+function setCorsHeaders(
+  req: IncomingMessage,
+  res: ServerResponse,
+  config: NotionServiceConfig
+): void {
+  const origin = normalizeOriginHeader(req.headers.origin);
+  if (!origin) {
+    return;
+  }
+
+  if (!config.corsOrigins.includes(origin)) {
+    return;
+  }
+
+  res.setHeader('access-control-allow-origin', origin);
+  res.setHeader(
+    'access-control-allow-headers',
+    'authorization, content-type, x-devsuite-user-id'
+  );
+  res.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS');
+  res.setHeader('vary', 'Origin');
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<JsonObject> {
+  const raw = await readRawBody(req);
+  return parseJsonObject(raw);
+}
+
+function readHeaderValue(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) {
+    return value[0]?.trim() || null;
+  }
+  return value?.trim() || null;
+}
+
+async function readRawBody(req: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  const maxBytes = 256 * 1024;
+  let totalBytes = 0;
+
+  for await (const chunk of req) {
+    const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += value.length;
+    if (totalBytes > maxBytes) {
+      throw new HttpError(413, 'PAYLOAD_TOO_LARGE', 'Request body too large');
+    }
+    chunks.push(value);
+  }
+
+  if (chunks.length === 0) {
+    return '';
+  }
+
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+function parseJsonObject(text: string): JsonObject {
+  if (!text.trim()) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Expected JSON object');
+    }
+    return parsed as JsonObject;
+  } catch {
+    throw new HttpError(400, 'INVALID_JSON', 'Malformed JSON body');
+  }
+}
+
+function trimToNull(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function parseEventTimestamp(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
+function buildNotionEntityUrl(identifier: string | null): string | null {
+  if (!identifier) {
+    return null;
+  }
+  const normalized = identifier.replace(/-/g, '').toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(normalized)) {
+    return null;
+  }
+  return `https://www.notion.so/${normalized}`;
+}
+
+function parseNotionWebhookEventPayload(
+  value: unknown
+): NotionWebhookEventPayload | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const payload = value as {
+    id?: unknown;
+    workspace_id?: unknown;
+    type?: unknown;
+    timestamp?: unknown;
+    entity?: unknown;
+    authors?: unknown;
+    data?: unknown;
+  };
+
+  const eventId = trimToNull(payload.id);
+  const workspaceId = trimToNull(payload.workspace_id);
+  const eventType = trimToNull(payload.type);
+  if (!eventId || !workspaceId || !eventType) {
+    return null;
+  }
+
+  let entityType: string | null = null;
+  let entityId: string | null = null;
+  let entityUrl: string | null = null;
+  if (
+    payload.entity &&
+    typeof payload.entity === 'object' &&
+    !Array.isArray(payload.entity)
+  ) {
+    const entity = payload.entity as {
+      type?: unknown;
+      id?: unknown;
+      url?: unknown;
+    };
+    entityType = trimToNull(entity.type);
+    entityId = trimToNull(entity.id);
+    entityUrl = trimToNull(entity.url);
+  }
+
+  if (!entityUrl) {
+    entityUrl = buildNotionEntityUrl(entityId);
+  }
+
+  let actorId: string | null = null;
+  if (Array.isArray(payload.authors) && payload.authors.length > 0) {
+    const firstAuthor = payload.authors[0];
+    if (
+      firstAuthor &&
+      typeof firstAuthor === 'object' &&
+      !Array.isArray(firstAuthor)
+    ) {
+      actorId = trimToNull((firstAuthor as { id?: unknown }).id);
+    }
+  }
+
+  let title: string | null = null;
+  if (
+    payload.data &&
+    typeof payload.data === 'object' &&
+    !Array.isArray(payload.data)
+  ) {
+    const data = payload.data as {
+      title?: unknown;
+      plain_text?: unknown;
+    };
+    title = trimToNull(data.title) ?? trimToNull(data.plain_text);
+  }
+
+  const eventTimestamp = parseEventTimestamp(payload.timestamp);
+
+  const pageId = entityType === 'page' ? entityId : null;
+  const databaseId = entityType === 'database' ? entityId : null;
+  const commentId = entityType === 'comment' ? entityId : null;
+
+  return {
+    eventId,
+    workspaceId,
+    eventType,
+    eventTimestamp,
+    entityType,
+    entityId,
+    entityUrl,
+    actorId,
+    title,
+    pageId,
+    databaseId,
+    commentId,
+  };
+}
+
+function getPostAuthRedirectBase(config: NotionServiceConfig): string {
+  if (config.notionPostAuthRedirectUrl) {
+    return config.notionPostAuthRedirectUrl;
+  }
+
+  const defaultOrigin = config.corsOrigins[0] ?? 'http://localhost:5173';
+  return `${defaultOrigin.replace(/\/+$/g, '')}/_app/settings/integrations`;
+}
+
+function sendError(
+  res: ServerResponse,
+  requestId: string,
+  error: unknown
+): void {
+  if (error instanceof HttpError) {
+    const payload: ErrorBody = {
+      error: {
+        code: error.code,
+        message: error.message,
+        requestId,
+      },
+    };
+    sendJson(res, error.statusCode, payload as unknown as JsonObject);
+    return;
+  }
+
+  if (error instanceof NotionConnectionManagerError) {
+    const statusCode =
+      error.code === 'NOT_CONFIGURED' || error.code === 'BACKEND_NOT_CONFIGURED'
+        ? 503
+        : error.code === 'WORKSPACE_CONFLICT'
+          ? 409
+          : error.code === 'TOKEN_INVALID' || error.code === 'NOT_CONNECTED'
+            ? 401
+            : error.code === 'LINK_INVALID'
+              ? 422
+              : 400;
+    const payload: ErrorBody = {
+      error: {
+        code: error.code,
+        message: error.message,
+        requestId,
+      },
+    };
+    sendJson(res, statusCode, payload as unknown as JsonObject);
+    return;
+  }
+
+  if (error instanceof ConvexBackendError) {
+    const payload: ErrorBody = {
+      error: {
+        code: error.code,
+        message: error.message,
+        requestId,
+      },
+    };
+    sendJson(res, error.statusCode, payload as unknown as JsonObject);
+    return;
+  }
+
+  const payload: ErrorBody = {
+    error: {
+      code: 'INTERNAL_ERROR',
+      message: 'Internal server error',
+      requestId,
+    },
+  };
+  sendJson(res, 500, payload as unknown as JsonObject);
+}
+
+export function createNotionServiceServer(
+  config: NotionServiceConfig,
+  logger: Logger,
+  notionConnectionManager: NotionConnectionManager,
+  backendClient: ConvexBackendClient | null
+) {
+  return createServer(async (req, res) => {
+    const requestId = randomUUID();
+    const method = req.method ?? 'GET';
+    const url = new URL(
+      req.url ?? '/',
+      `http://${req.headers.host ?? 'localhost'}`
+    );
+    const startedAt = Date.now();
+
+    setCorsHeaders(req, res, config);
+
+    if (method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    try {
+      if (method === 'GET' && url.pathname === '/health') {
+        sendJson(res, 200, {
+          ok: true,
+          service: '@devsuite/notion-service',
+          requestId,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      if (method === 'GET' && url.pathname === '/ready') {
+        sendJson(res, 200, {
+          ok: Boolean(
+            config.notionOauthClientId &&
+            config.notionOauthClientSecret &&
+            config.notionOauthRedirectUri
+          ),
+          requestId,
+          runtime: {
+            oauthConfigured: Boolean(
+              config.notionOauthClientId &&
+              config.notionOauthClientSecret &&
+              config.notionOauthRedirectUri
+            ),
+            convexConfigured: Boolean(
+              config.convexSiteUrl && config.backendToken
+            ),
+          },
+          checkedAt: Date.now(),
+        });
+        return;
+      }
+
+      if (method === 'GET' && url.pathname === '/notion/connect/callback') {
+        const callbackResult =
+          await notionConnectionManager.completeOAuthCallback({
+            state: url.searchParams.get('state'),
+            code: url.searchParams.get('code'),
+            error: url.searchParams.get('error'),
+            errorDescription: url.searchParams.get('error_description'),
+          });
+
+        const redirectBase = getPostAuthRedirectBase(config);
+        let redirectUrl: URL;
+        try {
+          redirectUrl = new URL(redirectBase);
+        } catch {
+          redirectUrl = new URL(
+            'http://localhost:5173/_app/settings/integrations'
+          );
+        }
+
+        redirectUrl.searchParams.set(
+          'notionAuth',
+          callbackResult.ok ? 'success' : 'error'
+        );
+        if (callbackResult.companyId) {
+          redirectUrl.searchParams.set(
+            'notionCompanyId',
+            callbackResult.companyId
+          );
+        }
+        if (!callbackResult.ok) {
+          redirectUrl.searchParams.set('notionMessage', callbackResult.message);
+        }
+
+        logger.info('notion callback completed', {
+          requestId,
+          ok: callbackResult.ok,
+          user: callbackResult.userId
+            ? maskUserId(callbackResult.userId)
+            : null,
+          companyId: callbackResult.companyId,
+        });
+
+        res.statusCode = 302;
+        res.setHeader('location', redirectUrl.toString());
+        res.end();
+        return;
+      }
+
+      if (method === 'POST' && url.pathname === '/notion/connect/start') {
+        const auth = authenticateRequest(req, config);
+        const rawBody = await readJsonBody(req);
+        const parsedBody = notionCompanyInputSchema.safeParse(rawBody);
+        if (!parsedBody.success) {
+          const message =
+            parsedBody.error.issues[0]?.message ?? 'Invalid request body';
+          throw new HttpError(400, 'INVALID_INPUT', message);
+        }
+
+        const connection = await notionConnectionManager.startLogin(
+          auth.userId,
+          parsedBody.data.companyId
+        );
+
+        logger.info('notion connect-start requested', {
+          requestId,
+          user: maskUserId(auth.userId),
+          companyId: parsedBody.data.companyId,
+          state: connection.state,
+        });
+
+        sendJson(res, 200, {
+          requestId,
+          userId: auth.userId,
+          companyId: parsedBody.data.companyId,
+          connection,
+        });
+        return;
+      }
+
+      if (method === 'GET' && url.pathname === '/notion/connect/status') {
+        const auth = authenticateRequest(req, config);
+        const companyId = url.searchParams.get('companyId')?.trim() ?? '';
+        if (!companyId) {
+          throw new HttpError(400, 'INVALID_INPUT', 'companyId is required');
+        }
+
+        const connection = await notionConnectionManager.getStatus(
+          auth.userId,
+          companyId
+        );
+
+        logger.info('notion connect-status requested', {
+          requestId,
+          user: maskUserId(auth.userId),
+          companyId,
+          state: connection.state,
+          workspaceId: connection.workspaceId,
+          hasError: Boolean(connection.lastError),
+        });
+
+        sendJson(res, 200, {
+          requestId,
+          userId: auth.userId,
+          companyId,
+          connection,
+        });
+        return;
+      }
+
+      if (method === 'POST' && url.pathname === '/notion/links/resolve') {
+        const auth = authenticateRequest(req, config);
+        const rawBody = await readJsonBody(req);
+        const parsedBody = notionLinkResolveInputSchema.safeParse(rawBody);
+        if (!parsedBody.success) {
+          const message =
+            parsedBody.error.issues[0]?.message ?? 'Invalid request body';
+          throw new HttpError(400, 'INVALID_INPUT', message);
+        }
+
+        const link = await notionConnectionManager.resolveLink(
+          auth.userId,
+          parsedBody.data.companyId,
+          parsedBody.data.url
+        );
+
+        logger.info('notion link resolved', {
+          requestId,
+          user: maskUserId(auth.userId),
+          companyId: parsedBody.data.companyId,
+          entityType: link.entityType,
+          identifier: link.identifier,
+        });
+
+        sendJson(res, 200, {
+          requestId,
+          userId: auth.userId,
+          companyId: parsedBody.data.companyId,
+          link,
+        });
+        return;
+      }
+
+      if (method === 'POST' && url.pathname === '/notion/webhooks') {
+        const rawBody = await readRawBody(req);
+        const payload = parseJsonObject(rawBody);
+        const verificationToken = trimToNull(
+          (payload as { verification_token?: unknown }).verification_token
+        );
+
+        if (verificationToken) {
+          if (
+            config.notionWebhookVerificationToken &&
+            verificationToken !== config.notionWebhookVerificationToken
+          ) {
+            throw new HttpError(
+              401,
+              'INVALID_WEBHOOK_VERIFICATION_TOKEN',
+              'Webhook verification token did not match'
+            );
+          }
+
+          logger.info('notion webhook verification received', {
+            requestId,
+            verified: Boolean(config.notionWebhookVerificationToken),
+          });
+          sendJson(res, 200, {
+            ok: true,
+            requestId,
+            verification: 'accepted',
+          });
+          return;
+        }
+
+        if (config.notionWebhookVerificationToken) {
+          const signatureHeader = readHeaderValue(
+            req.headers['x-notion-signature']
+          );
+          const verified = verifyNotionWebhookSignature({
+            body: rawBody,
+            signatureHeader,
+            verificationToken: config.notionWebhookVerificationToken,
+          });
+          if (!verified) {
+            throw new HttpError(
+              401,
+              'INVALID_WEBHOOK_SIGNATURE',
+              'Webhook signature verification failed'
+            );
+          }
+        }
+
+        if (!backendClient) {
+          throw new HttpError(
+            503,
+            'BACKEND_NOT_CONFIGURED',
+            'Notion webhook backend integration is not configured'
+          );
+        }
+
+        const event = parseNotionWebhookEventPayload(payload);
+        if (!event) {
+          throw new HttpError(
+            400,
+            'INVALID_INPUT',
+            'Invalid Notion webhook event'
+          );
+        }
+
+        const result = await backendClient.ingestNotionWebhookEvents([event]);
+        logger.info('notion webhook event ingested', {
+          requestId,
+          eventId: event.eventId,
+          workspaceId: event.workspaceId,
+          eventType: event.eventType,
+          routed: result.eventsRouted,
+          unmatched: result.eventsUnmatched,
+          created: result.deliveriesCreated,
+        });
+
+        sendJson(res, 200, {
+          requestId,
+          received: true,
+          result,
+        });
+        return;
+      }
+
+      if (method === 'POST' && url.pathname === '/notion/disconnect') {
+        const auth = authenticateRequest(req, config);
+        const rawBody = await readJsonBody(req);
+        const parsedBody = notionCompanyInputSchema.safeParse(rawBody);
+        if (!parsedBody.success) {
+          const message =
+            parsedBody.error.issues[0]?.message ?? 'Invalid request body';
+          throw new HttpError(400, 'INVALID_INPUT', message);
+        }
+
+        const connection = await notionConnectionManager.disconnect(
+          auth.userId,
+          parsedBody.data.companyId
+        );
+
+        logger.info('notion disconnect requested', {
+          requestId,
+          user: maskUserId(auth.userId),
+          companyId: parsedBody.data.companyId,
+          state: connection.state,
+        });
+
+        sendJson(res, 200, {
+          requestId,
+          userId: auth.userId,
+          companyId: parsedBody.data.companyId,
+          connection,
+        });
+        return;
+      }
+
+      throw new HttpError(404, 'NOT_FOUND', 'Route not found');
+    } catch (error) {
+      const elapsedMs = Date.now() - startedAt;
+      logger.warn('request failed', {
+        requestId,
+        method,
+        path: url.pathname,
+        elapsedMs,
+        error:
+          error instanceof Error
+            ? sanitizeLogMessage(error.message)
+            : 'unknown',
+      });
+      sendError(res, requestId, error);
+      return;
+    }
+  });
+}

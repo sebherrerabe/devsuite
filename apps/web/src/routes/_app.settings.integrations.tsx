@@ -29,6 +29,14 @@ import type {
   GhRuntimeSnapshot,
 } from '@/lib/gh-service-client';
 import { ExternalLink, Loader2, RefreshCw, Unplug } from 'lucide-react';
+import { useCurrentCompany } from '@/lib/company-context';
+import {
+  disconnectNotion,
+  getNotionConnectionStatus,
+  NotionServiceRequestError,
+  startNotionLogin,
+} from '@/lib/notion-service-client';
+import type { NotionConnectionStatus } from '@/lib/notion-service-client';
 
 export const Route = createFileRoute('/_app/settings/integrations')({
   component: IntegrationsSettingsPage,
@@ -145,6 +153,41 @@ function formatServiceError(error: unknown): string {
   return 'Unexpected GitHub integration error';
 }
 
+function formatNotionServiceError(error: unknown): string {
+  if (error instanceof NotionServiceRequestError) {
+    if (
+      error.code === 'NOTION_NOT_CONFIGURED' ||
+      error.code === 'NOT_CONFIGURED'
+    ) {
+      return 'Notion OAuth is not configured. Set DEVSUITE_NOTION_OAUTH_CLIENT_ID, DEVSUITE_NOTION_OAUTH_CLIENT_SECRET, and DEVSUITE_NOTION_OAUTH_REDIRECT_URI in notion-service.';
+    }
+    if (error.code === 'BACKEND_NOT_CONFIGURED') {
+      return 'Notion backend routing is not configured. Set DEVSUITE_NOTION_SERVICE_BACKEND_TOKEN in notion-service and Convex, then restart services.';
+    }
+    if (error.code === 'TOKEN_INVALID') {
+      return 'Stored Notion token is invalid or expired. Reconnect Notion.';
+    }
+    if (error.code === 'NOT_CONNECTED') {
+      return 'Notion is not connected for this company.';
+    }
+    if (error.code === 'WORKSPACE_CONFLICT') {
+      return 'This Notion workspace is already linked to another company.';
+    }
+    if (error.code === 'UNAUTHORIZED') {
+      return 'Request was rejected by notion-service. Verify DEVSUITE_NOTION_SERVICE_TOKEN matches between client and service.';
+    }
+    return error.requestId
+      ? `${error.message} (request ${error.requestId})`
+      : error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Unexpected Notion integration error';
+}
+
 function isSlowDownError(message: string | null | undefined): boolean {
   if (!message) {
     return false;
@@ -201,6 +244,8 @@ function clearLoginCooldown(userId: string): void {
 }
 
 function IntegrationsSettingsPage() {
+  const { currentCompany } = useCurrentCompany();
+  const companyId = currentCompany?._id ?? null;
   const { data: authSession } = authClient.useSession();
   const userId = useMemo(() => getSessionUserId(authSession), [authSession]);
   const persistedSyncTelemetry = useQuery(
@@ -208,11 +253,19 @@ function IntegrationsSettingsPage() {
   );
 
   const [connection, setConnection] = useState<GhConnectionStatus | null>(null);
+  const [notionConnection, setNotionConnection] =
+    useState<NotionConnectionStatus | null>(null);
   const [runtime, setRuntime] = useState<GhRuntimeSnapshot | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [notionStatusError, setNotionStatusError] = useState<string | null>(
+    null
+  );
   const [isLoadingStatus, setIsLoadingStatus] = useState(false);
+  const [isLoadingNotionStatus, setIsLoadingNotionStatus] = useState(false);
   const [isStartingLogin, setIsStartingLogin] = useState(false);
+  const [isStartingNotionLogin, setIsStartingNotionLogin] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isDisconnectingNotion, setIsDisconnectingNotion] = useState(false);
   const [isSyncingNotifications, setIsSyncingNotifications] = useState(false);
   const [lastSyncResult, setLastSyncResult] =
     useState<GhNotificationSyncResult | null>(null);
@@ -280,6 +333,38 @@ function IntegrationsSettingsPage() {
     [registerSlowDownCooldown, userId]
   );
 
+  const loadNotionStatus = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!userId || !companyId) {
+        setNotionConnection(null);
+        setNotionStatusError(
+          !userId
+            ? 'Unable to resolve your user identity. Sign out/in and try again.'
+            : 'Select a company to manage Notion integration.'
+        );
+        return;
+      }
+
+      const silent = options?.silent === true;
+      if (!silent) {
+        setIsLoadingNotionStatus(true);
+      }
+
+      try {
+        const payload = await getNotionConnectionStatus(userId, companyId);
+        setNotionConnection(payload.connection);
+        setNotionStatusError(null);
+      } catch (error) {
+        setNotionStatusError(formatNotionServiceError(error));
+      } finally {
+        if (!silent) {
+          setIsLoadingNotionStatus(false);
+        }
+      }
+    },
+    [companyId, userId]
+  );
+
   useEffect(() => {
     if (!userId) {
       setLoginCooldownUntil(null);
@@ -289,6 +374,14 @@ function IntegrationsSettingsPage() {
     setLoginCooldownUntil(readLoginCooldownUntil(userId));
     void loadStatus();
   }, [loadStatus, userId]);
+
+  useEffect(() => {
+    if (!userId || !companyId) {
+      setNotionConnection(null);
+      return;
+    }
+    void loadNotionStatus();
+  }, [companyId, loadNotionStatus, userId]);
 
   useEffect(() => {
     if (connection?.state !== 'pending') {
@@ -328,6 +421,38 @@ function IntegrationsSettingsPage() {
       setLoginCooldownUntil(null);
     }
   }, [clockMs, loginCooldownUntil, userId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const currentUrl = new URL(window.location.href);
+    const notionAuth = currentUrl.searchParams.get('notionAuth');
+    if (!notionAuth) {
+      return;
+    }
+
+    const notionMessage = currentUrl.searchParams.get('notionMessage');
+    const notionCompanyId = currentUrl.searchParams.get('notionCompanyId');
+
+    if (notionAuth === 'success') {
+      showToast.success('Notion connected');
+      if (companyId && notionCompanyId && notionCompanyId !== companyId) {
+        showToast.info(
+          'Notion was connected to a different company than currently selected.'
+        );
+      }
+    } else {
+      showToast.error(notionMessage || 'Notion connection failed');
+    }
+
+    currentUrl.searchParams.delete('notionAuth');
+    currentUrl.searchParams.delete('notionMessage');
+    currentUrl.searchParams.delete('notionCompanyId');
+    window.history.replaceState({}, '', currentUrl.toString());
+    void loadNotionStatus();
+  }, [companyId, loadNotionStatus]);
 
   const loginCooldownRemainingMs = loginCooldownUntil
     ? Math.max(0, loginCooldownUntil - clockMs)
@@ -445,10 +570,68 @@ function IntegrationsSettingsPage() {
     }
   };
 
+  const handleStartNotionLogin = async () => {
+    if (!userId) {
+      showToast.error('Unable to resolve your user identity');
+      return;
+    }
+    if (!companyId) {
+      showToast.error('Select a company before connecting Notion');
+      return;
+    }
+
+    setIsStartingNotionLogin(true);
+    try {
+      const payload = await startNotionLogin(userId, companyId);
+      setNotionConnection(payload.connection);
+      setNotionStatusError(null);
+      if (payload.connection.verificationUri) {
+        window.location.assign(payload.connection.verificationUri);
+        return;
+      }
+      showToast.error('Notion authorization URL is missing');
+    } catch (error) {
+      const message = formatNotionServiceError(error);
+      setNotionStatusError(message);
+      showToast.error(message);
+    } finally {
+      setIsStartingNotionLogin(false);
+    }
+  };
+
+  const handleDisconnectNotion = async () => {
+    if (!userId) {
+      showToast.error('Unable to resolve your user identity');
+      return;
+    }
+    if (!companyId) {
+      showToast.error('Select a company before disconnecting Notion');
+      return;
+    }
+
+    setIsDisconnectingNotion(true);
+    try {
+      const payload = await disconnectNotion(userId, companyId);
+      setNotionConnection(payload.connection);
+      setNotionStatusError(null);
+      showToast.success('Notion disconnected');
+    } catch (error) {
+      const message = formatNotionServiceError(error);
+      setNotionStatusError(message);
+      showToast.error(message);
+    } finally {
+      setIsDisconnectingNotion(false);
+    }
+  };
+
   const isConnected = connection?.state === 'connected';
   const isPending = connection?.state === 'pending';
   const canDisconnect = Boolean(
     connection && connection.state !== 'disconnected'
+  );
+  const notionConnected = notionConnection?.state === 'connected';
+  const canDisconnectNotion = Boolean(
+    notionConnection && notionConnection.state !== 'disconnected'
   );
 
   return (
@@ -658,6 +841,127 @@ function IntegrationsSettingsPage() {
           <p className="w-full text-xs text-muted-foreground">
             Service endpoint: {getGhServiceBaseUrl()}
           </p>
+        </CardFooter>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Notion Integration</CardTitle>
+          <CardDescription>
+            Connect one Notion workspace per company for task link validation
+            and inbox notifications.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Connection status</p>
+              <Badge
+                variant={getStatusBadgeVariant(notionConnection?.state ?? null)}
+              >
+                {getStatusLabel(notionConnection?.state ?? null)}
+              </Badge>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void loadNotionStatus()}
+              disabled={
+                isLoadingNotionStatus ||
+                isStartingNotionLogin ||
+                isDisconnectingNotion ||
+                !userId ||
+                !companyId
+              }
+            >
+              {isLoadingNotionStatus ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Refresh
+            </Button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 text-sm">
+            <div>
+              <p className="text-muted-foreground">Selected company</p>
+              <p>{currentCompany?.name ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Last checked</p>
+              <p>{formatTimestamp(notionConnection?.checkedAt ?? null)}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Workspace</p>
+              <p>{notionConnection?.workspaceName ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Workspace ID</p>
+              <p className="font-mono">
+                {notionConnection?.workspaceId ?? '—'}
+              </p>
+            </div>
+          </div>
+
+          {!companyId && (
+            <Alert variant="destructive">
+              <AlertDescription>
+                Select a company to connect Notion. One company can be linked to
+                exactly one Notion workspace.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {notionStatusError && (
+            <Alert variant="destructive">
+              <AlertDescription>{notionStatusError}</AlertDescription>
+            </Alert>
+          )}
+
+          {notionConnection?.lastError && (
+            <Alert variant="destructive">
+              <AlertDescription>{notionConnection.lastError}</AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+        <CardFooter className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            onClick={handleStartNotionLogin}
+            disabled={
+              isStartingNotionLogin ||
+              isDisconnectingNotion ||
+              !userId ||
+              !companyId
+            }
+          >
+            {isStartingNotionLogin && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            {notionConnected ? 'Reconnect Notion' : 'Connect Notion'}
+          </Button>
+
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={handleDisconnectNotion}
+            disabled={
+              !canDisconnectNotion ||
+              isDisconnectingNotion ||
+              isStartingNotionLogin ||
+              !userId ||
+              !companyId
+            }
+          >
+            {isDisconnectingNotion ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Unplug className="mr-2 h-4 w-4" />
+            )}
+            Disconnect
+          </Button>
         </CardFooter>
       </Card>
 

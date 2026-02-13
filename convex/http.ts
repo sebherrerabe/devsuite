@@ -1,10 +1,13 @@
 import { httpRouter } from 'convex/server';
 import { httpAction } from './_generated/server';
 import { internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import { authComponent, createAuth } from './betterAuth/auth';
 
 const http = httpRouter();
 const GH_SERVICE_BACKEND_TOKEN_ENV = 'DEVSUITE_GH_SERVICE_BACKEND_TOKEN';
+const NOTION_SERVICE_BACKEND_TOKEN_ENV =
+  'DEVSUITE_NOTION_SERVICE_BACKEND_TOKEN';
 
 // CORS handling is required for client-side frameworks (e.g. React SPA).
 authComponent.registerRoutes(http, createAuth, { cors: true });
@@ -55,6 +58,26 @@ function authorizeGhServiceRequest(
   return null;
 }
 
+function authorizeNotionServiceRequest(
+  request: globalThis.Request
+): globalThis.Response | null {
+  const expectedToken = process.env[NOTION_SERVICE_BACKEND_TOKEN_ENV];
+  if (!expectedToken) {
+    return jsonResponse(503, {
+      error: 'Notion service backend token is not configured',
+    });
+  }
+
+  const actualToken = readBearerToken(request);
+  if (!actualToken || actualToken !== expectedToken) {
+    return jsonResponse(401, {
+      error: 'Unauthorized',
+    });
+  }
+
+  return null;
+}
+
 interface GithubNotificationPayload {
   threadId: string;
   reason: string;
@@ -83,6 +106,31 @@ interface GithubSyncTelemetryPayload {
   attemptedAt: number;
   errorCode?: string | null;
   errorMessage?: string | null;
+}
+
+interface NotionConnectionUpsertPayload {
+  userId: string;
+  companyId: string;
+  workspaceId: string;
+  workspaceName?: string | null;
+  workspaceIcon?: string | null;
+  botId?: string | null;
+  ownerType?: string | null;
+}
+
+interface NotionWebhookEventPayload {
+  eventId: string;
+  workspaceId: string;
+  eventType: string;
+  eventTimestamp?: number | null;
+  entityType?: string | null;
+  entityId?: string | null;
+  entityUrl?: string | null;
+  actorId?: string | null;
+  title?: string | null;
+  pageId?: string | null;
+  databaseId?: string | null;
+  commentId?: string | null;
 }
 
 function parseNotificationsPayload(
@@ -281,6 +329,167 @@ function parseSyncTelemetryPayload(
   };
 }
 
+function parseNotionConnectionUpsertPayload(
+  value: unknown
+): NotionConnectionUpsertPayload | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const payload = value as {
+    userId?: unknown;
+    companyId?: unknown;
+    workspaceId?: unknown;
+    workspaceName?: unknown;
+    workspaceIcon?: unknown;
+    botId?: unknown;
+    ownerType?: unknown;
+  };
+
+  if (
+    typeof payload.userId !== 'string' ||
+    typeof payload.companyId !== 'string' ||
+    typeof payload.workspaceId !== 'string'
+  ) {
+    return null;
+  }
+
+  const optionalStringOrNullFields = [
+    payload.workspaceName,
+    payload.workspaceIcon,
+    payload.botId,
+    payload.ownerType,
+  ];
+  if (
+    optionalStringOrNullFields.some(
+      value =>
+        value !== undefined && value !== null && typeof value !== 'string'
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    userId: payload.userId.trim(),
+    companyId: payload.companyId.trim(),
+    workspaceId: payload.workspaceId.trim(),
+    ...(payload.workspaceName !== undefined
+      ? { workspaceName: payload.workspaceName as string | null }
+      : {}),
+    ...(payload.workspaceIcon !== undefined
+      ? { workspaceIcon: payload.workspaceIcon as string | null }
+      : {}),
+    ...(payload.botId !== undefined
+      ? { botId: payload.botId as string | null }
+      : {}),
+    ...(payload.ownerType !== undefined
+      ? { ownerType: payload.ownerType as string | null }
+      : {}),
+  };
+}
+
+function parseNotionWebhookEventsPayload(
+  value: unknown
+): NotionWebhookEventPayload[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const parsed: NotionWebhookEventPayload[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return null;
+    }
+
+    const item = raw as {
+      eventId?: unknown;
+      workspaceId?: unknown;
+      eventType?: unknown;
+      eventTimestamp?: unknown;
+      entityType?: unknown;
+      entityId?: unknown;
+      entityUrl?: unknown;
+      actorId?: unknown;
+      title?: unknown;
+      pageId?: unknown;
+      databaseId?: unknown;
+      commentId?: unknown;
+    };
+
+    if (
+      typeof item.eventId !== 'string' ||
+      typeof item.workspaceId !== 'string' ||
+      typeof item.eventType !== 'string'
+    ) {
+      return null;
+    }
+
+    const optionalStringOrNullFields = [
+      item.entityType,
+      item.entityId,
+      item.entityUrl,
+      item.actorId,
+      item.title,
+      item.pageId,
+      item.databaseId,
+      item.commentId,
+    ];
+    if (
+      optionalStringOrNullFields.some(
+        candidate =>
+          candidate !== undefined &&
+          candidate !== null &&
+          typeof candidate !== 'string'
+      )
+    ) {
+      return null;
+    }
+
+    if (
+      item.eventTimestamp !== undefined &&
+      item.eventTimestamp !== null &&
+      typeof item.eventTimestamp !== 'number'
+    ) {
+      return null;
+    }
+
+    parsed.push({
+      eventId: item.eventId.trim(),
+      workspaceId: item.workspaceId.trim(),
+      eventType: item.eventType.trim(),
+      ...(item.eventTimestamp !== undefined
+        ? { eventTimestamp: item.eventTimestamp as number | null }
+        : {}),
+      ...(item.entityType !== undefined
+        ? { entityType: item.entityType as string | null }
+        : {}),
+      ...(item.entityId !== undefined
+        ? { entityId: item.entityId as string | null }
+        : {}),
+      ...(item.entityUrl !== undefined
+        ? { entityUrl: item.entityUrl as string | null }
+        : {}),
+      ...(item.actorId !== undefined
+        ? { actorId: item.actorId as string | null }
+        : {}),
+      ...(item.title !== undefined
+        ? { title: item.title as string | null }
+        : {}),
+      ...(item.pageId !== undefined
+        ? { pageId: item.pageId as string | null }
+        : {}),
+      ...(item.databaseId !== undefined
+        ? { databaseId: item.databaseId as string | null }
+        : {}),
+      ...(item.commentId !== undefined
+        ? { commentId: item.commentId as string | null }
+        : {}),
+    });
+  }
+
+  return parsed;
+}
+
 const ghServiceListCompanyRoutes = httpAction(async (ctx, request) => {
   if (request.method !== 'POST') {
     return jsonResponse(405, { error: 'Method not allowed' });
@@ -411,6 +620,140 @@ const ghServiceRecordSyncTelemetry = httpAction(async (ctx, request) => {
   return jsonResponse(200, { id });
 });
 
+const notionServiceUpsertConnection = httpAction(async (ctx, request) => {
+  if (request.method !== 'POST') {
+    return jsonResponse(405, { error: 'Method not allowed' });
+  }
+
+  const authError = authorizeNotionServiceRequest(request);
+  if (authError) {
+    return authError;
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonResponse(400, { error: 'Invalid JSON body' });
+  }
+
+  const parsed = parseNotionConnectionUpsertPayload(payload);
+  if (!parsed || !parsed.userId || !parsed.companyId || !parsed.workspaceId) {
+    return jsonResponse(400, {
+      error: 'userId, companyId, and workspaceId are required',
+    });
+  }
+
+  const id = await ctx.runMutation(internal.notionService.upsertConnection, {
+    userId: parsed.userId,
+    companyId: parsed.companyId as Id<'companies'>,
+    workspaceId: parsed.workspaceId,
+    ...(parsed.workspaceName !== undefined
+      ? { workspaceName: parsed.workspaceName }
+      : {}),
+    ...(parsed.workspaceIcon !== undefined
+      ? { workspaceIcon: parsed.workspaceIcon }
+      : {}),
+    ...(parsed.botId !== undefined ? { botId: parsed.botId } : {}),
+    ...(parsed.ownerType !== undefined ? { ownerType: parsed.ownerType } : {}),
+  });
+
+  return jsonResponse(200, { id });
+});
+
+const notionServiceClearConnection = httpAction(async (ctx, request) => {
+  if (request.method !== 'POST') {
+    return jsonResponse(405, { error: 'Method not allowed' });
+  }
+
+  const authError = authorizeNotionServiceRequest(request);
+  if (authError) {
+    return authError;
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonResponse(400, { error: 'Invalid JSON body' });
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return jsonResponse(400, { error: 'Invalid payload' });
+  }
+
+  const userId =
+    typeof (payload as { userId?: unknown }).userId === 'string'
+      ? (payload as { userId: string }).userId.trim()
+      : '';
+  const companyId =
+    typeof (payload as { companyId?: unknown }).companyId === 'string'
+      ? (payload as { companyId: string }).companyId.trim()
+      : '';
+
+  if (!userId || !companyId) {
+    return jsonResponse(400, { error: 'userId and companyId are required' });
+  }
+
+  const id = await ctx.runMutation(internal.notionService.clearConnection, {
+    userId,
+    companyId: companyId as Id<'companies'>,
+  });
+
+  return jsonResponse(200, { id });
+});
+
+const notionServiceIngestEvents = httpAction(async (ctx, request) => {
+  if (request.method !== 'POST') {
+    return jsonResponse(405, { error: 'Method not allowed' });
+  }
+
+  const authError = authorizeNotionServiceRequest(request);
+  if (authError) {
+    return authError;
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonResponse(400, { error: 'Invalid JSON body' });
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return jsonResponse(400, { error: 'Invalid payload' });
+  }
+
+  const events = parseNotionWebhookEventsPayload(
+    (payload as { events?: unknown }).events
+  );
+  if (!events) {
+    return jsonResponse(400, { error: 'events must be an array' });
+  }
+
+  const result = await ctx.runMutation(
+    internal.notionService.ingestWebhookEvents,
+    {
+      events: events.map(event => ({
+        eventId: event.eventId,
+        workspaceId: event.workspaceId,
+        eventType: event.eventType,
+        eventTimestamp: event.eventTimestamp ?? null,
+        entityType: event.entityType ?? null,
+        entityId: event.entityId ?? null,
+        entityUrl: event.entityUrl ?? null,
+        actorId: event.actorId ?? null,
+        title: event.title ?? null,
+        pageId: event.pageId ?? null,
+        databaseId: event.databaseId ?? null,
+        commentId: event.commentId ?? null,
+      })),
+    }
+  );
+
+  return jsonResponse(200, result as Record<string, unknown>);
+});
+
 http.route({
   path: '/github/service/company-routes',
   method: 'POST',
@@ -427,6 +770,24 @@ http.route({
   path: '/github/service/sync-telemetry',
   method: 'POST',
   handler: ghServiceRecordSyncTelemetry,
+});
+
+http.route({
+  path: '/notion/service/upsert-connection',
+  method: 'POST',
+  handler: notionServiceUpsertConnection,
+});
+
+http.route({
+  path: '/notion/service/clear-connection',
+  method: 'POST',
+  handler: notionServiceClearConnection,
+});
+
+http.route({
+  path: '/notion/service/ingest-events',
+  method: 'POST',
+  handler: notionServiceIngestEvents,
 });
 
 export default http;

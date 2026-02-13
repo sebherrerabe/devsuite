@@ -16,6 +16,9 @@
       "path": "apps/gh-service"
     },
     {
+      "path": "apps/notion-service"
+    },
+    {
       "path": "convex"
     }
   ]
