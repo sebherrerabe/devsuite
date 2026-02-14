@@ -42,6 +42,31 @@ const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'devsuite-current-company-id';
 
+function getSessionUserId(sessionData: unknown): string | null {
+  if (!sessionData || typeof sessionData !== 'object') {
+    return null;
+  }
+
+  const root = sessionData as {
+    session?: { userId?: unknown } | null;
+    user?: { id?: unknown } | null;
+  };
+
+  if (
+    root.session &&
+    typeof root.session.userId === 'string' &&
+    root.session.userId.trim()
+  ) {
+    return root.session.userId.trim();
+  }
+
+  if (root.user && typeof root.user.id === 'string' && root.user.id.trim()) {
+    return root.user.id.trim();
+  }
+
+  return null;
+}
+
 export function CompanyProvider({ children }: { children: React.ReactNode }) {
   const { data: authSession } = authClient.useSession();
 
@@ -79,6 +104,29 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       return () => clearTimeout(timer);
     }
   }, [bootstrap, companies, currentCompanyId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.desktopAuth) {
+      return;
+    }
+
+    const userId = getSessionUserId(authSession);
+    if (!userId || !currentCompany?._id) {
+      void window.desktopAuth.clearScope().catch(error => {
+        console.warn('[desktop] Failed to clear desktop session scope.', error);
+      });
+      return;
+    }
+
+    void window.desktopAuth
+      .setScope({
+        userId,
+        companyId: currentCompany._id,
+      })
+      .catch(error => {
+        console.warn('[desktop] Failed to set desktop session scope.', error);
+      });
+  }, [authSession, currentCompany?._id]);
 
   const isModuleEnabled = (module: AppModule) => {
     if (!moduleAccess) {

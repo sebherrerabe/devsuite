@@ -12,6 +12,22 @@ import {
   normalizeUserModuleFlagOverrides,
 } from './lib/moduleAccess';
 
+const MIN_GRACE_SECONDS = 5;
+const MAX_GRACE_SECONDS = 60 * 60;
+const MIN_REMINDER_INTERVAL_SECONDS = 30;
+const MAX_REMINDER_INTERVAL_SECONDS = 60 * 60;
+
+const desktopFocusSettingsValidator = v.object({
+  ideWatchList: v.array(v.string()),
+  appBlockList: v.array(v.string()),
+  websiteBlockList: v.array(v.string()),
+  strictMode: v.union(v.literal('prompt_only'), v.literal('prompt_then_close')),
+  appActionMode: v.union(v.literal('warn'), v.literal('warn_then_close')),
+  websiteActionMode: v.union(v.literal('warn_only'), v.literal('escalate')),
+  graceSeconds: v.number(),
+  reminderIntervalSeconds: v.number(),
+});
+
 type DbCtx = QueryCtx | MutationCtx;
 
 async function getUserId(ctx: DbCtx) {
@@ -33,6 +49,23 @@ async function assertCompanyAccess(
   }
 }
 
+async function appendDesktopFocusAuditEvent(
+  ctx: MutationCtx,
+  companyId: Id<'companies'>,
+  userId: string,
+  desktopFocus: ReturnType<typeof normalizeDesktopFocusSettingsForStorage>
+) {
+  await ctx.db.insert('desktopFocusAuditEvents', {
+    companyId,
+    userId,
+    action: 'desktop_focus_settings_updated',
+    metadata: {
+      desktopFocus,
+    },
+    createdAt: Date.now(),
+  });
+}
+
 function normalizeUserModuleFlagsForStorage(value: unknown) {
   const normalized = normalizeUserModuleFlagOverrides(value);
   if (normalized.projects === false) {
@@ -44,6 +77,61 @@ function normalizeUserModuleFlagsForStorage(value: unknown) {
     normalized.invoicing = false;
   }
   return normalized;
+}
+
+function normalizeExecutableNames(values: string[]): string[] {
+  return Array.from(
+    new Set(values.map(value => value.trim().toLowerCase()).filter(Boolean))
+  );
+}
+
+function normalizeDomains(values: string[]): string[] {
+  const normalizedValues = values
+    .map(value => value.trim().toLowerCase())
+    .map(value => value.replace(/^https?:\/\//, ''))
+    .map(value => value.replace(/^www\./, ''))
+    .map(value => value.split(/[/?#]/, 1)[0] ?? '')
+    .filter(Boolean);
+
+  return Array.from(new Set(normalizedValues));
+}
+
+function clampInteger(value: number, minimum: number, maximum: number) {
+  if (!Number.isFinite(value)) {
+    return minimum;
+  }
+  const rounded = Math.trunc(value);
+  return Math.min(maximum, Math.max(minimum, rounded));
+}
+
+function normalizeDesktopFocusSettingsForStorage(value: {
+  ideWatchList: string[];
+  appBlockList: string[];
+  websiteBlockList: string[];
+  strictMode: 'prompt_only' | 'prompt_then_close';
+  appActionMode: 'warn' | 'warn_then_close';
+  websiteActionMode: 'warn_only' | 'escalate';
+  graceSeconds: number;
+  reminderIntervalSeconds: number;
+}) {
+  return {
+    ideWatchList: normalizeExecutableNames(value.ideWatchList),
+    appBlockList: normalizeExecutableNames(value.appBlockList),
+    websiteBlockList: normalizeDomains(value.websiteBlockList),
+    strictMode: value.strictMode,
+    appActionMode: value.appActionMode,
+    websiteActionMode: value.websiteActionMode,
+    graceSeconds: clampInteger(
+      value.graceSeconds,
+      MIN_GRACE_SECONDS,
+      MAX_GRACE_SECONDS
+    ),
+    reminderIntervalSeconds: clampInteger(
+      value.reminderIntervalSeconds,
+      MIN_REMINDER_INTERVAL_SECONDS,
+      MAX_REMINDER_INTERVAL_SECONDS
+    ),
+  };
 }
 
 export const get = query({
@@ -60,16 +148,23 @@ export const get = query({
       )
       .filter(q => q.eq(q.field('deletedAt'), null))
       .first()
-      .then(settings =>
-        settings
-          ? {
-              ...settings,
-              moduleFlags: normalizeUserModuleFlagsForStorage(
-                settings.moduleFlags
-              ),
-            }
-          : null
-      );
+      .then(settings => {
+        if (!settings) {
+          return null;
+        }
+
+        const normalizedDesktopFocus = settings.desktopFocus
+          ? normalizeDesktopFocusSettingsForStorage(settings.desktopFocus)
+          : undefined;
+
+        return {
+          ...settings,
+          moduleFlags: normalizeUserModuleFlagsForStorage(settings.moduleFlags),
+          ...(normalizedDesktopFocus
+            ? { desktopFocus: normalizedDesktopFocus }
+            : {}),
+        };
+      });
   },
 });
 
@@ -78,13 +173,18 @@ export const update = mutation({
     companyId: v.id('companies'),
     timezone: v.optional(v.string()),
     moduleFlags: v.optional(moduleFlagsValidator),
+    desktopFocus: v.optional(desktopFocusSettingsValidator),
   },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
     const companyId = requireCompanyId(args.companyId);
     await assertCompanyAccess(ctx, companyId, userId);
 
-    if (args.timezone === undefined && args.moduleFlags === undefined) {
+    if (
+      args.timezone === undefined &&
+      args.moduleFlags === undefined &&
+      args.desktopFocus === undefined
+    ) {
       throw new Error('No settings provided');
     }
 
@@ -97,10 +197,18 @@ export const update = mutation({
       .first();
 
     const now = Date.now();
+    const normalizedDesktopFocus =
+      args.desktopFocus === undefined
+        ? undefined
+        : normalizeDesktopFocusSettingsForStorage(args.desktopFocus);
+
     if (existing) {
       const updates: {
         timezone?: string;
         moduleFlags?: ReturnType<typeof normalizeUserModuleFlagsForStorage>;
+        desktopFocus?: ReturnType<
+          typeof normalizeDesktopFocusSettingsForStorage
+        >;
         updatedAt: number;
       } = {
         updatedAt: now,
@@ -113,11 +221,33 @@ export const update = mutation({
           args.moduleFlags
         );
       }
+      if (normalizedDesktopFocus !== undefined) {
+        updates.desktopFocus = normalizedDesktopFocus;
+      }
       await ctx.db.patch(existing._id, updates);
+
+      if (normalizedDesktopFocus !== undefined) {
+        const normalizedExistingDesktopFocus = existing.desktopFocus
+          ? normalizeDesktopFocusSettingsForStorage(existing.desktopFocus)
+          : null;
+        const changed =
+          JSON.stringify(normalizedExistingDesktopFocus) !==
+          JSON.stringify(normalizedDesktopFocus);
+
+        if (changed) {
+          await appendDesktopFocusAuditEvent(
+            ctx,
+            companyId,
+            userId,
+            normalizedDesktopFocus
+          );
+        }
+      }
+
       return existing._id;
     }
 
-    return await ctx.db.insert('userSettings', {
+    const insertedId = await ctx.db.insert('userSettings', {
       companyId,
       userId,
       timezone: args.timezone ?? 'UTC',
@@ -125,9 +255,25 @@ export const update = mutation({
         args.moduleFlags === undefined
           ? {}
           : normalizeUserModuleFlagsForStorage(args.moduleFlags),
+      ...(normalizedDesktopFocus === undefined
+        ? {}
+        : {
+            desktopFocus: normalizedDesktopFocus,
+          }),
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
     });
+
+    if (normalizedDesktopFocus !== undefined) {
+      await appendDesktopFocusAuditEvent(
+        ctx,
+        companyId,
+        userId,
+        normalizedDesktopFocus
+      );
+    }
+
+    return insertedId;
   },
 });

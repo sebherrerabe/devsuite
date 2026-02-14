@@ -1,0 +1,71 @@
+name: desktop-windows-e2e
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'projects/17-windows-desktop-focus-mode/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.json'
+
+jobs:
+  windows-desktop-e2e:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compute desktop build version
+        id: desktop_version
+        shell: bash
+        run: |
+          BASE_VERSION=$(node -p "require('./apps/desktop/package.json').version")
+          BUILD_VERSION="${BASE_VERSION}-rc.${GITHUB_RUN_NUMBER}"
+          echo "build_version=${BUILD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "DEVSUITE_DESKTOP_BUILD_VERSION=${BUILD_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Desktop unit tests
+        run: pnpm --filter @devsuite/desktop test:unit
+
+      - name: Desktop process monitor overhead benchmark
+        env:
+          DEVSUITE_PROCESS_MONITOR_P95_MS: '120'
+          DEVSUITE_PROCESS_MONITOR_BENCH_ITERS: '50'
+          DEVSUITE_PROCESS_MONITOR_BENCH_PROCESSES: '7000'
+        run: pnpm --filter @devsuite/desktop test:process-overhead
+
+      - name: Desktop E2E tests (Windows)
+        env:
+          DEVSUITE_E2E_ALLOW_NON_WINDOWS: '1'
+        run: pnpm --filter @devsuite/desktop test:e2e
+
+      - name: Build Windows installer artifacts
+        run: pnpm --filter @devsuite/desktop make:win
+
+      - name: Installer smoke test (install/uninstall)
+        run: pnpm --filter @devsuite/desktop test:install-smoke
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: devsuite-desktop-windows-${{ steps.desktop_version.outputs.build_version }}
+          path: apps/desktop/out/make/**

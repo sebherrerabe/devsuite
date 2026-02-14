@@ -1,7 +1,7 @@
 ---
 id: '17-windows-desktop-focus-mode'
 title: 'Windows Desktop App + Strict Focus Mode'
-status: 'planning'
+status: 'in-progress'
 priority: 14
 assigned_pm: 'Codex'
 depends_on: ['08-session-module']
@@ -70,12 +70,29 @@ Extends existing session/task architecture with a Windows desktop shell and loca
   - Policy controls: grace duration, reminder cadence, and strictness mode
 - Web app may expose read/edit UI for these settings, but enforcement remains desktop-only.
 
+## Locked Security Defaults
+
+- Default enforcement profile:
+  - `strictMode`: `prompt_then_close`
+  - `appActionMode`: `warn_then_close`
+  - `websiteActionMode`: `escalate`
+  - `graceSeconds`: `45`
+  - `reminderIntervalSeconds`: `120`
+- URL-based website enforcement is signal-aware:
+  - apply warning/escalation only when reliable URL signal is available
+  - never execute destructive browser-close behavior from partial URL telemetry
+- Local/self-use distribution remains unsigned for MVP; Authenticode signing becomes mandatory before any external distribution.
+- Monitoring disclosure must be explicit: process/URL signals are local to desktop runtime, actions are policy-driven, auditable, and user-overridable.
+- Electron navigation posture is default-deny for non-trusted origins; external links open in the system browser. Additional trusted origins must be explicitly configured via desktop env (`DEVSUITE_DESKTOP_NAV_ALLOW_ORIGINS`).
+- Electron permission posture is default-deny; only explicit safe permissions from trusted origins are allowed.
+
 ## Testing Strategy (TDD + Desktop E2E)
 
 - Delivery model is test-driven development across desktop implementation tasks.
 - Preferred desktop E2E stack: WebdriverIO with `wdio-electron-service`.
 - Release quality gate requires:
   - installer fresh-install smoke on clean Windows environment
+  - process-monitor overhead budget check on Windows runners
   - critical-path Electron E2E flows green
   - no-regression checks green for core `apps/web` flows
 
@@ -85,6 +102,7 @@ Extends existing session/task architecture with a Windows desktop shell and loca
 - [Dependencies](./DEPENDENCIES.md)
 - [Tasks](./TASKS.md)
 - [Test Matrix](./TEST_MATRIX.md)
+- [Compatibility Matrix](./COMPATIBILITY_MATRIX.md)
 - [Status](./STATUS.md)
 
 ## Notes for AI PM

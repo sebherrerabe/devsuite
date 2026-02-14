@@ -16,7 +16,7 @@ All implementation tasks in this project follow test-driven development:
 | Field            | Value                                              |
 | ---------------- | -------------------------------------------------- |
 | Assigned Persona | Product Manager + Tech Lead                        |
-| Status           | pending                                            |
+| Status           | complete                                           |
 | Depends On       | none                                               |
 | Deliverable      | Approved scope, policy defaults, and UX guardrails |
 
@@ -25,10 +25,10 @@ Lock down MVP behavior for strict mode, reminder escalation, and user-facing con
 
 **Acceptance Criteria**:
 
-- [ ] Approve strict mode defaults (`prompt_only` vs `prompt_then_close`).
-- [ ] Approve supported IDE seed list and distractor app policy.
-- [ ] Approve legal/compliance copy for monitoring and process actions.
-- [ ] Document escalation timing and override flow.
+- [x] Approve strict mode defaults (`prompt_only` vs `prompt_then_close`).
+- [x] Approve supported IDE seed list and distractor app policy.
+- [x] Approve legal/compliance copy for monitoring and process actions.
+- [x] Document escalation timing and override flow.
 
 ---
 
@@ -37,7 +37,7 @@ Lock down MVP behavior for strict mode, reminder escalation, and user-facing con
 | Field            | Value                          |
 | ---------------- | ------------------------------ |
 | Assigned Persona | Platform Engineer              |
-| Status           | pending                        |
+| Status           | complete                       |
 | Depends On       | TASK-17-001                    |
 | Deliverable      | Electron app shell in monorepo |
 
@@ -46,10 +46,10 @@ Create the Windows desktop application package and integrate pnpm workspace scri
 
 **Acceptance Criteria**:
 
-- [ ] Add `apps/desktop` with Electron main/renderer process structure.
-- [ ] Reuse shared contracts from `@devsuite/shared` without cross-layer violations.
-- [ ] Add local dev commands for desktop run/build.
-- [ ] Verify lint/typecheck pass for workspace changes.
+- [x] Add `apps/desktop` with Electron main/renderer process structure.
+- [x] Reuse shared contracts from `@devsuite/shared` without cross-layer violations.
+- [x] Add local dev commands for desktop run/build.
+- [x] Verify lint/typecheck pass for workspace changes.
 
 ---
 
@@ -58,19 +58,21 @@ Create the Windows desktop application package and integrate pnpm workspace scri
 | Field            | Value                                     |
 | ---------------- | ----------------------------------------- |
 | Assigned Persona | Backend Engineer + Platform Engineer      |
-| Status           | pending                                   |
+| Status           | in-progress                               |
 | Depends On       | TASK-17-002                               |
 | Deliverable      | Desktop auth/session integration contract |
 
 **Description**:
 Ensure desktop runtime can authenticate users and safely access tenant-scoped data/actions.
 
+Current increment: desktop-scoped session commands (`start/pause/resume/end`) are enforced with explicit scope matching in IPC (`publish-state`, `request-action`, `get-state`), desktop APIs are origin-gated in preload to trusted app origins/widget only, Electron window navigation/popup/webview behavior is restricted to trusted origins, and Electron permission handling is default-deny with a minimal trusted-origin allowlist.
+
 **Acceptance Criteria**:
 
-- [ ] Desktop login/session persistence works across app restarts.
+- [x] Desktop login/session persistence works across app restarts.
 - [ ] Tenant context is enforced for all task/session operations.
-- [ ] Tokens/secrets remain in secure storage pathways.
-- [ ] Logout fully clears local auth material.
+- [x] Tokens/secrets remain in secure storage pathways.
+- [x] Logout fully clears local auth material.
 
 ---
 
@@ -79,7 +81,7 @@ Ensure desktop runtime can authenticate users and safely access tenant-scoped da
 | Field            | Value                                     |
 | ---------------- | ----------------------------------------- |
 | Assigned Persona | Backend Engineer + Frontend Engineer      |
-| Status           | pending                                   |
+| Status           | complete                                  |
 | Depends On       | TASK-17-003                               |
 | Deliverable      | Desktop-only settings model + settings UX |
 
@@ -88,11 +90,11 @@ Implement user-configurable desktop focus settings, scoped by company and user, 
 
 **Acceptance Criteria**:
 
-- [ ] Add settings schema for IDE watch list, app block list, website block list, and policy parameters.
-- [ ] Add settings UI editor with validation and safe defaults.
-- [ ] Enforce desktop-only behavior; web may edit/view but never enforce.
-- [ ] Add audit trail for settings changes.
-- [ ] Add tests covering schema validation and persistence behavior.
+- [x] Add settings schema for IDE watch list, app block list, website block list, and policy parameters.
+- [x] Add settings UI editor with validation and safe defaults.
+- [x] Enforce desktop-only behavior; web may edit/view but never enforce.
+- [x] Add audit trail for settings changes.
+- [x] Add tests covering schema validation and persistence behavior.
 
 ---
 
@@ -101,7 +103,7 @@ Implement user-configurable desktop focus settings, scoped by company and user, 
 | Field            | Value                                 |
 | ---------------- | ------------------------------------- |
 | Assigned Persona | Frontend Engineer + Platform Engineer |
-| Status           | pending                               |
+| Status           | complete                              |
 | Depends On       | TASK-17-003, TASK-17-004              |
 | Deliverable      | Widget/tray UX for session lifecycle  |
 
@@ -110,10 +112,10 @@ Add Windows tray integration and compact widget for zero-friction session contro
 
 **Acceptance Criteria**:
 
-- [ ] Tray icon/menu exposes `Start`, `Pause`, `Resume`, `End`.
-- [ ] Widget shows current timer/state and updates in real time.
-- [ ] Main window is not required for core session actions.
-- [ ] Error and disconnected states are clear and recoverable.
+- [x] Tray icon/menu exposes `Start`, `Pause`, `Resume`, `End`.
+- [x] Widget shows current timer/state and updates in real time.
+- [x] Main window is not required for core session actions.
+- [x] Error and disconnected states are clear and recoverable.
 
 ---
 
@@ -122,7 +124,7 @@ Add Windows tray integration and compact widget for zero-friction session contro
 | Field            | Value                                   |
 | ---------------- | --------------------------------------- |
 | Assigned Persona | Platform Engineer                       |
-| Status           | pending                                 |
+| Status           | complete                                |
 | Depends On       | TASK-17-005                             |
 | Deliverable      | Windows toast notifications integration |
 
@@ -131,10 +133,10 @@ Create native notification delivery for session and reminder events.
 
 **Acceptance Criteria**:
 
-- [ ] Session start/break/end notifications trigger correctly.
-- [ ] "IDE opened without session" prompt notification triggers reliably.
-- [ ] Notification actions route user into app/session flow.
-- [ ] Notification throttling avoids spam during repeated events.
+- [x] Session start/break/end notifications trigger correctly.
+- [x] "IDE opened without session" prompt notification triggers reliably.
+- [x] Notification actions route user into app/session flow.
+- [x] Notification throttling avoids spam during repeated events.
 
 ---
 
@@ -143,19 +145,20 @@ Create native notification delivery for session and reminder events.
 | Field            | Value                                   |
 | ---------------- | --------------------------------------- |
 | Assigned Persona | Platform Engineer                       |
-| Status           | pending                                 |
+| Status           | in-progress                             |
 | Depends On       | TASK-17-003, TASK-17-004                |
 | Deliverable      | Local process watcher for policy engine |
 
 **Description**:
 Implement process monitoring for configured IDEs and distractor applications.
+Current increment: add deterministic synthetic overhead benchmark (`test:process-overhead`) and wire it into Windows CI as a performance gate for parser/diff loop latency.
 
 **Acceptance Criteria**:
 
-- [ ] Detect process start/stop events for configured executable names.
-- [ ] Support dynamic config updates without app restart.
-- [ ] Record structured process events for audit/debug.
-- [ ] Monitoring overhead remains acceptable on developer machines.
+- [x] Detect process start/stop events for configured executable names.
+- [x] Support dynamic config updates without app restart.
+- [x] Record structured process events for audit/debug.
+- [ ] Monitoring overhead remains acceptable on developer machines (validated on Windows runners/hosts with benchmark evidence).
 
 ---
 
@@ -164,7 +167,7 @@ Implement process monitoring for configured IDEs and distractor applications.
 | Field            | Value                                        |
 | ---------------- | -------------------------------------------- |
 | Assigned Persona | Backend Engineer + Platform Engineer         |
-| Status           | pending                                      |
+| Status           | complete                                     |
 | Depends On       | TASK-17-006, TASK-17-007                     |
 | Deliverable      | Deterministic policy rules and action runner |
 
@@ -173,10 +176,10 @@ Translate policy config into deterministic actions for reminders and enforcement
 
 **Acceptance Criteria**:
 
-- [ ] Engine evaluates IDE/session/task state transitions correctly.
-- [ ] Grace periods and escalation steps follow configured policy.
-- [ ] User overrides are respected and logged.
-- [ ] Fail-safe mode prevents destructive loops when dependencies fail.
+- [x] Engine evaluates IDE/session/task state transitions correctly.
+- [x] Grace periods and escalation steps follow configured policy.
+- [x] User overrides are respected and logged.
+- [x] Fail-safe mode prevents destructive loops when dependencies fail.
 
 ---
 
@@ -185,7 +188,7 @@ Translate policy config into deterministic actions for reminders and enforcement
 | Field            | Value                                      |
 | ---------------- | ------------------------------------------ |
 | Assigned Persona | Platform Engineer                          |
-| Status           | pending                                    |
+| Status           | complete                                   |
 | Depends On       | TASK-17-008                                |
 | Deliverable      | Strict mode flow tied to IDE launch events |
 
@@ -194,10 +197,10 @@ When watched IDEs open without an active session, trigger the strict-mode enforc
 
 **Acceptance Criteria**:
 
-- [ ] Prompt appears immediately on IDE launch without active session.
-- [ ] Escalation reminders fire if user ignores prompt.
-- [ ] Optional close action executes only after grace period and policy allows it.
-- [ ] Every action path is auditable by tenant/user.
+- [x] Prompt appears immediately on IDE launch without active session.
+- [x] Escalation reminders fire if user ignores prompt.
+- [x] Optional close action executes only after grace period and policy allows it.
+- [x] Every action path is auditable by tenant/user.
 
 ---
 
@@ -206,7 +209,7 @@ When watched IDEs open without an active session, trigger the strict-mode enforc
 | Field            | Value                                       |
 | ---------------- | ------------------------------------------- |
 | Assigned Persona | Platform Engineer + Frontend Engineer       |
-| Status           | pending                                     |
+| Status           | complete                                    |
 | Depends On       | TASK-17-004, TASK-17-008                    |
 | Deliverable      | Configurable distractor app policy controls |
 
@@ -215,10 +218,10 @@ Allow focus-mode users to configure and enforce distractor app behavior during a
 
 **Acceptance Criteria**:
 
-- [ ] UI allows add/remove/toggle for distractor executables.
-- [ ] Policy supports warn-only and warn-then-close modes.
-- [ ] Enforcement is suppressed when no active focus session exists.
-- [ ] Policy changes apply without app restart.
+- [x] UI allows add/remove/toggle for distractor executables.
+- [x] Policy supports warn-only and warn-then-close modes.
+- [x] Enforcement is suppressed when no active focus session exists.
+- [x] Policy changes apply without app restart.
 
 ---
 
@@ -227,20 +230,22 @@ Allow focus-mode users to configure and enforce distractor app behavior during a
 | Field            | Value                                 |
 | ---------------- | ------------------------------------- |
 | Assigned Persona | Platform Engineer + Frontend Engineer |
-| Status           | pending                               |
+| Status           | complete                              |
 | Depends On       | TASK-17-004, TASK-17-008              |
 | Deliverable      | Website block-list policy runtime     |
 
 **Description**:
 Implement website distraction policy evaluation based on desktop-available signals and configured domain lists.
 
+MVP decision: enforce only when reliable URL signal exists (currently Electron-observable navigation contexts), warn/escalate by policy, and never force-close browser processes from partial URL telemetry.
+
 **Acceptance Criteria**:
 
-- [ ] Settings support domain list management (`youtube.com`, `x.com`, `instagram.com`, etc.).
-- [ ] Runtime evaluates blocked domains where desktop signal is available and triggers warn/escalate flow.
-- [ ] Every decision path is auditable and policy-driven.
-- [ ] Behavior degrades safely when reliable URL context is unavailable.
-- [ ] Tests cover matching, escalation, and fallback behavior.
+- [x] Settings support domain list management (`youtube.com`, `x.com`, `instagram.com`, etc.).
+- [x] Runtime evaluates blocked domains where desktop signal is available and triggers warn/escalate flow.
+- [x] Every decision path is auditable and policy-driven.
+- [x] Behavior degrades safely when reliable URL context is unavailable.
+- [x] Tests cover matching, escalation, and fallback behavior.
 
 ---
 
@@ -249,19 +254,21 @@ Implement website distraction policy evaluation based on desktop-available signa
 | Field            | Value                                |
 | ---------------- | ------------------------------------ |
 | Assigned Persona | Backend Engineer + Frontend Engineer |
-| Status           | pending                              |
+| Status           | complete                             |
 | Depends On       | TASK-17-006, TASK-17-008             |
 | Deliverable      | Backlog-aware reminder loop          |
 
 **Description**:
 Increase reminder pressure when a session is active and relevant tasks remain unfinished.
 
+Task filter decision: "remaining tasks" means company-scoped tasks in non-terminal status (`todo`, `in_progress`, `blocked`); reminders stop when count reaches zero.
+
 **Acceptance Criteria**:
 
-- [ ] Reminder cadence reads from policy configuration.
-- [ ] Reminder logic uses task state filters agreed in product contract.
-- [ ] Reminders stop once backlog threshold is cleared.
-- [ ] Notification copy distinguishes routine reminder vs escalation.
+- [x] Reminder cadence reads from policy configuration.
+- [x] Reminder logic uses task state filters agreed in product contract.
+- [x] Reminders stop once backlog threshold is cleared.
+- [x] Notification copy distinguishes routine reminder vs escalation.
 
 ---
 
@@ -270,7 +277,7 @@ Increase reminder pressure when a session is active and relevant tasks remain un
 | Field            | Value                                  |
 | ---------------- | -------------------------------------- |
 | Assigned Persona | Platform Engineer + DevOps             |
-| Status           | pending                                |
+| Status           | in-progress                            |
 | Depends On       | TASK-17-002                            |
 | Deliverable      | Windows installer and release workflow |
 
@@ -279,10 +286,10 @@ Create repeatable Windows packaging and installer release for desktop distributi
 
 **Acceptance Criteria**:
 
-- [ ] Configure Electron Forge maker for Squirrel Windows as primary installer output.
-- [ ] CI pipeline produces versioned installer artifacts for release candidates.
-- [ ] Keep local/self-use channel unsigned in MVP; document signing requirements for external distribution.
-- [ ] Document optional MSI track via WiX maker for enterprise environments (deferred path).
+- [x] Configure Electron Forge maker for Squirrel Windows as primary installer output.
+- [x] CI pipeline produces versioned installer artifacts for release candidates.
+- [x] Keep local/self-use channel unsigned in MVP; document signing requirements for external distribution.
+- [x] Document optional MSI track via WiX maker for enterprise environments (deferred path).
 - [ ] Validate install, upgrade, uninstall, and first-run behavior on clean Windows VMs.
 - [ ] Validate fresh-install "out of the box" flow works correctly before any manual config.
 
@@ -293,25 +300,28 @@ Create repeatable Windows packaging and installer release for desktop distributi
 | Field            | Value                                                |
 | ---------------- | ---------------------------------------------------- |
 | Assigned Persona | QA / Validation + Platform Engineer                  |
-| Status           | pending                                              |
+| Status           | in-progress                                          |
 | Depends On       | TASK-17-005, TASK-17-006, TASK-17-008, TASK-17-013   |
 | Deliverable      | Automated desktop E2E suite and CI execution profile |
 
 **Description**:
 Implement desktop E2E coverage using WebdriverIO and Electron service, focused on first-run reliability and strict mode critical paths.
 
+Current baseline: harness + deterministic fixture seeding + desktop bridge smoke/policy tests are implemented; Windows-host execution evidence for full critical-path set remains pending.
+
 **Acceptance Criteria**:
 
-- [ ] Add WebdriverIO + `wdio-electron-service` test harness in monorepo.
-- [ ] Maintain executable matrix at `projects/17-windows-desktop-focus-mode/TEST_MATRIX.md`.
+- [x] Add WebdriverIO + `wdio-electron-service` test harness in monorepo.
+- [x] Maintain executable matrix at `projects/17-windows-desktop-focus-mode/TEST_MATRIX.md`.
 - [ ] Add critical-path E2E tests:
-  - fresh install -> first launch -> authenticated session ready
-  - tray/widget session controls
-  - IDE launch without active session prompt flow
-  - app block-list warning/escalation flow
-- [ ] Add deterministic test fixtures for desktop settings.
-- [ ] Integrate E2E suite into local and CI commands.
-- [ ] Mark failing E2E as release-blocking for desktop channel.
+  - [x] first-launch fixture bootstrap and tenant-scope readiness smoke
+  - [x] session command controls path (`start`/`pause`/`resume`/`end`)
+  - [x] IDE launch without active session prompt flow (deterministic process-event injection)
+  - [x] app block-list warning/escalation flow (deterministic process-event injection)
+  - [ ] Windows-runner evidence for real install/auth path
+- [x] Add deterministic test fixtures for desktop settings.
+- [x] Integrate E2E suite into local and CI commands.
+- [x] Mark failing E2E as release-blocking for desktop channel.
 
 ---
 
@@ -344,7 +354,7 @@ Validate safety, reliability, and user-experience quality before rollout.
 | Field            | Value                                         |
 | ---------------- | --------------------------------------------- |
 | Assigned Persona | QA / Validation + Platform Engineer           |
-| Status           | pending                                       |
+| Status           | in-progress                                   |
 | Depends On       | TASK-17-005, TASK-17-006, TASK-17-008         |
 | Deliverable      | Signed compatibility matrix and parity report |
 
@@ -353,11 +363,11 @@ Create a formal compatibility matrix covering behavior parity and intentional di
 
 **Acceptance Criteria**:
 
-- [ ] Document parity expectations for auth, session lifecycle, task interactions, and notifications.
-- [ ] Document intentional desktop-only behaviors with fallback expectations in web.
+- [x] Document parity expectations for auth, session lifecycle, task interactions, and notifications.
+- [x] Document intentional desktop-only behaviors with fallback expectations in web.
 - [ ] Validate shared backend contract parity (same tenant scope, same state transitions).
-- [ ] Capture known deviations with owner and remediation status.
-- [ ] Add matrix to rollout gate used by TASK-17-015.
+- [x] Capture known deviations with owner and remediation status.
+- [x] Add matrix to rollout gate used by TASK-17-015.
 
 ---
 

@@ -101,6 +101,19 @@ export default [
     },
   },
 
+  // Node.js config for Desktop app
+  {
+    files: ['apps/desktop/**/*.{ts,js,mjs,cjs}'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        Buffer: 'readonly',
+        require: 'readonly',
+      },
+    },
+  },
+
   // Node.js config for Convex backend
   {
     files: ['convex/**/*.{ts,js}'],
@@ -115,9 +128,24 @@ export default [
 
   // Config for config files
   {
-    files: ['*.config.{js,ts,mjs}', 'eslint.config.js'],
+    files: [
+      '*.config.{js,ts,mjs,cjs}',
+      '**/*.config.{js,ts,mjs,cjs}',
+      '*.config.cjs',
+      '**/*.config.cjs',
+      'apps/desktop/forge.config.cjs',
+      'eslint.config.js',
+    ],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        require: 'readonly',
+        module: 'readonly',
+      },
+    },
     rules: {
       '@typescript-eslint/no-var-requires': 'off',
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
 

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "byScope": {
+    "e2e-user::e2e-company": {
+      "ideWatchList": ["code.exe", "cursor.exe", "idea64.exe"],
+      "appBlockList": ["whatsapp.exe", "telegram.exe"],
+      "websiteBlockList": ["youtube.com", "x.com", "instagram.com"],
+      "strictMode": "prompt_then_close",
+      "appActionMode": "warn_then_close",
+      "websiteActionMode": "escalate",
+      "graceSeconds": 45,
+      "reminderIntervalSeconds": 120
+    }
+  }
+}

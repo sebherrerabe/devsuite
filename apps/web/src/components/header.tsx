@@ -24,6 +24,16 @@ export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleSignOut = async () => {
+    if (window.desktopAuth) {
+      try {
+        await window.desktopAuth.clearLocalState();
+      } catch (error) {
+        console.warn(
+          '[desktop] Failed to clear local desktop auth state on sign out.',
+          error
+        );
+      }
+    }
     await signOut();
     window.location.href = '/auth/sign-in';
   };

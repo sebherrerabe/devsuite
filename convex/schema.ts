@@ -64,6 +64,19 @@ export default defineSchema({
     .index('by_userId_createdAt', ['userId', 'createdAt']),
 
   /**
+   * Desktop focus settings audit events - append-only settings change trail
+   */
+  desktopFocusAuditEvents: defineTable({
+    companyId: v.id('companies'),
+    userId: v.string(),
+    action: v.literal('desktop_focus_settings_updated'),
+    metadata: v.optional(v.any()),
+    createdAt: v.number(),
+  })
+    .index('by_companyId_createdAt', ['companyId', 'createdAt'])
+    .index('by_userId_createdAt', ['userId', 'createdAt']),
+
+  /**
    * GitHub notification sync telemetry - one mutable row per user
    */
   githubNotificationSyncStatus: defineTable({
@@ -159,6 +172,24 @@ export default defineSchema({
         performance: v.optional(v.boolean()),
         pr_reviews: v.optional(v.boolean()),
         invoicing: v.optional(v.boolean()),
+      })
+    ),
+    desktopFocus: v.optional(
+      v.object({
+        ideWatchList: v.array(v.string()),
+        appBlockList: v.array(v.string()),
+        websiteBlockList: v.array(v.string()),
+        strictMode: v.union(
+          v.literal('prompt_only'),
+          v.literal('prompt_then_close')
+        ),
+        appActionMode: v.union(v.literal('warn'), v.literal('warn_then_close')),
+        websiteActionMode: v.union(
+          v.literal('warn_only'),
+          v.literal('escalate')
+        ),
+        graceSeconds: v.number(),
+        reminderIntervalSeconds: v.number(),
       })
     ),
     createdAt: v.number(),

@@ -1,0 +1,443 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  applyStrictPolicyOverride,
+  createDefaultStrictPolicyState,
+  evaluateStrictPolicy,
+} from '../../src/strict-policy-engine.js';
+import type { DesktopFocusSettings } from '../../src/focus-settings.js';
+
+function createSettings(
+  overrides: Partial<DesktopFocusSettings> = {}
+): DesktopFocusSettings {
+  return {
+    ideWatchList: ['code.exe'],
+    appBlockList: ['whatsapp.exe'],
+    websiteBlockList: [],
+    strictMode: 'prompt_only',
+    appActionMode: 'warn',
+    websiteActionMode: 'warn_only',
+    graceSeconds: 10,
+    reminderIntervalSeconds: 30,
+    ...overrides,
+  };
+}
+
+function createInput(overrides: {
+  nowMs: number;
+  sessionStatus?: 'IDLE' | 'RUNNING' | 'PAUSED';
+  settings?: DesktopFocusSettings;
+  processEvents?: Array<{
+    type: 'process_started' | 'process_stopped';
+    executable: string;
+    pid: number;
+    category: 'ide' | 'app_block';
+    timestamp: number;
+  }>;
+  websiteEvents?: Array<{
+    type: 'website_blocked_started' | 'website_blocked_stopped';
+    domain: string;
+    sourceId: string;
+    timestamp: number;
+  }>;
+  websiteSignalAvailable?: boolean;
+  remainingTaskCount?: number | null;
+}) {
+  return {
+    scope: {
+      userId: 'user-1',
+      companyId: 'company-1',
+    },
+    settings: overrides.settings ?? createSettings(),
+    sessionState: {
+      status: overrides.sessionStatus ?? 'IDLE',
+      sessionId: null,
+      effectiveDurationMs: 0,
+      connectionState: 'connected' as const,
+      lastError: null,
+      updatedAt: overrides.nowMs,
+    },
+    processEvents: overrides.processEvents ?? [],
+    websiteEvents: overrides.websiteEvents ?? [],
+    websiteSignalAvailable: overrides.websiteSignalAvailable ?? false,
+    remainingTaskCount: overrides.remainingTaskCount ?? null,
+    nowMs: overrides.nowMs,
+  };
+}
+
+test('engine prompts immediately when IDE starts with no active session', () => {
+  const state = createDefaultStrictPolicyState();
+  const result = evaluateStrictPolicy(
+    state,
+    createInput({
+      nowMs: 1_000,
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'code.exe',
+          pid: 10,
+          category: 'ide',
+          timestamp: 1_000,
+        },
+      ],
+    })
+  );
+
+  assert.equal(result.actions.length, 1);
+  assert.equal(result.actions[0]?.type, 'notify');
+  assert.equal(result.actions[0]?.kind, 'ide_session_required');
+  assert.equal(Object.keys(result.nextState.ideEntries).length, 1);
+  assert.equal(
+    result.auditEvents.some(event => event.type === 'ide_prompt_started'),
+    true
+  );
+});
+
+test('engine escalates reminders and close action after grace window', () => {
+  const settings = createSettings({
+    strictMode: 'prompt_then_close',
+    graceSeconds: 10,
+    reminderIntervalSeconds: 5,
+  });
+
+  const initial = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 1_000,
+      settings,
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'code.exe',
+          pid: 10,
+          category: 'ide',
+          timestamp: 1_000,
+        },
+      ],
+    })
+  );
+
+  const later = evaluateStrictPolicy(
+    initial.nextState,
+    createInput({
+      nowMs: 16_500,
+      settings,
+      processEvents: [],
+    })
+  );
+
+  assert.equal(
+    later.actions.some(
+      action =>
+        action.type === 'notify' && action.kind === 'ide_session_required'
+    ),
+    true
+  );
+  assert.equal(
+    later.actions.some(
+      action =>
+        action.type === 'close_process' && action.reason === 'ide_no_session'
+    ),
+    true
+  );
+  assert.equal(
+    later.auditEvents.some(event => event.type === 'ide_close_requested'),
+    true
+  );
+});
+
+test('policy override suppresses enforcement during override window', () => {
+  const settings = createSettings({
+    strictMode: 'prompt_then_close',
+    graceSeconds: 1,
+    reminderIntervalSeconds: 1,
+  });
+  const initial = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 1_000,
+      settings,
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'code.exe',
+          pid: 10,
+          category: 'ide',
+          timestamp: 1_000,
+        },
+      ],
+    })
+  );
+  const overridden = applyStrictPolicyOverride(initial.nextState, {
+    nowMs: 2_000,
+    durationMs: 60_000,
+    reason: 'user_snooze',
+  });
+  const duringOverride = evaluateStrictPolicy(
+    overridden.nextState,
+    createInput({
+      nowMs: 10_000,
+      settings,
+      processEvents: [],
+    })
+  );
+
+  assert.equal(duringOverride.actions.length, 0);
+  assert.equal(overridden.auditEvent.type, 'override_applied');
+});
+
+test('distractor apps are only enforced while a session is active', () => {
+  const state = createDefaultStrictPolicyState();
+  const whileIdle = evaluateStrictPolicy(
+    state,
+    createInput({
+      nowMs: 2_000,
+      sessionStatus: 'IDLE',
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'whatsapp.exe',
+          pid: 22,
+          category: 'app_block',
+          timestamp: 2_000,
+        },
+      ],
+    })
+  );
+
+  assert.equal(whileIdle.actions.length, 0);
+
+  const whileRunning = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 3_000,
+      sessionStatus: 'RUNNING',
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'whatsapp.exe',
+          pid: 22,
+          category: 'app_block',
+          timestamp: 3_000,
+        },
+      ],
+    })
+  );
+
+  assert.equal(
+    whileRunning.actions.some(
+      action =>
+        action.type === 'notify' && action.kind === 'distractor_app_detected'
+    ),
+    true
+  );
+});
+
+test('fail-safe strips close-process actions when action volume spikes', () => {
+  const settings = createSettings({
+    strictMode: 'prompt_then_close',
+    appActionMode: 'warn_then_close',
+    graceSeconds: 0,
+    reminderIntervalSeconds: 1,
+  });
+
+  let state = createDefaultStrictPolicyState();
+  const processEvents = Array.from({ length: 40 }, (_, index) => ({
+    type: 'process_started' as const,
+    executable: `code${index}.exe`,
+    pid: 1000 + index,
+    category: 'ide' as const,
+    timestamp: 1_000,
+  }));
+
+  const initialBurst = evaluateStrictPolicy(
+    state,
+    createInput({
+      nowMs: 1_000,
+      settings: {
+        ...settings,
+        ideWatchList: processEvents.map(event => event.executable),
+      },
+      processEvents,
+    })
+  );
+  state = initialBurst.nextState;
+
+  const stressed = evaluateStrictPolicy(
+    state,
+    createInput({
+      nowMs: 2_000,
+      settings: {
+        ...settings,
+        ideWatchList: processEvents.map(event => event.executable),
+      },
+      processEvents: [],
+    })
+  );
+
+  assert.equal(stressed.nextState.failSafeActive, true);
+  assert.equal(
+    stressed.actions.some(action => action.type === 'close_process'),
+    false
+  );
+  assert.equal(
+    initialBurst.auditEvents.some(
+      event => event.type === 'fail_safe_engaged'
+    ) || stressed.auditEvents.some(event => event.type === 'fail_safe_engaged'),
+    true
+  );
+});
+
+test('website block list triggers prompt and escalation reminders while session is active', () => {
+  const settings = createSettings({
+    websiteBlockList: ['youtube.com'],
+    websiteActionMode: 'escalate',
+    reminderIntervalSeconds: 5,
+  });
+  const initial = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 1_000,
+      sessionStatus: 'RUNNING',
+      settings,
+      websiteSignalAvailable: true,
+      websiteEvents: [
+        {
+          type: 'website_blocked_started',
+          domain: 'youtube.com',
+          sourceId: 'main-window',
+          timestamp: 1_000,
+        },
+      ],
+    })
+  );
+
+  assert.equal(
+    initial.actions.some(
+      action =>
+        action.type === 'notify' && action.kind === 'website_blocked_detected'
+    ),
+    true
+  );
+  assert.equal(
+    initial.auditEvents.some(event => event.type === 'website_prompt_started'),
+    true
+  );
+
+  const later = evaluateStrictPolicy(
+    initial.nextState,
+    createInput({
+      nowMs: 7_500,
+      sessionStatus: 'RUNNING',
+      settings,
+      websiteSignalAvailable: true,
+    })
+  );
+
+  assert.equal(
+    later.actions.some(
+      action =>
+        action.type === 'notify' && action.kind === 'website_blocked_detected'
+    ),
+    true
+  );
+  assert.equal(
+    later.auditEvents.some(event => event.type === 'website_reminder_sent'),
+    true
+  );
+});
+
+test('website policy logs safe fallback when URL signal is unavailable', () => {
+  const settings = createSettings({
+    websiteBlockList: ['x.com'],
+    reminderIntervalSeconds: 5,
+  });
+  const result = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 10_000,
+      sessionStatus: 'RUNNING',
+      settings,
+      websiteSignalAvailable: false,
+    })
+  );
+
+  assert.equal(
+    result.auditEvents.some(
+      event => event.type === 'website_signal_unavailable'
+    ),
+    true
+  );
+  assert.equal(
+    result.actions.some(action => action.type === 'close_process'),
+    false
+  );
+});
+
+test('remaining task reminders escalate and stop when backlog clears', () => {
+  const settings = createSettings({
+    reminderIntervalSeconds: 5,
+  });
+  const initial = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 20_000,
+      sessionStatus: 'RUNNING',
+      settings,
+      remainingTaskCount: 3,
+    })
+  );
+
+  assert.equal(
+    initial.actions.some(
+      action =>
+        action.type === 'notify' && action.kind === 'tasks_remaining_reminder'
+    ),
+    true
+  );
+  assert.equal(
+    initial.auditEvents.some(event => event.type === 'tasks_reminder_sent'),
+    true
+  );
+
+  const reminderTwo = evaluateStrictPolicy(
+    initial.nextState,
+    createInput({
+      nowMs: 26_000,
+      sessionStatus: 'RUNNING',
+      settings,
+      remainingTaskCount: 3,
+    })
+  );
+  const reminderThree = evaluateStrictPolicy(
+    reminderTwo.nextState,
+    createInput({
+      nowMs: 32_500,
+      sessionStatus: 'RUNNING',
+      settings,
+      remainingTaskCount: 3,
+    })
+  );
+
+  assert.equal(
+    reminderThree.auditEvents.some(
+      event => event.type === 'tasks_escalation_sent'
+    ),
+    true
+  );
+
+  const cleared = evaluateStrictPolicy(
+    reminderThree.nextState,
+    createInput({
+      nowMs: 40_000,
+      sessionStatus: 'RUNNING',
+      settings,
+      remainingTaskCount: 0,
+    })
+  );
+  assert.equal(
+    cleared.auditEvents.some(event => event.type === 'tasks_reminder_cleared'),
+    true
+  );
+});
