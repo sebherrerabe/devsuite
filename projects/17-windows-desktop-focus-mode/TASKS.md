@@ -303,6 +303,7 @@ Implement desktop E2E coverage using WebdriverIO and Electron service, focused o
 **Acceptance Criteria**:
 
 - [ ] Add WebdriverIO + `wdio-electron-service` test harness in monorepo.
+- [ ] Maintain executable matrix at `projects/17-windows-desktop-focus-mode/TEST_MATRIX.md`.
 - [ ] Add critical-path E2E tests:
   - fresh install -> first launch -> authenticated session ready
   - tray/widget session controls

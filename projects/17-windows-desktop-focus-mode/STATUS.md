@@ -19,6 +19,7 @@
 - [x] Added explicit web/desktop compatibility requirements and parity tasking (2026-02-14)
 - [x] Added desktop-only parameterized settings scope (IDEs, app block list, website block list) (2026-02-14)
 - [x] Added TDD-first testing requirement and WebdriverIO desktop E2E tasking (2026-02-14)
+- [x] Drafted initial `TASK-17-014` executable test matrix (`TEST_MATRIX.md`) with pass/fail release gates (2026-02-14)
 
 ### In Progress
 
@@ -30,6 +31,7 @@
 - [ ] Confirm code-signing timing when moving beyond local/self-use distribution
 - [ ] Confirm website blocking behavior level for MVP (warning/escalation vs stronger intervention)
 - [ ] Approve web/desktop parity matrix template and release gate owner
+- [ ] Approve `TEST_MATRIX.md` P0/P1 gate policy and waiver process
 - [ ] Begin implementation of `apps/desktop` scaffold and release pipeline
 
 ## Blockers
@@ -50,6 +52,7 @@
 | 2026-02-14 | Enforce explicit web non-regression and desktop parity checks as launch criteria.                       | Reduces risk of desktop work breaking existing web workflows.                            | User + Codex |
 | 2026-02-14 | Desktop focus policies are parameterized in user/company settings and enforced by desktop runtime only. | Supports flexible per-user configuration without coupling enforcement to web runtime.    | User + Codex |
 | 2026-02-14 | Adopt TDD-first execution with WebdriverIO + `wdio-electron-service` as desktop E2E strategy.           | Maximizes first-install reliability and catches regressions before release.              | User + Codex |
+| 2026-02-14 | Use `TEST_MATRIX.md` as the executable source of truth for TASK-17-014 and release gating.              | Ensures deterministic acceptance criteria and consistent go/no-go decisions.             | User + Codex |
 
 ## Notes
 

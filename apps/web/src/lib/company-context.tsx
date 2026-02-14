@@ -64,10 +64,10 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
     bootstrap?.moduleAccess?.companyDefaults ?? null;
   const userModuleOverrides = bootstrap?.moduleAccess?.userOverrides ?? null;
 
-  // Handle cleanup when stored company no longer exists
-  // Only run this effect when companies list changes, not currentCompanyId
+  // Handle cleanup when stored company no longer exists.
+  // Only run this check after bootstrap resolves for the current query args.
   useEffect(() => {
-    if (!companies || currentCompanyId === null) return;
+    if (bootstrap === undefined || currentCompanyId === null) return;
 
     const exists = companies.some(c => c._id === currentCompanyId);
     if (!exists) {
@@ -78,7 +78,7 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [companies, currentCompanyId]);
+  }, [bootstrap, companies, currentCompanyId]);
 
   const isModuleEnabled = (module: AppModule) => {
     if (!moduleAccess) {

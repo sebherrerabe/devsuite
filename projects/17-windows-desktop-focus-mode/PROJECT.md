@@ -84,6 +84,7 @@ Extends existing session/task architecture with a Windows desktop shell and loca
 - [Scope](./SCOPE.md)
 - [Dependencies](./DEPENDENCIES.md)
 - [Tasks](./TASKS.md)
+- [Test Matrix](./TEST_MATRIX.md)
 - [Status](./STATUS.md)
 
 ## Notes for AI PM

@@ -385,6 +385,7 @@ function InboxPage() {
                 type="button"
                 variant="outline"
                 size="sm"
+                className="shrink-0 text-foreground"
                 onClick={() => void handleDisableDesktopNotifications()}
               >
                 Disable desktop notifications
@@ -393,6 +394,7 @@ function InboxPage() {
               <Button
                 type="button"
                 size="sm"
+                className="shrink-0"
                 onClick={() => void handleEnableDesktopNotifications()}
               >
                 Enable desktop notifications
