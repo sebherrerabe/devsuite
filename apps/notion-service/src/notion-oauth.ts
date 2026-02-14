@@ -20,6 +20,7 @@ export interface NotionOAuthTokenResult {
   workspaceIcon: string | null;
   botId: string | null;
   ownerType: string | null;
+  ownerUserId: string | null;
   refreshToken: string | null;
 }
 
@@ -108,6 +109,19 @@ function parseOAuthErrorPayload(
   };
 }
 
+function parseOwnerUserId(owner: unknown): string | null {
+  if (!owner || typeof owner !== 'object' || Array.isArray(owner)) {
+    return null;
+  }
+
+  const user = (owner as { user?: unknown }).user;
+  if (!user || typeof user !== 'object' || Array.isArray(user)) {
+    return null;
+  }
+
+  return readString((user as { id?: unknown }).id, 'owner.user.id');
+}
+
 function parseTokenPayload(
   payload: unknown,
   defaultErrorStatusCode: number
@@ -137,6 +151,7 @@ function parseTokenPayload(
     body.owner && typeof body.owner === 'object' && !Array.isArray(body.owner)
       ? readString((body.owner as { type?: unknown }).type, 'owner.type')
       : null;
+  const ownerUserId = parseOwnerUserId(body.owner);
 
   if (!accessToken || !workspaceId) {
     throw new NotionOAuthError(
@@ -154,6 +169,7 @@ function parseTokenPayload(
     workspaceIcon: readString(body.workspace_icon, 'workspace_icon'),
     botId: readString(body.bot_id, 'bot_id'),
     ownerType,
+    ownerUserId,
     refreshToken: readString(body.refresh_token, 'refresh_token'),
   };
 }

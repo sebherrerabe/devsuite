@@ -6,6 +6,13 @@ export type NotionConnectionState =
   | 'connected'
   | 'error';
 
+export interface NotionAssigneeFilter {
+  mode: 'any_people' | 'specific_property';
+  dataSourceId: string | null;
+  propertyId: string | null;
+  propertyName: string | null;
+}
+
 export interface NotionConnectionStatus {
   state: NotionConnectionState;
   companyId: string;
@@ -15,6 +22,7 @@ export interface NotionConnectionStatus {
   verificationUri: string | null;
   lastError: string | null;
   checkedAt: number;
+  assigneeFilter: NotionAssigneeFilter;
 }
 
 interface NotionErrorEnvelope {
@@ -44,6 +52,24 @@ export interface NotionLinkResolveEnvelope {
   userId: string;
   companyId: string;
   link: NotionResolvedLink;
+}
+
+export interface NotionAssigneePropertyOption {
+  id: string;
+  name: string;
+}
+
+export interface NotionAssigneePropertyOptions {
+  dataSourceId: string | null;
+  options: NotionAssigneePropertyOption[];
+  selected: NotionAssigneeFilter;
+}
+
+export interface NotionAssigneePropertyOptionsEnvelope {
+  requestId: string;
+  userId: string;
+  companyId: string;
+  options: NotionAssigneePropertyOptions;
 }
 
 export class NotionServiceRequestError extends Error {
@@ -157,6 +183,42 @@ export async function resolveNotionLink(
     body: {
       companyId,
       url,
+    },
+  });
+}
+
+export async function getNotionAssigneePropertyOptions(
+  userId: string,
+  companyId: string,
+  url: string
+): Promise<NotionAssigneePropertyOptionsEnvelope> {
+  return request<NotionAssigneePropertyOptionsEnvelope>(
+    '/notion/webhooks/assignee/options',
+    {
+      userId,
+      method: 'POST',
+      body: {
+        companyId,
+        url,
+      },
+    }
+  );
+}
+
+export async function updateNotionAssigneeFilter(
+  userId: string,
+  companyId: string,
+  input: NotionAssigneeFilter
+): Promise<NotionConnectionEnvelope> {
+  return request<NotionConnectionEnvelope>('/notion/webhooks/assignee/config', {
+    userId,
+    method: 'POST',
+    body: {
+      companyId,
+      mode: input.mode,
+      dataSourceId: input.dataSourceId,
+      propertyId: input.propertyId,
+      propertyName: input.propertyName,
     },
   });
 }

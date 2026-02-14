@@ -1,7 +1,7 @@
 ---
 id: '15-notion-integration'
 title: 'Notion Integration'
-status: 'planning'
+status: 'review'
 priority: 13
 assigned_pm: null
 depends_on: ['11-inbox-module']
@@ -13,11 +13,11 @@ estimated_complexity: 'low'
 
 ## Summary
 
-Implement minimal Notion integration for links and notifications with UI-first pairing. This is not a full Notion sync - only explicit linking, metadata validation, and notification forwarding into the inbox.
+Minimal Notion integration for links and notifications with UI-first pairing is implemented and ready for workflow validation. This is not a full Notion sync - only explicit linking, metadata validation, and notification forwarding into the inbox.
 
 ## Objective
 
-Allow users to pair Notion from the UI, link tasks to Notion pages, and surface Notion updates in the inbox with strict tenant isolation.
+Allow users to pair Notion from the UI, link tasks to Notion pages, and surface Notion updates in the inbox with strict tenant isolation; current phase is complete and awaiting user workflow feedback.
 
 ## Key Deliverables
 
@@ -29,12 +29,12 @@ Allow users to pair Notion from the UI, link tasks to Notion pages, and surface 
 
 ## Success Criteria
 
-- [ ] User can connect and disconnect Notion from the Integrations UI without manual token copy/paste
-- [ ] Each company is paired to exactly one Notion workspace
-- [ ] Task can link to a Notion page and resolve page title when access is granted
-- [ ] Notion updates appear as company-scoped inbox items
-- [ ] Integration stores external references only (IDs/URLs/titles), not mirrored Notion content
-- [ ] Requested Notion capabilities are limited to minimum viable read scopes
+- [x] User can connect and disconnect Notion from the Integrations UI without manual token copy/paste
+- [x] Each company is paired to exactly one Notion workspace
+- [x] Task can link to a Notion page and resolve page title when access is granted
+- [x] Notion updates appear as company-scoped inbox items
+- [x] Integration stores external references only (IDs/URLs/titles), not mirrored Notion content
+- [x] Requested Notion capabilities are limited to minimum viable read scopes
 
 ## Architecture Reference
 

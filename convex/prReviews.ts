@@ -16,6 +16,7 @@ import {
   requireCompanyId,
 } from './lib/helpers';
 import { insertPerformanceSignal } from './lib/performanceSignalIngestion';
+import { assertModuleEnabled } from './lib/moduleAccess';
 
 // ============================================================================
 // Query Functions
@@ -33,6 +34,7 @@ export const listPRReviews = query({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'pr_reviews');
 
     if (args.repositoryId) {
       const repo = await ctx.db.get(args.repositoryId);
@@ -86,6 +88,7 @@ export const getPRReview = query({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'pr_reviews');
     const review = await ctx.db.get(args.reviewId);
     assertCompanyScoped(review, companyId, 'prReviews');
     return review;
@@ -102,6 +105,7 @@ export const listPRReviewsByTask = query({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'pr_reviews');
 
     const task = await ctx.db.get(args.taskId);
     assertCompanyScoped(task, companyId, 'tasks');
@@ -136,6 +140,7 @@ export const createPRReview = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'pr_reviews');
     const repository = await ctx.db.get(args.repositoryId);
     assertCompanyScoped(repository, companyId, 'repositories');
 
@@ -209,6 +214,7 @@ export const updatePRReview = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'pr_reviews');
     const review = await ctx.db.get(args.reviewId);
     assertCompanyScoped(review, companyId, 'prReviews');
 
@@ -262,6 +268,7 @@ export const softDeletePRReview = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'pr_reviews');
     const review = await ctx.db.get(args.reviewId);
     assertCompanyScoped(review, companyId, 'prReviews');
 

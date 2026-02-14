@@ -1,14 +1,26 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+} from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { authClient } from '@/lib/auth';
 import type { Id } from '../../../../convex/_generated/dataModel';
+import type {
+  AppModule,
+  ModuleFlagOverrides,
+  ModuleFlags,
+} from '@devsuite/shared';
 
 export interface Company {
   _id: Id<'companies'>;
   name: string;
   userId: string;
   isDeleted: boolean;
+  moduleFlags?: ModuleFlags;
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
@@ -19,6 +31,10 @@ interface CompanyContextType {
   currentCompany: Company | null;
   setCurrentCompany: (company: Company | null) => void;
   companies: Company[];
+  moduleAccess: ModuleFlags | null;
+  companyModuleDefaults: ModuleFlags | null;
+  userModuleOverrides: ModuleFlagOverrides | null;
+  isModuleEnabled: (module: AppModule) => boolean;
   isLoading: boolean;
 }
 
@@ -28,8 +44,6 @@ const STORAGE_KEY = 'devsuite-current-company-id';
 
 export function CompanyProvider({ children }: { children: React.ReactNode }) {
   const { data: authSession } = authClient.useSession();
-  const companies = useQuery(api.companies.list, authSession ? {} : 'skip');
-  const isLoading = authSession === undefined || companies === undefined;
 
   const [currentCompanyId, setCurrentCompanyId] =
     useState<Id<'companies'> | null>(() => {
@@ -37,8 +51,18 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       return localStorage.getItem(STORAGE_KEY) as Id<'companies'> | null;
     });
 
-  const currentCompany =
-    companies?.find(c => c._id === currentCompanyId) || null;
+  const bootstrap = useQuery(
+    api.appInit.bootstrap,
+    authSession ? { preferredCompanyId: currentCompanyId ?? undefined } : 'skip'
+  );
+  const isLoading = authSession === undefined || bootstrap === undefined;
+
+  const companies = useMemo(() => bootstrap?.companies ?? [], [bootstrap]);
+  const currentCompany = bootstrap?.currentCompany ?? null;
+  const moduleAccess = bootstrap?.moduleAccess?.effective ?? null;
+  const companyModuleDefaults =
+    bootstrap?.moduleAccess?.companyDefaults ?? null;
+  const userModuleOverrides = bootstrap?.moduleAccess?.userOverrides ?? null;
 
   // Handle cleanup when stored company no longer exists
   // Only run this effect when companies list changes, not currentCompanyId
@@ -56,6 +80,13 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
     }
   }, [companies, currentCompanyId]);
 
+  const isModuleEnabled = (module: AppModule) => {
+    if (!moduleAccess) {
+      return true;
+    }
+    return moduleAccess[module];
+  };
+
   const setCurrentCompany = (company: Company | null) => {
     if (company) {
       setCurrentCompanyId(company._id);
@@ -71,7 +102,11 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       value={{
         currentCompany,
         setCurrentCompany,
-        companies: companies || [],
+        companies,
+        moduleAccess,
+        companyModuleDefaults,
+        userModuleOverrides,
+        isModuleEnabled,
         isLoading,
       }}
     >

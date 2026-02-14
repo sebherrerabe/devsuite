@@ -23,6 +23,7 @@ import {
 } from './lib/helpers';
 import { ensureDefaultListId } from './projectTaskLists';
 import { insertPerformanceSignal } from './lib/performanceSignalIngestion';
+import { assertModuleEnabled } from './lib/moduleAccess';
 
 // ============================================================================
 // Helper Functions
@@ -184,6 +185,7 @@ export const getProjectTasks = query({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
 
     // Verify project belongs to company
     const project = await ctx.db.get(args.projectId);
@@ -210,6 +212,7 @@ export const getCompanyTasks = query({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
 
     return await ctx.db
       .query('tasks')
@@ -230,6 +233,7 @@ export const listAllTasks = query({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
 
     return await ctx.db
       .query('tasks')
@@ -250,6 +254,7 @@ export const get = query({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
     const task = await ctx.db.get(args.taskId);
     assertCompanyScoped(task, companyId, 'tasks');
     return task;
@@ -287,6 +292,7 @@ export const createTask = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
     const listIdInput = args.listId ?? null;
     let resolvedListId: Id<'project_task_lists'> | null = null;
 
@@ -443,6 +449,7 @@ export const updateTask = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
     const task = await ctx.db.get(args.taskId);
     assertCompanyScoped(task, companyId, 'tasks');
     const now = Date.now();
@@ -527,6 +534,7 @@ export const moveTask = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
     const task = await ctx.db.get(args.taskId);
     assertCompanyScoped(task, companyId, 'tasks');
 
@@ -648,6 +656,7 @@ export const softDeleteTaskSubtree = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
     const task = await ctx.db.get(args.taskId);
     assertCompanyScoped(task, companyId, 'tasks');
 
@@ -679,6 +688,7 @@ export const undoRestoreTaskSubtree = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
     const task = await ctx.db.get(args.taskId);
 
     if (!task) {

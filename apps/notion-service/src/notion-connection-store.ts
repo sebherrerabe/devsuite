@@ -14,6 +14,10 @@ export interface StoredNotionConnection {
   workspaceIcon: string | null;
   botId: string | null;
   ownerType: string | null;
+  ownerUserId: string | null;
+  assigneeDataSourceId: string | null;
+  assigneePropertyId: string | null;
+  assigneePropertyName: string | null;
   verificationUri: string | null;
   pendingState: string | null;
   pendingExpiresAt: number | null;
@@ -117,6 +121,28 @@ export class NotionConnectionStore {
       );
   }
 
+  async findConnectedByWorkspace(
+    workspaceId: string
+  ): Promise<StoredNotionConnection | null> {
+    const normalizedWorkspaceId = workspaceId.trim();
+    if (!normalizedWorkspaceId) {
+      return null;
+    }
+
+    const store = (await this.readStore()) ?? EMPTY_STORE;
+    const entries = Object.values(store.connections);
+    for (const entry of entries) {
+      if (
+        entry.state === 'connected' &&
+        entry.workspaceId === normalizedWorkspaceId
+      ) {
+        return this.normalize(entry.userId, entry.companyId, entry);
+      }
+    }
+
+    return null;
+  }
+
   async resetConnection(
     userId: string,
     companyId: string
@@ -134,6 +160,10 @@ export class NotionConnectionStore {
       workspaceIcon: null,
       botId: null,
       ownerType: null,
+      ownerUserId: null,
+      assigneeDataSourceId: null,
+      assigneePropertyId: null,
+      assigneePropertyName: null,
       verificationUri: null,
       pendingState: null,
       pendingExpiresAt: null,
@@ -177,6 +207,10 @@ export class NotionConnectionStore {
       workspaceIcon: record.workspaceIcon ?? null,
       botId: record.botId ?? null,
       ownerType: record.ownerType ?? null,
+      ownerUserId: record.ownerUserId ?? null,
+      assigneeDataSourceId: record.assigneeDataSourceId ?? null,
+      assigneePropertyId: record.assigneePropertyId ?? null,
+      assigneePropertyName: record.assigneePropertyName ?? null,
       verificationUri: record.verificationUri ?? null,
       pendingState: record.pendingState ?? null,
       pendingExpiresAt: record.pendingExpiresAt ?? null,

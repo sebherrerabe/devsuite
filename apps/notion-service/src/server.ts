@@ -45,6 +45,21 @@ const notionLinkResolveInputSchema = notionCompanyInputSchema.extend({
     .url('url must be a valid URL'),
 });
 
+const notionAssigneeOptionsInputSchema = notionCompanyInputSchema.extend({
+  url: z
+    .string()
+    .trim()
+    .min(1, 'url is required')
+    .url('url must be a valid URL'),
+});
+
+const notionAssigneeConfigInputSchema = notionCompanyInputSchema.extend({
+  mode: z.enum(['any_people', 'specific_property']),
+  dataSourceId: z.string().optional().nullable(),
+  propertyId: z.string().optional().nullable(),
+  propertyName: z.string().optional().nullable(),
+});
+
 function sendJson(
   res: ServerResponse,
   statusCode: number,
@@ -161,6 +176,57 @@ function parseEventTimestamp(value: unknown): number | null {
   return parsed;
 }
 
+function parseStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const result = value
+    .map(item => trimToNull(item))
+    .filter((item): item is string => Boolean(item));
+  return result.length > 0 ? result : null;
+}
+
+function parseNotionWebhookDataPageId(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const data = value as {
+    page_id?: unknown;
+    pageId?: unknown;
+    parent?: unknown;
+  };
+
+  const directPageId = trimToNull(data.page_id) ?? trimToNull(data.pageId);
+  if (directPageId) {
+    return directPageId;
+  }
+
+  if (
+    !data.parent ||
+    typeof data.parent !== 'object' ||
+    Array.isArray(data.parent)
+  ) {
+    return null;
+  }
+
+  const parent = data.parent as {
+    type?: unknown;
+    page_id?: unknown;
+    page?: unknown;
+  };
+  const parentType = trimToNull(parent.type);
+  if (parentType === 'page_id') {
+    return trimToNull(parent.page_id);
+  }
+  if (parentType === 'page' && parent.page && typeof parent.page === 'object') {
+    return trimToNull((parent.page as { id?: unknown }).id);
+  }
+
+  return null;
+}
+
 function buildNotionEntityUrl(identifier: string | null): string | null {
   if (!identifier) {
     return null;
@@ -214,10 +280,6 @@ function parseNotionWebhookEventPayload(
     entityUrl = trimToNull(entity.url);
   }
 
-  if (!entityUrl) {
-    entityUrl = buildNotionEntityUrl(entityId);
-  }
-
   let actorId: string | null = null;
   if (Array.isArray(payload.authors) && payload.authors.length > 0) {
     const firstAuthor = payload.authors[0];
@@ -231,6 +293,8 @@ function parseNotionWebhookEventPayload(
   }
 
   let title: string | null = null;
+  let dataPageId: string | null = null;
+  let updatedPropertyIds: string[] | null = null;
   if (
     payload.data &&
     typeof payload.data === 'object' &&
@@ -239,15 +303,26 @@ function parseNotionWebhookEventPayload(
     const data = payload.data as {
       title?: unknown;
       plain_text?: unknown;
+      updated_properties?: unknown;
     };
     title = trimToNull(data.title) ?? trimToNull(data.plain_text);
+    dataPageId = parseNotionWebhookDataPageId(data);
+    updatedPropertyIds = parseStringArray(data.updated_properties);
   }
 
   const eventTimestamp = parseEventTimestamp(payload.timestamp);
 
-  const pageId = entityType === 'page' ? entityId : null;
+  const pageId = (entityType === 'page' ? entityId : null) ?? dataPageId;
   const databaseId = entityType === 'database' ? entityId : null;
   const commentId = entityType === 'comment' ? entityId : null;
+
+  if (!entityUrl) {
+    if (entityType === 'comment' && pageId) {
+      entityUrl = buildNotionEntityUrl(pageId);
+    } else {
+      entityUrl = buildNotionEntityUrl(entityId);
+    }
+  }
 
   return {
     eventId,
@@ -262,16 +337,21 @@ function parseNotionWebhookEventPayload(
     pageId,
     databaseId,
     commentId,
+    updatedPropertyIds,
+    updatedPropertyNames: null,
   };
 }
 
 function getPostAuthRedirectBase(config: NotionServiceConfig): string {
   if (config.notionPostAuthRedirectUrl) {
-    return config.notionPostAuthRedirectUrl;
+    return config.notionPostAuthRedirectUrl.replace(
+      '/_app/settings/integrations',
+      '/settings/integrations'
+    );
   }
 
   const defaultOrigin = config.corsOrigins[0] ?? 'http://localhost:5173';
-  return `${defaultOrigin.replace(/\/+$/g, '')}/_app/settings/integrations`;
+  return `${defaultOrigin.replace(/\/+$/g, '')}/settings/integrations`;
 }
 
 function sendError(
@@ -299,9 +379,11 @@ function sendError(
           ? 409
           : error.code === 'TOKEN_INVALID' || error.code === 'NOT_CONNECTED'
             ? 401
-            : error.code === 'LINK_INVALID'
-              ? 422
-              : 400;
+            : error.code === 'INTEGRATION_DISABLED'
+              ? 403
+              : error.code === 'LINK_INVALID' || error.code === 'FILTER_INVALID'
+                ? 422
+                : 400;
     const payload: ErrorBody = {
       error: {
         code: error.code,
@@ -406,9 +488,7 @@ export function createNotionServiceServer(
         try {
           redirectUrl = new URL(redirectBase);
         } catch {
-          redirectUrl = new URL(
-            'http://localhost:5173/_app/settings/integrations'
-          );
+          redirectUrl = new URL('http://localhost:5173/settings/integrations');
         }
 
         redirectUrl.searchParams.set(
@@ -534,6 +614,85 @@ export function createNotionServiceServer(
         return;
       }
 
+      if (
+        method === 'POST' &&
+        url.pathname === '/notion/webhooks/assignee/options'
+      ) {
+        const auth = authenticateRequest(req, config);
+        const rawBody = await readJsonBody(req);
+        const parsedBody = notionAssigneeOptionsInputSchema.safeParse(rawBody);
+        if (!parsedBody.success) {
+          const message =
+            parsedBody.error.issues[0]?.message ?? 'Invalid request body';
+          throw new HttpError(400, 'INVALID_INPUT', message);
+        }
+
+        const options =
+          await notionConnectionManager.getAssigneePropertyOptions(
+            auth.userId,
+            parsedBody.data.companyId,
+            parsedBody.data.url
+          );
+
+        logger.info('notion assignee options resolved', {
+          requestId,
+          user: maskUserId(auth.userId),
+          companyId: parsedBody.data.companyId,
+          dataSourceId: options.dataSourceId,
+          optionCount: options.options.length,
+        });
+
+        sendJson(res, 200, {
+          requestId,
+          userId: auth.userId,
+          companyId: parsedBody.data.companyId,
+          options,
+        });
+        return;
+      }
+
+      if (
+        method === 'POST' &&
+        url.pathname === '/notion/webhooks/assignee/config'
+      ) {
+        const auth = authenticateRequest(req, config);
+        const rawBody = await readJsonBody(req);
+        const parsedBody = notionAssigneeConfigInputSchema.safeParse(rawBody);
+        if (!parsedBody.success) {
+          const message =
+            parsedBody.error.issues[0]?.message ?? 'Invalid request body';
+          throw new HttpError(400, 'INVALID_INPUT', message);
+        }
+
+        const connection = await notionConnectionManager.updateAssigneeFilter(
+          auth.userId,
+          parsedBody.data.companyId,
+          {
+            mode: parsedBody.data.mode,
+            dataSourceId: trimToNull(parsedBody.data.dataSourceId),
+            propertyId: trimToNull(parsedBody.data.propertyId),
+            propertyName: trimToNull(parsedBody.data.propertyName),
+          }
+        );
+
+        logger.info('notion assignee filter updated', {
+          requestId,
+          user: maskUserId(auth.userId),
+          companyId: parsedBody.data.companyId,
+          mode: connection.assigneeFilter.mode,
+          dataSourceId: connection.assigneeFilter.dataSourceId,
+          propertyId: connection.assigneeFilter.propertyId,
+        });
+
+        sendJson(res, 200, {
+          requestId,
+          userId: auth.userId,
+          companyId: parsedBody.data.companyId,
+          connection,
+        });
+        return;
+      }
+
       if (method === 'POST' && url.pathname === '/notion/webhooks') {
         const rawBody = await readRawBody(req);
         const payload = parseJsonObject(rawBody);
@@ -556,6 +715,12 @@ export function createNotionServiceServer(
           logger.info('notion webhook verification received', {
             requestId,
             verified: Boolean(config.notionWebhookVerificationToken),
+            ...(config.notionWebhookVerificationToken
+              ? {}
+              : {
+                  // Surface the initial token once so local dev can copy it into env.
+                  verificationToken,
+                }),
           });
           sendJson(res, 200, {
             ok: true,
@@ -583,14 +748,6 @@ export function createNotionServiceServer(
           }
         }
 
-        if (!backendClient) {
-          throw new HttpError(
-            503,
-            'BACKEND_NOT_CONFIGURED',
-            'Notion webhook backend integration is not configured'
-          );
-        }
-
         const event = parseNotionWebhookEventPayload(payload);
         if (!event) {
           throw new HttpError(
@@ -600,12 +757,40 @@ export function createNotionServiceServer(
           );
         }
 
+        const routingDecision =
+          await notionConnectionManager.shouldRouteWebhookEvent(event);
+        if (!routingDecision.shouldRoute) {
+          logger.info('notion webhook event ignored', {
+            requestId,
+            eventId: event.eventId,
+            workspaceId: event.workspaceId,
+            eventType: event.eventType,
+            reason: routingDecision.reason,
+          });
+          sendJson(res, 200, {
+            requestId,
+            received: true,
+            ignored: true,
+            reason: routingDecision.reason,
+          });
+          return;
+        }
+
+        if (!backendClient) {
+          throw new HttpError(
+            503,
+            'BACKEND_NOT_CONFIGURED',
+            'Notion webhook backend integration is not configured'
+          );
+        }
+
         const result = await backendClient.ingestNotionWebhookEvents([event]);
         logger.info('notion webhook event ingested', {
           requestId,
           eventId: event.eventId,
           workspaceId: event.workspaceId,
           eventType: event.eventType,
+          filter: routingDecision.reason,
           routed: result.eventsRouted,
           unmatched: result.eventsUnmatched,
           created: result.deliveriesCreated,

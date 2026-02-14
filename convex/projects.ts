@@ -9,6 +9,7 @@ import {
 } from './lib/helpers';
 import { ensureDefaultListId } from './projectTaskLists';
 import { ensureDefaultRateCardId } from './lib/billing';
+import { assertModuleEnabled } from './lib/moduleAccess';
 
 /**
  * User identity type from Convex auth
@@ -191,6 +192,7 @@ export const createProject = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
+    await assertModuleEnabled(ctx, args.companyId, 'projects', userId);
 
     // Verify user owns this company
     const company = await ctx.db.get(args.companyId);
@@ -286,6 +288,7 @@ export const updateProject = mutation({
 
     const project = await ctx.db.get(args.id);
     assertFound(project, 'Project');
+    await assertModuleEnabled(ctx, project.companyId, 'projects', userId);
 
     // Verify user owns this project via company ownership
     const company = await ctx.db.get(project.companyId);
@@ -404,6 +407,7 @@ export const getProject = query({
     if (!company || company.userId !== userId) {
       return null; // Don't leak existence
     }
+    await assertModuleEnabled(ctx, project.companyId, 'projects', userId);
 
     // Return null if deleted
     if (project.deletedAt !== null) {
@@ -423,6 +427,7 @@ export const getDefaultProject = query({
   },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
+    await assertModuleEnabled(ctx, args.companyId, 'projects', userId);
 
     const company = await ctx.db.get(args.companyId);
     if (!company || company.userId !== userId) {
@@ -467,6 +472,7 @@ export const getProjectIncludingArchived = query({
     if (!company || company.userId !== userId) {
       return null; // Don't leak existence
     }
+    await assertModuleEnabled(ctx, project.companyId, 'projects', userId);
 
     return project;
   },
@@ -485,6 +491,7 @@ export const listProjects = query({
   },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
+    await assertModuleEnabled(ctx, args.companyId, 'projects', userId);
 
     // Verify user owns this company
     const company = await ctx.db.get(args.companyId);
@@ -524,6 +531,7 @@ export const softDeleteProject = mutation({
 
     const project = await ctx.db.get(args.id);
     assertFound(project, 'Project');
+    await assertModuleEnabled(ctx, project.companyId, 'projects', userId);
 
     // Verify user owns this project via company ownership
     const company = await ctx.db.get(project.companyId);

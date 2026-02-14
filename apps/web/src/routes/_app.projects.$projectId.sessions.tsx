@@ -32,8 +32,13 @@ function ProjectSessionsPage() {
   });
   const projectIdTyped = projectId as Id<'projects'>;
   const navigate = useNavigate();
-  const { currentCompany } = useCurrentCompany();
+  const {
+    currentCompany,
+    isLoading: isCompanyLoading,
+    isModuleEnabled,
+  } = useCurrentCompany();
   const companyId = currentCompany?._id;
+  const sessionsEnabled = isModuleEnabled('sessions');
   const routerState = useRouterState({
     select: state => ({
       location: state.location,
@@ -44,7 +49,7 @@ function ProjectSessionsPage() {
 
   const sessions = useQuery(
     api.sessions.listSessions,
-    companyId ? { companyId } : 'skip'
+    sessionsEnabled && companyId ? { companyId } : 'skip'
   );
 
   const filteredSessions = useMemo(() => {
@@ -73,6 +78,12 @@ function ProjectSessionsPage() {
     () => routerState.matches.map(match => match.routeId),
     [routerState.matches]
   );
+
+  useEffect(() => {
+    if (!isCompanyLoading && !sessionsEnabled) {
+      void navigate({ to: '/', replace: true });
+    }
+  }, [isCompanyLoading, navigate, sessionsEnabled]);
 
   useEffect(() => {
     debugLog('sessions', 'ProjectSessionsPage mounted', {
@@ -156,7 +167,7 @@ function ProjectSessionsPage() {
     ]
   );
 
-  if (!companyId) return null;
+  if (!companyId || (!isCompanyLoading && !sessionsEnabled)) return null;
 
   return (
     <div className="space-y-4">

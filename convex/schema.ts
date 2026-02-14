@@ -23,6 +23,15 @@ export default defineSchema({
     name: v.string(),
     userId: v.string(),
     isDeleted: v.boolean(),
+    moduleFlags: v.optional(
+      v.object({
+        projects: v.optional(v.boolean()),
+        sessions: v.optional(v.boolean()),
+        performance: v.optional(v.boolean()),
+        pr_reviews: v.optional(v.boolean()),
+        invoicing: v.optional(v.boolean()),
+      })
+    ),
     metadata: v.optional(v.any()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -42,6 +51,8 @@ export default defineSchema({
     action: v.union(
       v.literal('github_org_mapping_created'),
       v.literal('github_org_mapping_updated'),
+      v.literal('integration_enabled'),
+      v.literal('integration_disabled'),
       v.literal('notion_workspace_connected'),
       v.literal('notion_workspace_disconnected')
     ),
@@ -99,6 +110,37 @@ export default defineSchema({
     .index('by_workspaceId_deletedAt', ['workspaceId', 'deletedAt'])
     .index('by_userId_deletedAt', ['userId', 'deletedAt']),
 
+  /**
+   * Integration enablement toggles - company + user scoped.
+   * Defaults to disabled when no row exists.
+   */
+  integrationSettings: defineTable({
+    companyId: v.id('companies'),
+    userId: v.string(),
+    integration: v.union(v.literal('github'), v.literal('notion')),
+    enabled: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    deletedAt: v.union(v.number(), v.null()),
+  })
+    .index('by_companyId_userId_deletedAt', [
+      'companyId',
+      'userId',
+      'deletedAt',
+    ])
+    .index('by_companyId_userId_integration_deletedAt', [
+      'companyId',
+      'userId',
+      'integration',
+      'deletedAt',
+    ])
+    .index('by_userId_integration_enabled_deletedAt', [
+      'userId',
+      'integration',
+      'enabled',
+      'deletedAt',
+    ]),
+
   // ============================================================================
   // Company-Scoped Entities
   // ============================================================================
@@ -110,6 +152,15 @@ export default defineSchema({
     companyId: v.id('companies'),
     userId: v.string(),
     timezone: v.string(),
+    moduleFlags: v.optional(
+      v.object({
+        projects: v.optional(v.boolean()),
+        sessions: v.optional(v.boolean()),
+        performance: v.optional(v.boolean()),
+        pr_reviews: v.optional(v.boolean()),
+        invoicing: v.optional(v.boolean()),
+      })
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
     deletedAt: v.union(v.number(), v.null()),
@@ -441,6 +492,34 @@ export default defineSchema({
     .index('by_companyId_isRead', ['companyId', 'isRead'])
     .index('by_companyId_isArchived', ['companyId', 'isArchived'])
     .index('by_companyId_isPrivate', ['companyId', 'isPrivate']),
+
+  /**
+   * Browser push subscriptions for inbox desktop notifications.
+   * Company-scoped and soft-deletable.
+   */
+  inboxPushSubscriptions: defineTable({
+    companyId: v.id('companies'),
+    userId: v.string(),
+    endpoint: v.string(),
+    p256dh: v.string(),
+    auth: v.string(),
+    expirationTime: v.union(v.number(), v.null()),
+    userAgent: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    deletedAt: v.union(v.number(), v.null()),
+  })
+    .index('by_companyId_deletedAt', ['companyId', 'deletedAt'])
+    .index('by_companyId_userId_deletedAt', [
+      'companyId',
+      'userId',
+      'deletedAt',
+    ])
+    .index('by_companyId_endpoint_deletedAt', [
+      'companyId',
+      'endpoint',
+      'deletedAt',
+    ]),
 
   /**
    * PRReview entities - company-scoped PR review artifacts

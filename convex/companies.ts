@@ -3,6 +3,10 @@ import { v } from 'convex/values';
 import { ensureDefaultListId } from './projectTaskLists';
 import { ensureDefaultProjectId } from './projects';
 import { ensureDefaultRateCardId } from './lib/billing';
+import {
+  moduleFlagsValidator,
+  normalizeCompanyModuleFlags,
+} from './lib/moduleAccess';
 
 /**
  * User identity type from Convex auth
@@ -44,10 +48,24 @@ function normalizeGithubOrgLogins(values: string[]): string[] {
   return Array.from(unique);
 }
 
+function normalizeCompanyModuleFlagsForStorage(value: unknown) {
+  const normalized = normalizeCompanyModuleFlags(value);
+  if (!normalized.projects) {
+    normalized.sessions = false;
+    normalized.performance = false;
+    normalized.invoicing = false;
+  }
+  if (!normalized.sessions) {
+    normalized.invoicing = false;
+  }
+  return normalized;
+}
+
 export const create = mutation({
   args: {
     name: v.string(),
     githubOrgLogins: v.optional(v.array(v.string())),
+    moduleFlags: v.optional(moduleFlagsValidator),
   },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
@@ -55,10 +73,12 @@ export const create = mutation({
     const githubOrgLogins = normalizeGithubOrgLogins(
       args.githubOrgLogins ?? []
     );
+    const moduleFlags = normalizeCompanyModuleFlagsForStorage(args.moduleFlags);
     const companyId = await ctx.db.insert('companies', {
       name: args.name,
       userId,
       isDeleted: false,
+      moduleFlags,
       metadata: {
         githubOrgLogins,
       },
@@ -91,6 +111,7 @@ export const update = mutation({
     id: v.id('companies'),
     name: v.string(),
     githubOrgLogins: v.optional(v.array(v.string())),
+    moduleFlags: v.optional(moduleFlagsValidator),
   },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
@@ -146,6 +167,12 @@ export const update = mutation({
       });
     }
 
+    if (args.moduleFlags !== undefined) {
+      updates.moduleFlags = normalizeCompanyModuleFlagsForStorage(
+        args.moduleFlags
+      );
+    }
+
     await ctx.db.patch(args.id, updates);
   },
 });
@@ -178,11 +205,16 @@ export const list = query({
   handler: async ctx => {
     const userId = await getUserId(ctx);
 
-    return await ctx.db
+    const companies = await ctx.db
       .query('companies')
       .withIndex('by_userId', q => q.eq('userId', userId))
       .filter(q => q.eq(q.field('isDeleted'), false))
       .collect();
+
+    return companies.map(company => ({
+      ...company,
+      moduleFlags: normalizeCompanyModuleFlagsForStorage(company.moduleFlags),
+    }));
   },
 });
 
@@ -196,6 +228,9 @@ export const get = query({
       return null;
     }
 
-    return company;
+    return {
+      ...company,
+      moduleFlags: normalizeCompanyModuleFlagsForStorage(company.moduleFlags),
+    };
   },
 });

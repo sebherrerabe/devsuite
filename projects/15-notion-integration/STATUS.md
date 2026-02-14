@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Status**: in-progress
-**Last Updated**: 2026-02-13
+**Status**: review
+**Last Updated**: 2026-02-14
 **Updated By**: Codex
 
 ## Progress
@@ -20,22 +20,26 @@
 - [x] Implemented Notion link validation + title resolution flow for task external links (2026-02-13)
 - [x] Implemented Notion webhook ingest path with signature verification and Convex inbox routing (2026-02-13)
 - [x] Aligned webhook signature verification and OAuth introspection endpoint with current Notion docs (`x-notion-signature` raw-body HMAC + `/v1/oauth/introspect`) (2026-02-13)
+- [x] Added assignee-scoped webhook filtering for Notion page events so only pages assigned to the connected user are emitted as inbox notifications (2026-02-13)
+- [x] Added per-company assignee filter configuration (load Notion people properties from a page URL, then choose `any_people` or a specific people property) in notion-service + integrations UI (2026-02-13)
+- [x] Fixed Notion owner user resolution from `/users/me` bot payload shape so assignee routing can match the authenticating user (2026-02-14)
+- [x] Added comment-to-page correlation (`data.page_id`) so comment events on assigned tasks are routed and can generate inbox items (2026-02-14)
+- [x] Improved Notion inbox title generation for assigned-task workflows (new assigned task, assigned task updated with changed property names, comment on assigned task) (2026-02-14)
 
 ### In Progress
 
-- [ ] Stakeholder validation of remaining auth scope details (optional user profile capability and webhook event subset) (started: 2026-02-11)
-- [ ] End-to-end QA matrix execution (webhook retries, multi-company isolation, revoked token behavior) (started: 2026-02-13)
+- [ ] User workflow validation in real usage (started: 2026-02-14)
 
 ### Pending
 
-- [ ] Execute QA matrix and release checklist
+- [ ] Gather follow-up requirements after workflow testing (if any)
+- [ ] Execute final QA matrix/release checklist before production hardening
 
 ## Blockers
 
-| Blocker                                                                     | Waiting On                                                | Since      |
-| --------------------------------------------------------------------------- | --------------------------------------------------------- | ---------- |
-| Notion public integration credentials are not configured in environment yet | Client ID/secret + redirect URI registration              | 2026-02-11 |
-| Notion webhook production secret is not configured yet                      | `DEVSUITE_NOTION_WEBHOOK_VERIFICATION_TOKEN` provisioning | 2026-02-13 |
+| Blocker                                                                  | Waiting On                                                | Since      |
+| ------------------------------------------------------------------------ | --------------------------------------------------------- | ---------- |
+| Production webhook security token and permanent endpoint are not set yet | `DEVSUITE_NOTION_WEBHOOK_VERIFICATION_TOKEN` + stable URL | 2026-02-14 |
 
 ## Decision Log
 
@@ -51,3 +55,4 @@
 
 - Existing GitHub integration flow is the implementation reference for connection UX and service contracts.
 - The module remains intentionally minimal: links + inbox notifications only.
+- Current phase outcome: implementation complete for dev usage; next phase is user workflow validation and feedback-driven refinement.

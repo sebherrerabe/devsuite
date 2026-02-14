@@ -14,6 +14,7 @@ import { assertCompanyScoped, requireCompanyId } from './lib/helpers';
 import { deriveActiveSegments } from './lib/sessionIntervals';
 import { countContextSwitchesFromTaskActivations } from './lib/performanceMetrics';
 import { insertPerformanceSignal } from './lib/performanceSignalIngestion';
+import { assertModuleEnabled } from './lib/moduleAccess';
 import {
   DAY_MS,
   resolveDashboardRange,
@@ -140,6 +141,7 @@ export const createSignal = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'performance');
 
     if (args.entityType === 'project') {
       const project = await ctx.db.get(args.entityId as Id<'projects'>);
@@ -187,6 +189,7 @@ export const listSignals = query({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'performance');
     const now = Date.now();
     const { startAt, endAt } = resolveDashboardRange(
       args.startDate,
@@ -229,6 +232,7 @@ export const getDashboardMetrics = query({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'performance');
     const now = Date.now();
     const { startAt, endAt } = resolveDashboardRange(
       args.startDate,

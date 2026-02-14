@@ -20,8 +20,9 @@ import type { Id } from '../../../../convex/_generated/dataModel';
 
 export function GlobalCommandPalette() {
   const [open, setOpen] = React.useState(false);
-  const { currentCompany } = useCurrentCompany();
+  const { currentCompany, isModuleEnabled } = useCurrentCompany();
   const navigate = useNavigate();
+  const canUseProjects = isModuleEnabled('projects');
 
   // Task Sheet State
   const [selectedTaskId, setSelectedTaskId] =
@@ -31,12 +32,16 @@ export function GlobalCommandPalette() {
   // Data Fetching
   const projects = useQuery(
     api.projects.listProjects,
-    currentCompany ? { companyId: currentCompany._id } : 'skip'
+    currentCompany && canUseProjects
+      ? { companyId: currentCompany._id }
+      : 'skip'
   );
 
   const tasks = useQuery(
     api.tasks.listAllTasks,
-    currentCompany ? { companyId: currentCompany._id } : 'skip'
+    currentCompany && canUseProjects
+      ? { companyId: currentCompany._id }
+      : 'skip'
   );
 
   React.useEffect(() => {
@@ -65,49 +70,53 @@ export function GlobalCommandPalette() {
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
 
-          <CommandGroup heading="Projects">
-            {projects?.map(project => (
-              <CommandItem
-                key={project._id}
-                onSelect={() => {
-                  runCommand(() =>
-                    navigate({
-                      to: '/projects/$projectId/tasks',
-                      params: { projectId: project._id },
-                    })
-                  );
-                }}
-              >
-                <LayoutGrid className="mr-2 h-4 w-4" />
-                <span>{project.name}</span>
-                {project.isFavorite && <CommandShortcut>★</CommandShortcut>}
-              </CommandItem>
-            ))}
-          </CommandGroup>
+          {canUseProjects && (
+            <>
+              <CommandGroup heading="Projects">
+                {projects?.map(project => (
+                  <CommandItem
+                    key={project._id}
+                    onSelect={() => {
+                      runCommand(() =>
+                        navigate({
+                          to: '/projects/$projectId/tasks',
+                          params: { projectId: project._id },
+                        })
+                      );
+                    }}
+                  >
+                    <LayoutGrid className="mr-2 h-4 w-4" />
+                    <span>{project.name}</span>
+                    {project.isFavorite && <CommandShortcut>★</CommandShortcut>}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
 
-          <CommandSeparator />
+              <CommandSeparator />
 
-          <CommandGroup heading="Tasks">
-            {tasks?.map(task => (
-              <CommandItem
-                key={task._id}
-                onSelect={() => {
-                  runCommand(() => {
-                    setSelectedTaskId(task._id);
-                    setIsTaskSheetOpen(true);
-                  });
-                }}
-              >
-                <CheckSquare className="mr-2 h-4 w-4" />
-                <span>{task.title}</span>
-                <span className="ml-2 text-xs text-muted-foreground capitalize">
-                  {task.status.replace('_', ' ')}
-                </span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
+              <CommandGroup heading="Tasks">
+                {tasks?.map(task => (
+                  <CommandItem
+                    key={task._id}
+                    onSelect={() => {
+                      runCommand(() => {
+                        setSelectedTaskId(task._id);
+                        setIsTaskSheetOpen(true);
+                      });
+                    }}
+                  >
+                    <CheckSquare className="mr-2 h-4 w-4" />
+                    <span>{task.title}</span>
+                    <span className="ml-2 text-xs text-muted-foreground capitalize">
+                      {task.status.replace('_', ' ')}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
 
-          <CommandSeparator />
+              <CommandSeparator />
+            </>
+          )}
 
           <CommandGroup heading="Company Settings">
             <CommandItem

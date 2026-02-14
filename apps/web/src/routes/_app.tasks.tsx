@@ -1,10 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { useCurrentCompany } from '@/lib/company-context';
 import { TaskTree } from '@/components/task-tree';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Eye, EyeOff } from 'lucide-react';
@@ -15,8 +15,20 @@ export const Route = createFileRoute('/_app/tasks')({
 });
 
 function GlobalTasksPage() {
-  const { currentCompany } = useCurrentCompany();
+  const navigate = useNavigate();
+  const {
+    currentCompany,
+    isLoading: isCompanyLoading,
+    isModuleEnabled,
+  } = useCurrentCompany();
   const companyId = currentCompany?._id;
+  const enabled = isModuleEnabled('projects');
+
+  useEffect(() => {
+    if (!isCompanyLoading && !enabled) {
+      void navigate({ to: '/', replace: true });
+    }
+  }, [enabled, isCompanyLoading, navigate]);
 
   const [showCompleted, setShowCompleted] = useState(false);
 
@@ -61,7 +73,7 @@ function GlobalTasksPage() {
     };
   }, [tasks, showCompleted]);
 
-  if (!companyId) return null;
+  if (!companyId || (!isCompanyLoading && !enabled)) return null;
 
   return (
     <div className="space-y-6">

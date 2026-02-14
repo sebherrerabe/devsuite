@@ -12,6 +12,20 @@ export interface NotionResolvedLink {
   url: string;
 }
 
+export interface NotionPagePeopleProperty {
+  id: string;
+  name: string;
+  userIds: string[];
+}
+
+export interface NotionPagePeopleSnapshot {
+  pageId: string;
+  title: string | null;
+  dataSourceId: string | null;
+  properties: NotionPagePeopleProperty[];
+  propertyNamesById: Record<string, string>;
+}
+
 type NotionApiErrorCode =
   | 'INVALID_URL'
   | 'INVALID_IDENTIFIER'
@@ -42,6 +56,20 @@ function readString(value: unknown): string | null {
   }
   const trimmed = value.trim();
   return trimmed || null;
+}
+
+function normalizeNotionId(value: string): string {
+  return value.replace(/-/g, '').toLowerCase();
+}
+
+function normalizePropertyKey(value: string): string {
+  let decoded = value;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    decoded = value;
+  }
+  return decoded.trim().toLowerCase();
 }
 
 function normalizeNotionIdentifier(value: string): string {
@@ -231,6 +259,195 @@ function buildFallbackNotionUrl(identifier: string): string {
   return `https://www.notion.so/${identifier}`;
 }
 
+function extractOwnerUserIdFromPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+
+  const objectType = readString((payload as { object?: unknown }).object);
+  const userType = readString((payload as { type?: unknown }).type);
+
+  // `/users/me` can return a person user object where top-level `id` is the owner.
+  if (objectType === 'user' && userType === 'person') {
+    const directId = readString((payload as { id?: unknown }).id);
+    if (directId) {
+      return directId;
+    }
+  }
+
+  // `/users/me` can also return a bot user object where owner is nested under `bot.owner.user.id`.
+  if (objectType === 'user' && userType === 'bot') {
+    const bot = (payload as { bot?: unknown }).bot;
+    if (bot && typeof bot === 'object' && !Array.isArray(bot)) {
+      const owner = (bot as { owner?: unknown }).owner;
+      if (owner && typeof owner === 'object' && !Array.isArray(owner)) {
+        const ownerType = readString((owner as { type?: unknown }).type);
+        if (ownerType === 'user') {
+          const user = (owner as { user?: unknown }).user;
+          if (user && typeof user === 'object' && !Array.isArray(user)) {
+            const ownerUserId = readString((user as { id?: unknown }).id);
+            if (ownerUserId) {
+              return ownerUserId;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Keep legacy fallback for payloads exposing `owner.user.id` at top-level.
+  const owner = (payload as { owner?: unknown }).owner;
+  if (owner && typeof owner === 'object' && !Array.isArray(owner)) {
+    const ownerType = readString((owner as { type?: unknown }).type);
+    if (ownerType === 'user') {
+      const user = (owner as { user?: unknown }).user;
+      if (user && typeof user === 'object' && !Array.isArray(user)) {
+        return readString((user as { id?: unknown }).id);
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractPageDataSourceId(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+
+  const parent = (payload as { parent?: unknown }).parent;
+  if (!parent || typeof parent !== 'object' || Array.isArray(parent)) {
+    return null;
+  }
+
+  const parentType = readString((parent as { type?: unknown }).type);
+  if (parentType === 'data_source_id') {
+    return readString((parent as { data_source_id?: unknown }).data_source_id);
+  }
+  if (parentType === 'database_id') {
+    return readString((parent as { database_id?: unknown }).database_id);
+  }
+  return null;
+}
+
+function extractPagePeopleProperties(
+  payload: unknown
+): NotionPagePeopleProperty[] {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new NotionApiError(
+      'INVALID_RESPONSE',
+      'Notion page response has invalid shape',
+      502
+    );
+  }
+
+  const objectType = readString((payload as { object?: unknown }).object);
+  if (objectType !== 'page') {
+    throw new NotionApiError(
+      'INVALID_RESPONSE',
+      'Notion page response has invalid object type',
+      502
+    );
+  }
+
+  const properties = (payload as { properties?: unknown }).properties;
+  if (
+    !properties ||
+    typeof properties !== 'object' ||
+    Array.isArray(properties)
+  ) {
+    return [];
+  }
+
+  const result: NotionPagePeopleProperty[] = [];
+  const seenIds = new Set<string>();
+
+  for (const [rawName, rawValue] of Object.entries(properties)) {
+    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+      continue;
+    }
+
+    const property = rawValue as {
+      id?: unknown;
+      type?: unknown;
+      people?: unknown;
+    };
+    if (property.type !== 'people') {
+      continue;
+    }
+
+    const id = readString(property.id);
+    if (!id) {
+      continue;
+    }
+
+    const normalizedId = normalizeNotionId(id);
+    if (seenIds.has(normalizedId)) {
+      continue;
+    }
+    seenIds.add(normalizedId);
+
+    const userIds = Array.isArray(property.people)
+      ? property.people
+          .map(person =>
+            person && typeof person === 'object' && !Array.isArray(person)
+              ? readString((person as { id?: unknown }).id)
+              : null
+          )
+          .filter((value): value is string => Boolean(value))
+          .map(value => normalizeNotionId(value))
+      : [];
+
+    const name = rawName.trim() || id;
+    result.push({
+      id,
+      name,
+      userIds,
+    });
+  }
+
+  return result;
+}
+
+function extractPagePropertyNamesById(
+  payload: unknown
+): Record<string, string> {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return {};
+  }
+
+  const properties = (payload as { properties?: unknown }).properties;
+  if (
+    !properties ||
+    typeof properties !== 'object' ||
+    Array.isArray(properties)
+  ) {
+    return {};
+  }
+
+  const result: Record<string, string> = {};
+  for (const [rawName, rawValue] of Object.entries(properties)) {
+    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+      continue;
+    }
+
+    const id = readString((rawValue as { id?: unknown }).id);
+    if (!id) {
+      continue;
+    }
+
+    const key = normalizePropertyKey(id);
+    if (!key) {
+      continue;
+    }
+
+    const name = rawName.trim() || id;
+    result[key] = name;
+  }
+
+  return result;
+}
+
 function buildPageResolvedLink(
   payload: unknown,
   identifier: string
@@ -323,4 +540,27 @@ export async function resolveNotionLinkByUrl(options: {
     `/databases/${apiId}`
   );
   return buildDatabaseResolvedLink(databasePayload, identifier);
+}
+
+export async function getNotionTokenOwnerUserId(options: {
+  accessToken: string;
+}): Promise<string | null> {
+  const payload = await requestNotion(options.accessToken, '/users/me');
+  const ownerUserId = extractOwnerUserIdFromPayload(payload);
+  return ownerUserId ? normalizeNotionId(ownerUserId) : null;
+}
+
+export async function getNotionPagePeopleSnapshot(options: {
+  accessToken: string;
+  pageId: string;
+}): Promise<NotionPagePeopleSnapshot> {
+  const pageId = formatNotionIdentifierForApi(options.pageId);
+  const payload = await requestNotion(options.accessToken, `/pages/${pageId}`);
+  return {
+    pageId,
+    title: extractPageTitle(payload),
+    dataSourceId: extractPageDataSourceId(payload),
+    properties: extractPagePeopleProperties(payload),
+    propertyNamesById: extractPagePropertyNamesById(payload),
+  };
 }

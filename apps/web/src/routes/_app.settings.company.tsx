@@ -42,6 +42,21 @@ import { TagsSettings } from '@/components/tags-settings';
 import { useCurrentCompany } from '@/lib/company-context';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
+import {
+  DEFAULT_MODULE_FLAGS,
+  type AppModule,
+  type ModuleFlags,
+  appModuleValues,
+} from '@devsuite/shared';
+import { Checkbox } from '@/components/ui/checkbox';
+
+const MODULE_LABELS: Record<AppModule, string> = {
+  projects: 'Projects',
+  sessions: 'Sessions',
+  performance: 'Performance',
+  pr_reviews: 'PR Reviews',
+  invoicing: 'Invoicing',
+};
 
 export const Route = createFileRoute('/_app/settings/company')({
   component: CompanySettingsPage,
@@ -74,15 +89,43 @@ function formatGithubOrgLoginsInput(company: Doc<'companies'> | null): string {
     .join(', ');
 }
 
+function formatCompanyModuleFlags(
+  company: Doc<'companies'> | null
+): ModuleFlags {
+  const value =
+    company &&
+    typeof company.moduleFlags === 'object' &&
+    company.moduleFlags !== null
+      ? (company.moduleFlags as Partial<Record<AppModule, boolean>>)
+      : {};
+
+  const normalized: ModuleFlags = {
+    projects: value.projects ?? DEFAULT_MODULE_FLAGS.projects,
+    sessions: value.sessions ?? DEFAULT_MODULE_FLAGS.sessions,
+    performance: value.performance ?? DEFAULT_MODULE_FLAGS.performance,
+    pr_reviews: value.pr_reviews ?? DEFAULT_MODULE_FLAGS.pr_reviews,
+    invoicing: value.invoicing ?? DEFAULT_MODULE_FLAGS.invoicing,
+  };
+
+  if (!normalized.sessions) {
+    normalized.invoicing = false;
+  }
+
+  return normalized;
+}
+
 function CompanySettingsPage() {
-  const { currentCompany } = useCurrentCompany();
+  const { currentCompany, isModuleEnabled } = useCurrentCompany();
+  const canUseInvoicing = isModuleEnabled('invoicing');
   const companies = useQuery(api.companies.list);
   const createCompany = useMutation(api.companies.create);
   const updateCompany = useMutation(api.companies.update);
   const removeCompany = useMutation(api.companies.remove);
   const defaultRateCard = useQuery(
     api.rateCards.getDefault,
-    currentCompany?._id ? { companyId: currentCompany._id } : 'skip'
+    currentCompany?._id && canUseInvoicing
+      ? { companyId: currentCompany._id }
+      : 'skip'
   );
   const setDefaultRateCard = useMutation(api.rateCards.setDefault);
 
@@ -94,6 +137,8 @@ function CompanySettingsPage() {
   const [name, setName] = useState('');
   const [githubOrgLoginsInput, setGithubOrgLoginsInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [companyModuleFlags, setCompanyModuleFlags] =
+    useState<ModuleFlags>(DEFAULT_MODULE_FLAGS);
   const [billingRate, setBillingRate] = useState('0');
   const [billingCurrency, setBillingCurrency] = useState('USD');
   const [roundingIncrement, setRoundingIncrement] = useState('60');
@@ -125,6 +170,7 @@ function CompanySettingsPage() {
       setIsCreateOpen(false);
       setName('');
       setGithubOrgLoginsInput('');
+      setCompanyModuleFlags(DEFAULT_MODULE_FLAGS);
     } catch (err) {
       showToast.error('Failed to create company');
       console.error('Error creating company:', err);
@@ -143,12 +189,14 @@ function CompanySettingsPage() {
         id: selectedCompany._id,
         name: name.trim(),
         githubOrgLogins: parseGithubOrgLoginsInput(githubOrgLoginsInput),
+        moduleFlags: companyModuleFlags,
       });
       showToast.success('Company updated successfully');
       setIsEditOpen(false);
       setSelectedCompany(null);
       setName('');
       setGithubOrgLoginsInput('');
+      setCompanyModuleFlags(DEFAULT_MODULE_FLAGS);
     } catch (err) {
       showToast.error('Failed to update company');
       console.error('Error updating company:', err);
@@ -178,6 +226,7 @@ function CompanySettingsPage() {
     setSelectedCompany(company);
     setName(company.name);
     setGithubOrgLoginsInput(formatGithubOrgLoginsInput(company));
+    setCompanyModuleFlags(formatCompanyModuleFlags(company));
     setIsEditOpen(true);
   };
 
@@ -187,7 +236,7 @@ function CompanySettingsPage() {
   };
 
   const handleBillingSave = async () => {
-    if (!currentCompany) return;
+    if (!currentCompany || !canUseInvoicing) return;
     const rateCents = Math.round(Number(billingRate) * 100);
     const rounding = Number(roundingIncrement);
     if (!Number.isFinite(rateCents) || rateCents < 0) {
@@ -347,6 +396,7 @@ function CompanySettingsPage() {
                 onClick={() => {
                   setIsCreateOpen(false);
                   setGithubOrgLoginsInput('');
+                  setCompanyModuleFlags(DEFAULT_MODULE_FLAGS);
                 }}
                 disabled={isSubmitting}
               >
@@ -399,6 +449,55 @@ function CompanySettingsPage() {
                 Comma-separated org logins used for GitHub notification routing.
               </p>
             </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Enabled Modules</Label>
+              <div className="grid gap-2 md:grid-cols-2">
+                {appModuleValues.map(module => {
+                  const projectsEnabled = companyModuleFlags.projects;
+                  const sessionsEnabled = companyModuleFlags.sessions;
+                  const disabled =
+                    ((module === 'sessions' ||
+                      module === 'performance' ||
+                      module === 'invoicing') &&
+                      !projectsEnabled) ||
+                    (module === 'invoicing' && !sessionsEnabled);
+                  return (
+                    <div
+                      key={module}
+                      className="flex items-center justify-between rounded-md border p-3"
+                    >
+                      <span className="text-sm">{MODULE_LABELS[module]}</span>
+                      <Checkbox
+                        checked={companyModuleFlags[module]}
+                        disabled={disabled}
+                        onCheckedChange={checked =>
+                          setCompanyModuleFlags(prev => {
+                            const isChecked = checked === true;
+                            const next = {
+                              ...prev,
+                              [module]: isChecked,
+                            };
+                            if (module === 'projects' && !isChecked) {
+                              next.sessions = false;
+                              next.performance = false;
+                              next.invoicing = false;
+                            }
+                            if (module === 'sessions' && !isChecked) {
+                              next.invoicing = false;
+                            }
+                            return next;
+                          })
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Sessions and performance depend on projects. Invoicing depends
+                on sessions.
+              </p>
+            </div>
             {selectedCompany && (
               <CompanyRepositories companyId={selectedCompany._id} />
             )}
@@ -410,6 +509,7 @@ function CompanySettingsPage() {
                 onClick={() => {
                   setIsEditOpen(false);
                   setGithubOrgLoginsInput('');
+                  setCompanyModuleFlags(DEFAULT_MODULE_FLAGS);
                 }}
                 disabled={isSubmitting}
               >
@@ -477,72 +577,74 @@ function CompanySettingsPage() {
               <TagsSettings companyId={currentCompany._id} />
             </div>
 
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-4">
-              <div>
-                <h4 className="text-base font-semibold">Billing Defaults</h4>
-                <p className="text-sm text-muted-foreground">
-                  Configure the default hourly rate and rounding policy.
-                </p>
-              </div>
+            {canUseInvoicing && (
+              <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-4">
+                <div>
+                  <h4 className="text-base font-semibold">Billing Defaults</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Configure the default hourly rate and rounding policy.
+                  </p>
+                </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Hourly rate</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={billingRate}
-                    onChange={e => setBillingRate(e.target.value)}
-                  />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Hourly rate</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={billingRate}
+                      onChange={e => setBillingRate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Currency</Label>
+                    <Input
+                      value={billingCurrency}
+                      onChange={e => setBillingCurrency(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Rounding increment (minutes)</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={roundingIncrement}
+                      onChange={e => setRoundingIncrement(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Rounding mode</Label>
+                    <Select
+                      value={roundingMode}
+                      onValueChange={value =>
+                        setRoundingMode(value as 'floor' | 'ceil' | 'nearest')
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="floor">Floor</SelectItem>
+                        <SelectItem value="nearest">Nearest</SelectItem>
+                        <SelectItem value="ceil">Ceil</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Currency</Label>
-                  <Input
-                    value={billingCurrency}
-                    onChange={e => setBillingCurrency(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Rounding increment (minutes)</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={roundingIncrement}
-                    onChange={e => setRoundingIncrement(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Rounding mode</Label>
-                  <Select
-                    value={roundingMode}
-                    onValueChange={value =>
-                      setRoundingMode(value as 'floor' | 'ceil' | 'nearest')
-                    }
+
+                <div className="flex justify-end">
+                  <Button
+                    onClick={handleBillingSave}
+                    disabled={isBillingSubmitting}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="floor">Floor</SelectItem>
-                      <SelectItem value="nearest">Nearest</SelectItem>
-                      <SelectItem value="ceil">Ceil</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    {isBillingSubmitting && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Save Billing Defaults
+                  </Button>
                 </div>
               </div>
-
-              <div className="flex justify-end">
-                <Button
-                  onClick={handleBillingSave}
-                  disabled={isBillingSubmitting}
-                >
-                  {isBillingSubmitting && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Save Billing Defaults
-                </Button>
-              </div>
-            </div>
+            )}
           </div>
         </>
       )}

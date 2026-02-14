@@ -1,4 +1,4 @@
-import { httpRouter } from 'convex/server';
+import { httpRouter, type FunctionReference } from 'convex/server';
 import { httpAction } from './_generated/server';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
@@ -131,6 +131,8 @@ interface NotionWebhookEventPayload {
   pageId?: string | null;
   databaseId?: string | null;
   commentId?: string | null;
+  updatedPropertyIds?: string[] | null;
+  updatedPropertyNames?: string[] | null;
 }
 
 function parseNotificationsPayload(
@@ -414,6 +416,8 @@ function parseNotionWebhookEventsPayload(
       pageId?: unknown;
       databaseId?: unknown;
       commentId?: unknown;
+      updatedPropertyIds?: unknown;
+      updatedPropertyNames?: unknown;
     };
 
     if (
@@ -453,6 +457,22 @@ function parseNotionWebhookEventsPayload(
       return null;
     }
 
+    const optionalStringArrayOrNullFields = [
+      item.updatedPropertyIds,
+      item.updatedPropertyNames,
+    ];
+    if (
+      optionalStringArrayOrNullFields.some(
+        candidate =>
+          candidate !== undefined &&
+          candidate !== null &&
+          (!Array.isArray(candidate) ||
+            candidate.some(entry => typeof entry !== 'string'))
+      )
+    ) {
+      return null;
+    }
+
     parsed.push({
       eventId: item.eventId.trim(),
       workspaceId: item.workspaceId.trim(),
@@ -483,6 +503,12 @@ function parseNotionWebhookEventsPayload(
         : {}),
       ...(item.commentId !== undefined
         ? { commentId: item.commentId as string | null }
+        : {}),
+      ...(item.updatedPropertyIds !== undefined
+        ? { updatedPropertyIds: item.updatedPropertyIds as string[] | null }
+        : {}),
+      ...(item.updatedPropertyNames !== undefined
+        ? { updatedPropertyNames: item.updatedPropertyNames as string[] | null }
         : {}),
     });
   }
@@ -703,6 +729,67 @@ const notionServiceClearConnection = httpAction(async (ctx, request) => {
   return jsonResponse(200, { id });
 });
 
+const notionServiceIntegrationEnabled = httpAction(async (ctx, request) => {
+  if (request.method !== 'POST') {
+    return jsonResponse(405, { error: 'Method not allowed' });
+  }
+
+  const authError = authorizeNotionServiceRequest(request);
+  if (authError) {
+    return authError;
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonResponse(400, { error: 'Invalid JSON body' });
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return jsonResponse(400, { error: 'Invalid payload' });
+  }
+
+  const userId =
+    typeof (payload as { userId?: unknown }).userId === 'string'
+      ? (payload as { userId: string }).userId.trim()
+      : '';
+  const companyId =
+    typeof (payload as { companyId?: unknown }).companyId === 'string'
+      ? (payload as { companyId: string }).companyId.trim()
+      : '';
+
+  if (!userId || !companyId) {
+    return jsonResponse(400, { error: 'userId and companyId are required' });
+  }
+
+  const enabled = await ctx.runQuery(
+    (
+      internal as unknown as {
+        integrationSettings: {
+          isEnabledForCompanyUser: FunctionReference<
+            'query',
+            'internal',
+            {
+              userId: string;
+              companyId: Id<'companies'>;
+              integration: 'notion';
+            },
+            boolean
+          >;
+        };
+      }
+    ).integrationSettings.isEnabledForCompanyUser,
+    {
+      userId,
+      companyId: companyId as Id<'companies'>,
+      integration: 'notion',
+    }
+  );
+
+  return jsonResponse(200, { enabled });
+});
+
 const notionServiceIngestEvents = httpAction(async (ctx, request) => {
   if (request.method !== 'POST') {
     return jsonResponse(405, { error: 'Method not allowed' });
@@ -747,6 +834,8 @@ const notionServiceIngestEvents = httpAction(async (ctx, request) => {
         pageId: event.pageId ?? null,
         databaseId: event.databaseId ?? null,
         commentId: event.commentId ?? null,
+        updatedPropertyIds: event.updatedPropertyIds ?? null,
+        updatedPropertyNames: event.updatedPropertyNames ?? null,
       })),
     }
   );
@@ -782,6 +871,12 @@ http.route({
   path: '/notion/service/clear-connection',
   method: 'POST',
   handler: notionServiceClearConnection,
+});
+
+http.route({
+  path: '/notion/service/integration-enabled',
+  method: 'POST',
+  handler: notionServiceIntegrationEnabled,
 });
 
 http.route({

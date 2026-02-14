@@ -1,10 +1,33 @@
-import { internalMutation, internalQuery, query } from './_generated/server';
+import {
+  internalMutation,
+  internalQuery,
+  query,
+  type MutationCtx,
+} from './_generated/server';
+import { internal } from './_generated/api';
 import { v } from 'convex/values';
+import type { FunctionReference } from 'convex/server';
 import type { Id } from './_generated/dataModel';
 
 interface UserIdentity {
   subject: string;
 }
+
+const pushDeliveryApi = (
+  internal as unknown as {
+    inboxPushDelivery: {
+      sendToCompanySubscribers: FunctionReference<
+        'action',
+        'internal',
+        {
+          companyId: Id<'companies'>;
+          inboxItemId: Id<'inboxItems'>;
+        },
+        unknown
+      >;
+    };
+  }
+).inboxPushDelivery;
 
 async function getUserId(ctx: {
   auth: { getUserIdentity: () => Promise<UserIdentity | null> };
@@ -210,6 +233,8 @@ const notionWebhookEventInput = v.object({
   pageId: v.union(v.string(), v.null()),
   databaseId: v.union(v.string(), v.null()),
   commentId: v.union(v.string(), v.null()),
+  updatedPropertyIds: v.union(v.array(v.string()), v.null()),
+  updatedPropertyNames: v.union(v.array(v.string()), v.null()),
 });
 
 function mapNotionEventToInboxType(
@@ -239,6 +264,25 @@ function inferEntityKind(entityType: string | null, eventType: string): string {
   return 'page';
 }
 
+async function isNotionEnabledForCompanyUser(
+  ctx: MutationCtx,
+  userId: string,
+  companyId: Id<'companies'>
+): Promise<boolean> {
+  const setting = await ctx.db
+    .query('integrationSettings')
+    .withIndex('by_companyId_userId_integration_deletedAt', q =>
+      q
+        .eq('companyId', companyId)
+        .eq('userId', userId)
+        .eq('integration', 'notion')
+        .eq('deletedAt', null)
+    )
+    .first();
+
+  return setting?.enabled === true;
+}
+
 function buildNotionEntityUrl(identifier: string | null): string | null {
   if (!identifier) {
     return null;
@@ -254,15 +298,61 @@ function buildInboxTitle(event: {
   title: string | null;
   eventType: string;
   entityType: string | null;
+  updatedPropertyNames: string[] | null;
 }): string {
-  if (event.title) {
-    return event.title;
+  const normalized = event.eventType.toLowerCase();
+
+  if (normalized === 'page.created') {
+    return event.title
+      ? `New assigned task: ${event.title}`
+      : 'New task assigned to you';
   }
-  const eventLabel = event.eventType.replace(/\./g, ' ');
+
+  if (normalized === 'page.properties_updated') {
+    const changes =
+      event.updatedPropertyNames && event.updatedPropertyNames.length > 0
+        ? event.updatedPropertyNames.slice(0, 3).join(', ')
+        : 'properties';
+    return event.title
+      ? `Assigned task updated (${changes}): ${event.title}`
+      : `Assigned task updated (${changes})`;
+  }
+
+  if (normalized === 'page.content_updated') {
+    return event.title
+      ? `Assigned task content updated: ${event.title}`
+      : 'Assigned task content updated';
+  }
+
+  if (normalized === 'comment.created') {
+    return event.title
+      ? `New comment on assigned task: ${event.title}`
+      : 'New comment on an assigned task';
+  }
+
+  if (normalized === 'comment.updated') {
+    return event.title
+      ? `Comment updated on assigned task: ${event.title}`
+      : 'Comment updated on an assigned task';
+  }
+
+  if (normalized === 'comment.deleted') {
+    return event.title
+      ? `Comment deleted on assigned task: ${event.title}`
+      : 'Comment deleted on an assigned task';
+  }
+
+  const eventLabel = event.eventType
+    .replace(/\./g, ' ')
+    .replace(/_/g, ' ')
+    .trim();
+  if (event.title && event.entityType) {
+    return `Notion ${event.entityType} update (${eventLabel}): ${event.title}`;
+  }
   if (event.entityType) {
     return `Notion ${event.entityType} update (${eventLabel})`;
   }
-  return `Notion update (${eventLabel})`;
+  return `Notion update (${eventLabel || 'event'})`;
 }
 
 export const ingestWebhookEvents = internalMutation({
@@ -272,8 +362,9 @@ export const ingestWebhookEvents = internalMutation({
   handler: async (ctx, args) => {
     const workspaceConnectionCache = new Map<
       string,
-      { companyId: Id<'companies'> } | null
+      { companyId: Id<'companies'>; userId: string } | null
     >();
+    const integrationEnabledCache = new Map<string, boolean>();
     const existingByCompany = new Map<Id<'companies'>, Set<string>>();
 
     let routed = 0;
@@ -297,7 +388,9 @@ export const ingestWebhookEvents = internalMutation({
             q.eq('workspaceId', workspaceId).eq('deletedAt', null)
           )
           .first();
-        connection = linked ? { companyId: linked.companyId } : null;
+        connection = linked
+          ? { companyId: linked.companyId, userId: linked.userId }
+          : null;
         workspaceConnectionCache.set(workspaceId, connection);
       }
 
@@ -306,8 +399,21 @@ export const ingestWebhookEvents = internalMutation({
         continue;
       }
 
-      routed += 1;
       const companyId = connection.companyId;
+      const cacheKey = `${connection.userId}:${companyId}`;
+      const integrationEnabled =
+        integrationEnabledCache.get(cacheKey) ??
+        (await isNotionEnabledForCompanyUser(
+          ctx,
+          connection.userId,
+          companyId
+        ));
+      integrationEnabledCache.set(cacheKey, integrationEnabled);
+      if (!integrationEnabled) {
+        unmatched += 1;
+        continue;
+      }
+      routed += 1;
 
       let companyExistingIds = existingByCompany.get(companyId);
       if (!companyExistingIds) {
@@ -338,9 +444,10 @@ export const ingestWebhookEvents = internalMutation({
         title: event.title,
         eventType: event.eventType,
         entityType: event.entityType,
+        updatedPropertyNames: event.updatedPropertyNames,
       });
 
-      await ctx.db.insert('inboxItems', {
+      const insertedId = await ctx.db.insert('inboxItems', {
         companyId,
         type: inboxType,
         source: 'notion',
@@ -356,6 +463,10 @@ export const ingestWebhookEvents = internalMutation({
             },
             event: {
               kind: event.eventType,
+              ...(event.updatedPropertyNames &&
+              event.updatedPropertyNames.length > 0
+                ? { updatedProperties: event.updatedPropertyNames }
+                : {}),
               ...(event.actorId ? { actor: event.actorId } : {}),
               ...(event.eventTimestamp !== null
                 ? { occurredAt: event.eventTimestamp }
@@ -379,6 +490,15 @@ export const ingestWebhookEvents = internalMutation({
         updatedAt: Date.now(),
         deletedAt: null,
       });
+
+      await ctx.scheduler.runAfter(
+        0,
+        pushDeliveryApi.sendToCompanySubscribers,
+        {
+          companyId,
+          inboxItemId: insertedId,
+        }
+      );
 
       companyExistingIds.add(eventId);
       created += 1;

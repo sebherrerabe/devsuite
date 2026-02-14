@@ -21,6 +21,8 @@ export interface NotionWebhookEventPayload {
   pageId: string | null;
   databaseId: string | null;
   commentId: string | null;
+  updatedPropertyIds: string[] | null;
+  updatedPropertyNames: string[] | null;
 }
 
 export interface NotionWebhookIngestResult {
@@ -63,6 +65,26 @@ export class ConvexBackendClient {
       userId,
       companyId,
     });
+  }
+
+  async isNotionIntegrationEnabled(
+    userId: string,
+    companyId: string
+  ): Promise<boolean> {
+    const payload = await this.post('/notion/service/integration-enabled', {
+      userId,
+      companyId,
+    });
+
+    if (typeof payload.enabled !== 'boolean') {
+      throw new ConvexBackendError(
+        502,
+        'INVALID_RESPONSE',
+        'Convex integration enabled payload is invalid'
+      );
+    }
+
+    return payload.enabled;
   }
 
   async ingestNotionWebhookEvents(

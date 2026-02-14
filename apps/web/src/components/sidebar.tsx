@@ -24,22 +24,39 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useCurrentCompany } from '@/lib/company-context';
+import type { AppModule } from '@devsuite/shared';
 
 interface NavItemConfig {
   label: string;
   icon: LucideIcon;
   to: string;
   badgeCount?: number;
+  module?: AppModule;
 }
 
 const navItems: NavItemConfig[] = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/' },
   { label: 'Inbox', icon: Inbox, to: '/inbox' },
-  { label: 'Projects', icon: FolderKanban, to: '/projects' },
-  { label: 'Sessions', icon: Clock, to: '/sessions' },
-  { label: 'Performance', icon: Activity, to: '/performance' },
-  { label: 'PR Reviews', icon: FileSearch, to: '/reviews' },
-  { label: 'Invoicing', icon: Receipt, to: '/invoicing' },
+  {
+    label: 'Projects',
+    icon: FolderKanban,
+    to: '/projects',
+    module: 'projects',
+  },
+  { label: 'Sessions', icon: Clock, to: '/sessions', module: 'sessions' },
+  {
+    label: 'Performance',
+    icon: Activity,
+    to: '/performance',
+    module: 'performance',
+  },
+  {
+    label: 'PR Reviews',
+    icon: FileSearch,
+    to: '/reviews',
+    module: 'pr_reviews',
+  },
+  { label: 'Invoicing', icon: Receipt, to: '/invoicing', module: 'invoicing' },
 ];
 
 const NavItem = ({
@@ -122,14 +139,18 @@ export function Sidebar({
   showToggle = true,
   onItemSelect,
 }: SidebarProps) {
-  const { currentCompany } = useCurrentCompany();
+  const { currentCompany, isModuleEnabled } = useCurrentCompany();
   const companyId = currentCompany?._id;
   const unreadCount = useQuery(
     api.inboxItems.getUnreadCount,
     companyId ? { companyId } : 'skip'
   );
 
-  const itemsWithBadges = navItems.map(item =>
+  const filteredItems = navItems.filter(
+    item => !item.module || isModuleEnabled(item.module)
+  );
+
+  const itemsWithBadges = filteredItems.map(item =>
     item.to === '/inbox' ? { ...item, badgeCount: unreadCount ?? 0 } : item
   );
 

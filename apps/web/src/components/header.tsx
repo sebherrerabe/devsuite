@@ -16,9 +16,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { User, LogOut, Menu } from 'lucide-react';
+import { useCurrentCompany } from '@/lib/company-context';
 
 export function Header() {
   const { data: session } = authClient.useSession();
+  const { isModuleEnabled } = useCurrentCompany();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleSignOut = async () => {
@@ -70,7 +72,7 @@ export function Header() {
         </div>
 
         <div className="flex flex-1 items-center justify-center px-1 sm:px-2 md:px-4">
-          <SessionWidget showOnMobile />
+          {isModuleEnabled('sessions') ? <SessionWidget showOnMobile /> : null}
         </div>
 
         <div className="ml-auto flex items-center gap-2">

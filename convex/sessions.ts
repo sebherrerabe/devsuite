@@ -28,6 +28,7 @@ import { deriveSessionDurations } from './lib/sessionDerivation';
 import { deriveActiveSegments } from './lib/sessionIntervals';
 import { countContextSwitchesFromTaskActivations } from './lib/performanceMetrics';
 import { insertPerformanceSignal } from './lib/performanceSignalIngestion';
+import { assertModuleEnabled } from './lib/moduleAccess';
 
 type SessionEventType =
   | 'SESSION_STARTED'
@@ -72,10 +73,7 @@ async function assertCompanyAccess(
   companyId: Id<'companies'>,
   userId: string
 ): Promise<void> {
-  const company = await ctx.db.get(companyId);
-  if (!company || company.userId !== userId) {
-    throw new Error('Company not found or access denied');
-  }
+  await assertModuleEnabled(ctx, companyId, 'sessions', userId);
 }
 
 /**

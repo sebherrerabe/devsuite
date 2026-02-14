@@ -13,6 +13,7 @@ import {
   createSoftDeletePatch,
   requireCompanyId,
 } from './lib/helpers';
+import { assertModuleEnabled } from './lib/moduleAccess';
 
 const DEFAULT_LIST_NAME = 'Inbox';
 
@@ -91,6 +92,7 @@ export const listByProject = query({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
 
     const project = await ctx.db.get(args.projectId);
     assertCompanyScoped(project, companyId, 'projects');
@@ -113,6 +115,7 @@ export const listByCompany = query({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
 
     let lists = await ctx.db
       .query('project_task_lists')
@@ -145,6 +148,7 @@ export const createList = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
 
     const project = await ctx.db.get(args.projectId);
     assertCompanyScoped(project, companyId, 'projects');
@@ -190,6 +194,7 @@ export const updateList = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
     const list = await ctx.db.get(args.listId);
     assertCompanyScoped(list, companyId, 'project_task_lists');
 
@@ -240,6 +245,7 @@ export const moveList = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
     const list = await ctx.db.get(args.listId);
     assertCompanyScoped(list, companyId, 'project_task_lists');
 
@@ -259,6 +265,7 @@ export const softDeleteList = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
     const list = await ctx.db.get(args.listId);
     assertCompanyScoped(list, companyId, 'project_task_lists');
 
@@ -307,6 +314,7 @@ export const backfillDefaultListsForCompany = mutation({
   },
   handler: async (ctx, args) => {
     const companyId = requireCompanyId(args.companyId);
+    await assertModuleEnabled(ctx, companyId, 'projects');
 
     const projects = await ctx.db
       .query('projects')

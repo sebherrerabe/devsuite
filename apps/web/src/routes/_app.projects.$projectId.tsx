@@ -9,6 +9,7 @@ import { api } from '../../../../convex/_generated/api';
 import { Loader2, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Id } from '../../../../convex/_generated/dataModel';
+import { useCurrentCompany } from '@/lib/company-context';
 
 export const Route = createFileRoute('/_app/projects/$projectId')({
   component: ProjectDetailLayout,
@@ -17,6 +18,7 @@ export const Route = createFileRoute('/_app/projects/$projectId')({
 function ProjectDetailLayout() {
   const { projectId } = useParams({ from: '/_app/projects/$projectId' });
   const projectIdTyped = projectId as Id<'projects'>;
+  const { isModuleEnabled } = useCurrentCompany();
 
   const project = useQuery(api.projects.getProjectIncludingArchived, {
     id: projectIdTyped,
@@ -59,9 +61,14 @@ function ProjectDetailLayout() {
 
   const tabs = [
     { name: 'Tasks', to: '/projects/$projectId/tasks' },
-    { name: 'Sessions', to: '/projects/$projectId/sessions' },
     { name: 'Settings', to: '/projects/$projectId/settings' },
   ];
+  if (isModuleEnabled('sessions')) {
+    tabs.splice(1, 0, {
+      name: 'Sessions',
+      to: '/projects/$projectId/sessions',
+    });
+  }
 
   return (
     <div className="flex flex-col h-full space-y-6">

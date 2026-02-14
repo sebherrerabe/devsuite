@@ -37,8 +37,9 @@ export const Route = createFileRoute('/_app/sessions/')({
 });
 
 function SessionsPage() {
-  const { currentCompany } = useCurrentCompany();
+  const { currentCompany, isModuleEnabled } = useCurrentCompany();
   const companyId = currentCompany?._id;
+  const canUseInvoicing = isModuleEnabled('invoicing');
   const navigate = useNavigate();
   const routerState = useRouterState({
     select: state => ({
@@ -135,7 +136,7 @@ function SessionsPage() {
   };
 
   const handleCreateInvoice = () => {
-    if (selectedSessionIds.length === 0) return;
+    if (selectedSessionIds.length === 0 || !canUseInvoicing) return;
     navigate({
       to: '/invoicing/new',
       search: {
@@ -358,7 +359,7 @@ function SessionsPage() {
         </Button>
       </div>
 
-      {selectedSessionIds.length > 0 && (
+      {selectedSessionIds.length > 0 && canUseInvoicing && (
         <div className="flex items-center justify-between rounded-md border p-3 bg-muted/20">
           <span className="text-sm text-muted-foreground">
             {selectedSessionIds.length} session

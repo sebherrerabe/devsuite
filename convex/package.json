@@ -10,9 +10,11 @@
   "dependencies": {
     "@convex-dev/better-auth": "^0.10.10",
     "@devsuite/shared": "workspace:*",
-    "better-auth": "1.4.9"
+    "better-auth": "1.4.9",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@types/web-push": "^3.6.4",
     "convex": "^1.31.6",
     "typescript": "^5.9.3"
   }

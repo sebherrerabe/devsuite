@@ -12,6 +12,7 @@ import {
   assertNotDeleted,
 } from './lib/helpers';
 import { getDefaultRateCard } from './lib/billing';
+import { assertModuleEnabled } from './lib/moduleAccess';
 
 type DbCtx = QueryCtx | MutationCtx;
 
@@ -32,10 +33,7 @@ async function assertCompanyAccess(
   companyId: Id<'companies'>,
   userId: string
 ) {
-  const company = await ctx.db.get(companyId);
-  if (!company || company.userId !== userId) {
-    throw new Error('Company not found or access denied');
-  }
+  await assertModuleEnabled(ctx, companyId, 'invoicing', userId);
 }
 
 export const getDefault = query({

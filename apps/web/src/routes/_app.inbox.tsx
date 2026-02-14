@@ -32,6 +32,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { showToast } from '@/lib/toast';
 import { formatShortDateTime } from '@/lib/time';
+import { useInboxDesktopNotifications } from '@/lib/inbox-desktop-notifications-context';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   MoreHorizontal,
   Loader2,
@@ -101,6 +103,13 @@ function TypeIcon({ type }: { type: InboxItemType }) {
 function InboxPage() {
   const { currentCompany } = useCurrentCompany();
   const companyId = currentCompany?._id;
+  const {
+    isSupported: desktopNotificationsSupported,
+    permission: desktopNotificationPermission,
+    isEnabled: desktopNotificationsEnabled,
+    requestPermission,
+    disable,
+  } = useInboxDesktopNotifications();
 
   const [sourceFilter, setSourceFilter] = useState<InboxItemSource | 'all'>(
     'all'
@@ -200,6 +209,36 @@ function InboxPage() {
         error instanceof Error ? error.message : 'Failed to update inbox'
       );
     }
+  };
+
+  const handleEnableDesktopNotifications = async () => {
+    const permission = await requestPermission();
+    if (permission === 'granted') {
+      showToast.success('Desktop notifications enabled');
+      return;
+    }
+
+    if (permission === 'denied') {
+      showToast.error(
+        'Desktop notifications blocked',
+        'Enable notifications for this site in your browser settings.'
+      );
+      return;
+    }
+
+    if (permission === 'unsupported') {
+      showToast.error(
+        'Desktop notifications are not supported in this browser'
+      );
+      return;
+    }
+
+    showToast.info('Desktop notification permission was dismissed');
+  };
+
+  const handleDisableDesktopNotifications = async () => {
+    await disable();
+    showToast.info('Desktop notifications disabled');
   };
 
   const addSampleItems = async () => {
@@ -323,6 +362,44 @@ function InboxPage() {
           </Button>
         )}
       </div>
+
+      <Alert>
+        <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+          <span>
+            {!desktopNotificationsSupported
+              ? 'This browser does not support desktop notifications.'
+              : desktopNotificationPermission === 'denied'
+                ? 'Desktop notifications are blocked. Re-enable notifications for this site in your browser settings.'
+                : desktopNotificationPermission === 'granted' &&
+                    desktopNotificationsEnabled
+                  ? 'Desktop notifications are enabled for new inbox items.'
+                  : desktopNotificationPermission === 'granted'
+                    ? 'Desktop notification permission is granted, but alerts are currently disabled in DevSuite.'
+                    : 'Enable desktop notifications to get alerts when new inbox items arrive.'}
+          </span>
+
+          {desktopNotificationsSupported &&
+            (desktopNotificationPermission === 'granted' &&
+            desktopNotificationsEnabled ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleDisableDesktopNotifications()}
+              >
+                Disable desktop notifications
+              </Button>
+            ) : desktopNotificationPermission !== 'denied' ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleEnableDesktopNotifications()}
+              >
+                Enable desktop notifications
+              </Button>
+            ) : null)}
+        </AlertDescription>
+      </Alert>
 
       <div className="rounded-lg border bg-card p-4">
         <div className="flex flex-wrap items-end gap-4">

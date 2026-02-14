@@ -43,15 +43,12 @@ export async function syncUserNotifications(options: {
   logger?: Logger;
 }): Promise<NotificationSyncResult> {
   const attemptedAt = Date.now();
-  const session = await options.connectionManager.getAuthenticatedToken(
-    options.userId
-  );
   const routes = await options.backendClient.listCompanyRoutes(options.userId);
   const allowedOrgLogins = buildAllowedOrgSet(routes);
 
   if (allowedOrgLogins.size === 0) {
     const telemetry = {
-      githubUser: session.githubUser,
+      githubUser: null,
       status: 'skipped_no_routes' as const,
       hasRouteMappings: false,
       companiesMatched: routes.length,
@@ -69,6 +66,10 @@ export async function syncUserNotifications(options: {
     await options.backendClient.recordSyncTelemetry(options.userId, telemetry);
     return telemetry;
   }
+
+  const session = await options.connectionManager.getAuthenticatedToken(
+    options.userId
+  );
 
   const fetched = await fetchNotifications({
     token: session.token,

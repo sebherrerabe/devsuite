@@ -7,7 +7,7 @@
 | Field            | Value                                         |
 | ---------------- | --------------------------------------------- |
 | Assigned Persona | Product Manager + Backend                     |
-| Status           | in-progress                                   |
+| Status           | complete                                      |
 | Depends On       | none                                          |
 | Deliverable      | Signed-off auth permissions and tenancy model |
 
@@ -16,11 +16,11 @@ Finalize the Notion auth contract and permission boundaries before implementatio
 
 **Acceptance Criteria**:
 
-- [ ] Confirm OAuth Authorization Code flow as the only pairing path (UI-driven).
-- [ ] Confirm minimum capabilities for MVP (`read content`, `read comments`).
-- [ ] Decide whether `user information without email` is included in MVP.
+- [x] Confirm OAuth Authorization Code flow as the only pairing path (UI-driven).
+- [x] Confirm minimum capabilities for MVP (`read content`, `read comments`).
+- [x] Decide whether `user information without email` is included in MVP.
 - [x] Decide connection tenancy model: one company maps to one Notion workspace.
-- [ ] Document security requirements for encrypted token storage and revoke semantics.
+- [x] Document security requirements for encrypted token storage and revoke semantics.
 
 ---
 
@@ -117,12 +117,12 @@ Ingest Notion webhook events and map them into company-scoped inbox notification
 | Field            | Value                                 |
 | ---------------- | ------------------------------------- |
 | Assigned Persona | QA / Validation                       |
-| Status           | in-progress                           |
+| Status           | review                                |
 | Depends On       | TASK-15-003, TASK-15-004, TASK-15-005 |
 | Deliverable      | Test matrix + launch checklist        |
 
 **Description**:
-Validate auth flow, link behavior, and notification reliability under realistic failure scenarios.
+Validate auth flow, link behavior, and notification reliability under realistic failure scenarios. Implementation is complete and currently awaiting real workflow validation feedback.
 
 **Acceptance Criteria**:
 

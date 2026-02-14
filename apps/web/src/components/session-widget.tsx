@@ -66,28 +66,31 @@ export function SessionWidget({
   triggerClassName?: string;
   showOnMobile?: boolean;
 }) {
-  const { currentCompany } = useCurrentCompany();
+  const { currentCompany, isModuleEnabled } = useCurrentCompany();
   const companyId = currentCompany?._id;
+  const isSessionsEnabled = isModuleEnabled('sessions');
 
   const activeSession = useQuery(
     api.sessions.getActiveSession,
-    companyId ? { companyId } : 'skip'
+    isSessionsEnabled && companyId ? { companyId } : 'skip'
   );
 
   const sessionDetail = useQuery(
     api.sessions.getSession,
-    companyId && activeSession
+    isSessionsEnabled && companyId && activeSession
       ? { companyId, sessionId: activeSession._id }
       : 'skip'
   );
 
   const projects = useQuery(
     api.projects.listProjects,
-    companyId ? { companyId, includeArchived: false } : 'skip'
+    isSessionsEnabled && companyId
+      ? { companyId, includeArchived: false }
+      : 'skip'
   );
   const tasks = useQuery(
     api.tasks.listAllTasks,
-    companyId ? { companyId } : 'skip'
+    isSessionsEnabled && companyId ? { companyId } : 'skip'
   );
 
   const startSession = useMutation(api.sessions.startSession);
@@ -176,7 +179,7 @@ export function SessionWidget({
 
   const taskLists = useQuery(
     api.projectTaskLists.listByCompany,
-    companyId
+    isSessionsEnabled && companyId
       ? listProjectIds
         ? { companyId, projectIds: listProjectIds }
         : { companyId }
@@ -582,6 +585,10 @@ export function SessionWidget({
       );
     }
   };
+
+  if (!isSessionsEnabled) {
+    return null;
+  }
 
   return (
     <>

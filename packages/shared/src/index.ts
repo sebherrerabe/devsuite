@@ -28,5 +28,8 @@ export * from './pr-review';
 // Performance signals and invoicing
 export * from './performance-invoice';
 
+// Module access
+export * from './module-access';
+
 // Version
 export const VERSION = '0.0.0';

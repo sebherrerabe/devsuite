@@ -1,10 +1,34 @@
-import { internalMutation, internalQuery, query } from './_generated/server';
+import {
+  internalMutation,
+  internalQuery,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from './_generated/server';
+import { internal } from './_generated/api';
 import { v } from 'convex/values';
+import type { FunctionReference } from 'convex/server';
 import type { Id } from './_generated/dataModel';
 
 interface UserIdentity {
   subject: string;
 }
+
+const pushDeliveryApi = (
+  internal as unknown as {
+    inboxPushDelivery: {
+      sendToCompanySubscribers: FunctionReference<
+        'action',
+        'internal',
+        {
+          companyId: Id<'companies'>;
+          inboxItemId: Id<'inboxItems'>;
+        },
+        unknown
+      >;
+    };
+  }
+).inboxPushDelivery;
 
 async function getUserId(ctx: {
   auth: { getUserIdentity: () => Promise<UserIdentity | null> };
@@ -14,6 +38,24 @@ async function getUserId(ctx: {
     throw new Error('Unauthorized');
   }
   return identity.subject;
+}
+
+async function getEnabledCompanyIdSet(
+  ctx: Pick<QueryCtx | MutationCtx, 'db'>,
+  userId: string
+): Promise<Set<Id<'companies'>>> {
+  const rows = await ctx.db
+    .query('integrationSettings')
+    .withIndex('by_userId_integration_enabled_deletedAt', q =>
+      q
+        .eq('userId', userId)
+        .eq('integration', 'github')
+        .eq('enabled', true)
+        .eq('deletedAt', null)
+    )
+    .collect();
+
+  return new Set(rows.map(row => row.companyId));
 }
 
 function normalizeOrgLogin(value: string): string | null {
@@ -179,6 +221,11 @@ export const listCompanyRoutes = internalQuery({
     userId: v.string(),
   },
   handler: async (ctx, args) => {
+    const enabledCompanyIds = await getEnabledCompanyIdSet(ctx, args.userId);
+    if (enabledCompanyIds.size === 0) {
+      return [];
+    }
+
     const companies = await ctx.db
       .query('companies')
       .withIndex('by_userId', q => q.eq('userId', args.userId))
@@ -195,6 +242,10 @@ export const listCompanyRoutes = internalQuery({
     }> = [];
 
     for (const company of activeCompanies) {
+      if (!enabledCompanyIds.has(company._id)) {
+        continue;
+      }
+
       const repositories = await ctx.db
         .query('repositories')
         .withIndex('by_companyId_deletedAt', q =>
@@ -331,13 +382,28 @@ export const ingestNotifications = internalMutation({
     notifications: v.array(githubNotificationInput),
   },
   handler: async (ctx, args) => {
+    const enabledCompanyIds = await getEnabledCompanyIdSet(ctx, args.userId);
+    if (enabledCompanyIds.size === 0) {
+      return {
+        companiesConsidered: 0,
+        notificationsReceived: args.notifications.length,
+        notificationsRouted: 0,
+        notificationsUnmatched: args.notifications.length,
+        deliveriesCreated: 0,
+        deliveriesUpdated: 0,
+      };
+    }
+
     const companies = await ctx.db
       .query('companies')
       .withIndex('by_userId', q => q.eq('userId', args.userId))
       .collect();
 
     const activeCompanies = companies.filter(
-      company => !company.isDeleted && company.deletedAt === null
+      company =>
+        !company.isDeleted &&
+        company.deletedAt === null &&
+        enabledCompanyIds.has(company._id)
     );
 
     const companyOrgMap = new Map<Id<'companies'>, string[]>();
@@ -493,6 +559,15 @@ export const ingestNotifications = internalMutation({
           updatedAt: now,
           deletedAt: null,
         });
+
+        await ctx.scheduler.runAfter(
+          0,
+          pushDeliveryApi.sendToCompanySubscribers,
+          {
+            companyId,
+            inboxItemId: insertedId,
+          }
+        );
 
         companyItems.set(notification.threadId, insertedId);
         created += 1;

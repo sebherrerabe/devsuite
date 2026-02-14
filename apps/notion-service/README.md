@@ -13,8 +13,12 @@ Node.js service for Notion integration workflows.
   - `GET /notion/connect/callback`
 - Notion task-link validation endpoint:
   - `POST /notion/links/resolve`
+- Notion assignee-filter configuration endpoints:
+  - `POST /notion/webhooks/assignee/options`
+  - `POST /notion/webhooks/assignee/config`
 - Notion webhook ingest endpoint:
   - `POST /notion/webhooks`
+- Webhook notifications are emitted only for page events assigned to the connected Notion user (across all people properties by default, or a configured specific people property per company)
 - Server-managed Notion OAuth with per-user-per-company state
 - Token introspection + refresh handling for long-lived sessions
 - Encrypted Notion token persistence (AES-256-GCM)
@@ -31,7 +35,7 @@ Node.js service for Notion integration workflows.
 - `DEVSUITE_NOTION_OAUTH_CLIENT_ID` (required)
 - `DEVSUITE_NOTION_OAUTH_CLIENT_SECRET` (required)
 - `DEVSUITE_NOTION_OAUTH_REDIRECT_URI` (required; e.g., `http://localhost:8791/notion/connect/callback`)
-- `DEVSUITE_NOTION_POST_AUTH_REDIRECT_URL` (optional; defaults to first CORS origin + `/_app/settings/integrations`)
+- `DEVSUITE_NOTION_POST_AUTH_REDIRECT_URL` (optional; defaults to first CORS origin + `/settings/integrations`)
 - `DEVSUITE_NOTION_WEBHOOK_VERIFICATION_TOKEN` (optional but recommended; validates `x-notion-signature` HMAC SHA-256 over the raw JSON body)
 - `DEVSUITE_CONVEX_SITE_URL` (required for Convex backend calls)
 

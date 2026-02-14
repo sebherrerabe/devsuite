@@ -57,6 +57,7 @@ import {
   getTriState,
   triStateToStatus,
 } from '@/lib/task-tristate';
+import { useCurrentCompany } from '@/lib/company-context';
 
 function getSessionUserId(sessionData: unknown): string | null {
   if (!sessionData || typeof sessionData !== 'object') {
@@ -100,6 +101,9 @@ function formatNotionLinkError(error: unknown): string {
     }
     if (error.code === 'LINK_INVALID') {
       return 'Notion link is invalid or not shared with your integration.';
+    }
+    if (error.code === 'INTEGRATION_DISABLED') {
+      return 'Notion integration is disabled for this company.';
     }
     if (error.code === 'TOKEN_INVALID') {
       return 'Stored Notion token is invalid. Reconnect Notion and try again.';
@@ -191,23 +195,30 @@ function TaskDetailContent({
   tags: Doc<'tags'>[];
   variant: 'pane' | 'sheet';
 }) {
+  const { isModuleEnabled } = useCurrentCompany();
+  const canUseSessions = isModuleEnabled('sessions');
+  const canUsePRReviews = isModuleEnabled('pr_reviews');
+
   const updateTask = useMutation(api.tasks.updateTask);
   const addLink = useMutation(api.externalLinks.addExternalLink);
   const removeLink = useMutation(api.externalLinks.removeExternalLink);
   const createPRReview = useMutation(api.prReviews.createPRReview);
-  const sessionMetadata = useQuery(api.sessions.getTaskSessionMetadata, {
-    companyId,
-    taskId: task._id,
-  });
-  const repositories = useQuery(api.repositories.getByCompany, { companyId });
+  const sessionMetadata = useQuery(
+    api.sessions.getTaskSessionMetadata,
+    canUseSessions ? { companyId, taskId: task._id } : 'skip'
+  );
+  const repositories = useQuery(
+    api.repositories.getByCompany,
+    canUsePRReviews ? { companyId } : 'skip'
+  );
   const project = useQuery(
     api.projects.getProject,
     task.projectId ? { id: task.projectId } : 'skip'
   );
-  const prReviews = useQuery(api.prReviews.listPRReviewsByTask, {
-    companyId,
-    taskId: task._id,
-  });
+  const prReviews = useQuery(
+    api.prReviews.listPRReviewsByTask,
+    canUsePRReviews ? { companyId, taskId: task._id } : 'skip'
+  );
   const navigate = useNavigate();
   const { data: authSession } = authClient.useSession();
   const userId = getSessionUserId(authSession);
@@ -351,6 +362,7 @@ function TaskDetailContent({
 
   const handleCreatePRReview = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!canUsePRReviews) return;
     if (!reviewFormState.repositoryId) return;
     if (
       !reviewFormState.prUrl.trim() ||
@@ -568,139 +580,153 @@ function TaskDetailContent({
         </div>
       </div>
 
-      <Separator />
+      {canUseSessions && (
+        <>
+          <Separator />
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+                Session Insights
+              </Label>
+              <Badge variant="outline">
+                {sessionMetadata
+                  ? `${sessionMetadata.sessionCount} session${
+                      sessionMetadata.sessionCount === 1 ? '' : 's'
+                    }`
+                  : 'Loading...'}
+              </Badge>
+            </div>
 
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label className="text-xs text-muted-foreground uppercase tracking-wider">
-            Session Insights
-          </Label>
-          <Badge variant="outline">
-            {sessionMetadata
-              ? `${sessionMetadata.sessionCount} session${
-                  sessionMetadata.sessionCount === 1 ? '' : 's'
-                }`
-              : 'Loading...'}
-          </Badge>
-        </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">
+                  Tracked on this task
+                </p>
+                <p className="text-lg font-semibold">
+                  {sessionMetadata && hasSessionMetadata
+                    ? formatDurationMs(sessionMetadata.totalTrackedMs)
+                    : '--'}
+                </p>
+                <p className="text-xs text-muted-foreground">Across sessions</p>
+              </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">
-              Tracked on this task
-            </p>
-            <p className="text-lg font-semibold">
-              {sessionMetadata && hasSessionMetadata
-                ? formatDurationMs(sessionMetadata.totalTrackedMs)
-                : '--'}
-            </p>
-            <p className="text-xs text-muted-foreground">Across sessions</p>
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Paused time</p>
+                <p className="text-lg font-semibold">
+                  {sessionMetadata && hasSessionMetadata
+                    ? formatDurationMs(sessionMetadata.totalPausedMs)
+                    : '--'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {sessionMetadata
+                    ? `${sessionMetadata.pauseCount} pause${
+                        sessionMetadata.pauseCount === 1 ? '' : 's'
+                      }`
+                    : '--'}
+                </p>
+              </div>
+
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Session count</p>
+                <p className="text-lg font-semibold">
+                  {sessionMetadata ? sessionMetadata.sessionCount : '--'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Running or paused
+                </p>
+              </div>
+
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Last session</p>
+                <p className="text-lg font-semibold">
+                  {sessionMetadata &&
+                  hasSessionMetadata &&
+                  sessionMetadata.lastSessionAt
+                    ? formatShortDateTime(sessionMetadata.lastSessionAt)
+                    : '--'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Task time{' '}
+                  {sessionMetadata && hasSessionMetadata
+                    ? formatDurationMs(
+                        sessionMetadata.lastSessionTaskDurationMs
+                      )
+                    : '--'}
+                </p>
+              </div>
+            </div>
+
+            {!hasSessionMetadata && sessionMetadata && (
+              <p className="text-sm text-muted-foreground">
+                No session activity yet. Start a session to track time on this
+                task.
+              </p>
+            )}
           </div>
+        </>
+      )}
 
-          <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">Paused time</p>
-            <p className="text-lg font-semibold">
-              {sessionMetadata && hasSessionMetadata
-                ? formatDurationMs(sessionMetadata.totalPausedMs)
-                : '--'}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {sessionMetadata
-                ? `${sessionMetadata.pauseCount} pause${
-                    sessionMetadata.pauseCount === 1 ? '' : 's'
-                  }`
-                : '--'}
-            </p>
-          </div>
-
-          <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">Session count</p>
-            <p className="text-lg font-semibold">
-              {sessionMetadata ? sessionMetadata.sessionCount : '--'}
-            </p>
-            <p className="text-xs text-muted-foreground">Running or paused</p>
-          </div>
-
-          <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">Last session</p>
-            <p className="text-lg font-semibold">
-              {sessionMetadata &&
-              hasSessionMetadata &&
-              sessionMetadata.lastSessionAt
-                ? formatShortDateTime(sessionMetadata.lastSessionAt)
-                : '--'}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Task time{' '}
-              {sessionMetadata && hasSessionMetadata
-                ? formatDurationMs(sessionMetadata.lastSessionTaskDurationMs)
-                : '--'}
-            </p>
-          </div>
-        </div>
-
-        {!hasSessionMetadata && sessionMetadata && (
-          <p className="text-sm text-muted-foreground">
-            No session activity yet. Start a session to track time on this task.
-          </p>
-        )}
-      </div>
-
-      <Separator />
-
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-            <GitPullRequest className="h-3 w-3" /> PR Reviews
-          </Label>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setIsCreateReviewOpen(true)}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Start PR review
-          </Button>
-        </div>
-
-        {prReviews === undefined ? (
-          <div className="space-y-2">
-            <div className="h-10 rounded bg-muted animate-pulse" />
-            <div className="h-10 rounded bg-muted animate-pulse" />
-          </div>
-        ) : prReviews.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No PR reviews linked to this task yet.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {prReviews.map(review => (
-              <Link
-                key={review._id}
-                to="/reviews/$reviewId"
-                params={{ reviewId: review._id }}
-                className="block"
+      {canUsePRReviews && (
+        <>
+          <Separator />
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <GitPullRequest className="h-3 w-3" /> PR Reviews
+              </Label>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setIsCreateReviewOpen(true)}
               >
-                <div className="flex items-center justify-between gap-3 p-2 rounded-md border bg-muted/30 hover:bg-muted/50">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {review.title || 'Untitled review'}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {review.prUrl}
-                    </p>
-                  </div>
-                  <div className="text-xs text-muted-foreground shrink-0">
-                    {formatShortDateTime(review.createdAt)}
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
+                <Plus className="mr-2 h-4 w-4" />
+                Start PR review
+              </Button>
+            </div>
 
-      <Dialog open={isCreateReviewOpen} onOpenChange={setIsCreateReviewOpen}>
+            {prReviews === undefined ? (
+              <div className="space-y-2">
+                <div className="h-10 rounded bg-muted animate-pulse" />
+                <div className="h-10 rounded bg-muted animate-pulse" />
+              </div>
+            ) : prReviews.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No PR reviews linked to this task yet.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {prReviews.map(review => (
+                  <Link
+                    key={review._id}
+                    to="/reviews/$reviewId"
+                    params={{ reviewId: review._id }}
+                    className="block"
+                  >
+                    <div className="flex items-center justify-between gap-3 p-2 rounded-md border bg-muted/30 hover:bg-muted/50">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {review.title || 'Untitled review'}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {review.prUrl}
+                        </p>
+                      </div>
+                      <div className="text-xs text-muted-foreground shrink-0">
+                        {formatShortDateTime(review.createdAt)}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      <Dialog
+        open={canUsePRReviews ? isCreateReviewOpen : false}
+        onOpenChange={setIsCreateReviewOpen}
+      >
         <DialogContent className="sm:max-w-[640px]">
           <DialogHeader>
             <DialogTitle>Start PR review</DialogTitle>

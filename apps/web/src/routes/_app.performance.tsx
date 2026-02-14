@@ -1,5 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from 'convex/react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -304,8 +304,20 @@ function MetricCard({
 }
 
 function PerformancePage() {
-  const { currentCompany } = useCurrentCompany();
+  const navigate = useNavigate();
+  const {
+    currentCompany,
+    isLoading: isCompanyLoading,
+    isModuleEnabled,
+  } = useCurrentCompany();
   const companyId = currentCompany?._id;
+  const enabled = isModuleEnabled('performance');
+
+  useEffect(() => {
+    if (!isCompanyLoading && !enabled) {
+      void navigate({ to: '/', replace: true });
+    }
+  }, [enabled, isCompanyLoading, navigate]);
 
   const [initialRange] = useState(() => {
     const end = Date.now();
@@ -387,7 +399,7 @@ function PerformancePage() {
     previousQueryArgs
   );
 
-  if (!companyId) {
+  if (!companyId || (!isCompanyLoading && !enabled)) {
     return null;
   }
 

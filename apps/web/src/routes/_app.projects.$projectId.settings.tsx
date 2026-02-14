@@ -49,8 +49,9 @@ function ProjectSettingsPage() {
   const { projectId } = useParams({
     from: '/_app/projects/$projectId/settings',
   });
-  const { currentCompany } = useCurrentCompany();
+  const { currentCompany, isModuleEnabled } = useCurrentCompany();
   const companyId = currentCompany?._id;
+  const canUseInvoicing = isModuleEnabled('invoicing');
   const projectIdTyped = projectId as Id<'projects'>;
 
   const project = useQuery(api.projects.getProject, { id: projectIdTyped });
@@ -60,7 +61,9 @@ function ProjectSettingsPage() {
   );
   const projectRate = useQuery(
     api.rateCards.getProjectRate,
-    companyId ? { companyId, projectId: projectIdTyped } : 'skip'
+    companyId && canUseInvoicing
+      ? { companyId, projectId: projectIdTyped }
+      : 'skip'
   );
   const updateProject = useMutation(api.projects.updateProject);
   const setProjectRate = useMutation(api.rateCards.setProjectRate);
@@ -165,7 +168,7 @@ function ProjectSettingsPage() {
   };
 
   const handleBillingSave = async () => {
-    if (!companyId || !project) return;
+    if (!companyId || !project || !canUseInvoicing) return;
     if (useDefaultRate) {
       await setProjectRate({
         companyId,
@@ -327,79 +330,83 @@ function ProjectSettingsPage() {
         </Card>
 
         {/* Billing Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Billing</CardTitle>
-            <CardDescription>
-              Override the default billing rate for this project.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                checked={useDefaultRate}
-                onCheckedChange={checked => setUseDefaultRate(Boolean(checked))}
-              />
-              <Label>Use company default rate</Label>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Hourly rate</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={billingRate}
-                  onChange={e => setBillingRate(e.target.value)}
-                  disabled={useDefaultRate}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Currency</Label>
-                <Input
-                  value={billingCurrency}
-                  onChange={e => setBillingCurrency(e.target.value)}
-                  disabled={useDefaultRate}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Rounding increment (minutes)</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={roundingIncrement}
-                  onChange={e => setRoundingIncrement(e.target.value)}
-                  disabled={useDefaultRate}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Rounding mode</Label>
-                <Select
-                  value={roundingMode}
-                  onValueChange={value =>
-                    setRoundingMode(value as 'floor' | 'ceil' | 'nearest')
+        {canUseInvoicing && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Billing</CardTitle>
+              <CardDescription>
+                Override the default billing rate for this project.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={useDefaultRate}
+                  onCheckedChange={checked =>
+                    setUseDefaultRate(Boolean(checked))
                   }
-                  disabled={useDefaultRate}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="floor">Floor</SelectItem>
-                    <SelectItem value="nearest">Nearest</SelectItem>
-                    <SelectItem value="ceil">Ceil</SelectItem>
-                  </SelectContent>
-                </Select>
+                />
+                <Label>Use company default rate</Label>
               </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-end">
-            <Button onClick={handleBillingSave} disabled={isSubmitting}>
-              <Save className="mr-2 h-4 w-4" />
-              Save Billing
-            </Button>
-          </CardFooter>
-        </Card>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Hourly rate</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={billingRate}
+                    onChange={e => setBillingRate(e.target.value)}
+                    disabled={useDefaultRate}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Currency</Label>
+                  <Input
+                    value={billingCurrency}
+                    onChange={e => setBillingCurrency(e.target.value)}
+                    disabled={useDefaultRate}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Rounding increment (minutes)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={roundingIncrement}
+                    onChange={e => setRoundingIncrement(e.target.value)}
+                    disabled={useDefaultRate}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Rounding mode</Label>
+                  <Select
+                    value={roundingMode}
+                    onValueChange={value =>
+                      setRoundingMode(value as 'floor' | 'ceil' | 'nearest')
+                    }
+                    disabled={useDefaultRate}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="floor">Floor</SelectItem>
+                      <SelectItem value="nearest">Nearest</SelectItem>
+                      <SelectItem value="ceil">Ceil</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+            <CardFooter className="flex justify-end">
+              <Button onClick={handleBillingSave} disabled={isSubmitting}>
+                <Save className="mr-2 h-4 w-4" />
+                Save Billing
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
 
         {/* Repositories */}
         <Card>

@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
+import type { FunctionReference } from 'convex/server';
 import { api } from '../../../../convex/_generated/api';
+import type { Id } from '../../../../convex/_generated/dataModel';
 import {
   CardFooter,
   Card,
@@ -13,6 +15,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { authClient } from '@/lib/auth';
 import { showToast } from '@/lib/toast';
 import {
@@ -28,15 +38,26 @@ import type {
   GhNotificationSyncResult,
   GhRuntimeSnapshot,
 } from '@/lib/gh-service-client';
-import { ExternalLink, Loader2, RefreshCw, Unplug } from 'lucide-react';
+import {
+  ChevronDown,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  Unplug,
+} from 'lucide-react';
 import { useCurrentCompany } from '@/lib/company-context';
 import {
   disconnectNotion,
+  getNotionAssigneePropertyOptions,
   getNotionConnectionStatus,
+  type NotionAssigneeFilter,
+  type NotionAssigneePropertyOption,
   NotionServiceRequestError,
   startNotionLogin,
+  updateNotionAssigneeFilter,
 } from '@/lib/notion-service-client';
 import type { NotionConnectionStatus } from '@/lib/notion-service-client';
+import { Switch } from '@/components/ui/switch';
 
 export const Route = createFileRoute('/_app/settings/integrations')({
   component: IntegrationsSettingsPage,
@@ -45,6 +66,32 @@ export const Route = createFileRoute('/_app/settings/integrations')({
 const PENDING_POLL_INTERVAL_MS = 3000;
 const LOGIN_SLOWDOWN_COOLDOWN_MS = 5 * 60 * 1000;
 const LOGIN_COOLDOWN_STORAGE_PREFIX = 'devsuite-gh-login-cooldown-until';
+const ANY_PEOPLE_PROPERTY_VALUE = '__any_people__';
+
+interface IntegrationSettingsResponse {
+  companyId: Id<'companies'>;
+  userId: string;
+  github: boolean;
+  notion: boolean;
+}
+
+type IntegrationSettingsQueryRef = FunctionReference<
+  'query',
+  'public',
+  { companyId: Id<'companies'> },
+  IntegrationSettingsResponse
+>;
+
+type IntegrationSettingsSetEnabledRef = FunctionReference<
+  'mutation',
+  'public',
+  {
+    companyId: Id<'companies'>;
+    integration: 'github' | 'notion';
+    enabled: boolean;
+  },
+  IntegrationSettingsResponse
+>;
 
 function formatTimestamp(value: number | null): string {
   if (!value) {
@@ -170,8 +217,17 @@ function formatNotionServiceError(error: unknown): string {
     if (error.code === 'NOT_CONNECTED') {
       return 'Notion is not connected for this company.';
     }
+    if (error.code === 'INTEGRATION_DISABLED') {
+      return 'Notion integration is disabled for this company.';
+    }
     if (error.code === 'WORKSPACE_CONFLICT') {
       return 'This Notion workspace is already linked to another company.';
+    }
+    if (error.code === 'LINK_INVALID') {
+      return 'The Notion page URL is invalid, unavailable, or not shared with this integration.';
+    }
+    if (error.code === 'FILTER_INVALID') {
+      return 'The selected assignee filter is invalid. Reload the page properties and try again.';
     }
     if (error.code === 'UNAUTHORIZED') {
       return 'Request was rejected by notion-service. Verify DEVSUITE_NOTION_SERVICE_TOKEN matches between client and service.';
@@ -248,6 +304,19 @@ function IntegrationsSettingsPage() {
   const companyId = currentCompany?._id ?? null;
   const { data: authSession } = authClient.useSession();
   const userId = useMemo(() => getSessionUserId(authSession), [authSession]);
+  const integrationSettingsApi = (
+    api as unknown as {
+      integrationSettings: {
+        getForCompany: IntegrationSettingsQueryRef;
+        setEnabled: IntegrationSettingsSetEnabledRef;
+      };
+    }
+  ).integrationSettings;
+  const integrationSettings = useQuery(
+    integrationSettingsApi.getForCompany,
+    companyId ? { companyId } : 'skip'
+  );
+  const setIntegrationEnabled = useMutation(integrationSettingsApi.setEnabled);
   const persistedSyncTelemetry = useQuery(
     api.githubService.getNotificationSyncTelemetryForCurrentUser
   );
@@ -266,13 +335,42 @@ function IntegrationsSettingsPage() {
   const [isStartingNotionLogin, setIsStartingNotionLogin] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isDisconnectingNotion, setIsDisconnectingNotion] = useState(false);
+  const [notionAssigneeSourceUrl, setNotionAssigneeSourceUrl] = useState('');
+  const [notionAssigneeDataSourceId, setNotionAssigneeDataSourceId] = useState<
+    string | null
+  >(null);
+  const [notionAssigneeOptions, setNotionAssigneeOptions] = useState<
+    NotionAssigneePropertyOption[]
+  >([]);
+  const [
+    selectedNotionAssigneePropertyId,
+    setSelectedNotionAssigneePropertyId,
+  ] = useState<string>(ANY_PEOPLE_PROPERTY_VALUE);
+  const [
+    selectedNotionAssigneePropertyName,
+    setSelectedNotionAssigneePropertyName,
+  ] = useState<string | null>(null);
+  const [notionAssigneeError, setNotionAssigneeError] = useState<string | null>(
+    null
+  );
+  const [isLoadingNotionAssigneeOptions, setIsLoadingNotionAssigneeOptions] =
+    useState(false);
+  const [isSavingNotionAssigneeFilter, setIsSavingNotionAssigneeFilter] =
+    useState(false);
   const [isSyncingNotifications, setIsSyncingNotifications] = useState(false);
   const [lastSyncResult, setLastSyncResult] =
     useState<GhNotificationSyncResult | null>(null);
+  const [isUpdatingGithubEnabled, setIsUpdatingGithubEnabled] = useState(false);
+  const [isUpdatingNotionEnabled, setIsUpdatingNotionEnabled] = useState(false);
+  const [expandedIntegration, setExpandedIntegration] = useState<
+    'github' | 'notion'
+  >('github');
   const [loginCooldownUntil, setLoginCooldownUntil] = useState<number | null>(
     null
   );
   const [clockMs, setClockMs] = useState<number>(() => Date.now());
+  const githubEnabled = integrationSettings?.github ?? false;
+  const notionEnabled = integrationSettings?.notion ?? false;
 
   const registerSlowDownCooldown = useCallback(
     (baseTimeMs: number) => {
@@ -337,6 +435,11 @@ function IntegrationsSettingsPage() {
     async (options?: { silent?: boolean }) => {
       if (!userId || !companyId) {
         setNotionConnection(null);
+        setNotionAssigneeDataSourceId(null);
+        setNotionAssigneeOptions([]);
+        setSelectedNotionAssigneePropertyId(ANY_PEOPLE_PROPERTY_VALUE);
+        setSelectedNotionAssigneePropertyName(null);
+        setNotionAssigneeError(null);
         setNotionStatusError(
           !userId
             ? 'Unable to resolve your user identity. Sign out/in and try again.'
@@ -354,6 +457,19 @@ function IntegrationsSettingsPage() {
         const payload = await getNotionConnectionStatus(userId, companyId);
         setNotionConnection(payload.connection);
         setNotionStatusError(null);
+        const currentFilter = payload.connection.assigneeFilter;
+        if (
+          currentFilter.mode === 'specific_property' &&
+          currentFilter.propertyId
+        ) {
+          setSelectedNotionAssigneePropertyId(currentFilter.propertyId);
+          setSelectedNotionAssigneePropertyName(currentFilter.propertyName);
+          setNotionAssigneeDataSourceId(currentFilter.dataSourceId);
+        } else {
+          setSelectedNotionAssigneePropertyId(ANY_PEOPLE_PROPERTY_VALUE);
+          setSelectedNotionAssigneePropertyName(null);
+          setNotionAssigneeDataSourceId(null);
+        }
       } catch (error) {
         setNotionStatusError(formatNotionServiceError(error));
       } finally {
@@ -372,19 +488,25 @@ function IntegrationsSettingsPage() {
     }
 
     setLoginCooldownUntil(readLoginCooldownUntil(userId));
+    if (!companyId || !githubEnabled) {
+      setConnection(null);
+      setRuntime(null);
+      setStatusError(null);
+      return;
+    }
     void loadStatus();
-  }, [loadStatus, userId]);
+  }, [companyId, githubEnabled, loadStatus, userId]);
 
   useEffect(() => {
-    if (!userId || !companyId) {
+    if (!userId || !companyId || !notionEnabled) {
       setNotionConnection(null);
       return;
     }
     void loadNotionStatus();
-  }, [companyId, loadNotionStatus, userId]);
+  }, [companyId, loadNotionStatus, notionEnabled, userId]);
 
   useEffect(() => {
-    if (connection?.state !== 'pending') {
+    if (connection?.state !== 'pending' || !githubEnabled) {
       return;
     }
 
@@ -395,7 +517,7 @@ function IntegrationsSettingsPage() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [connection?.state, loadStatus]);
+  }, [connection?.state, githubEnabled, loadStatus]);
 
   useEffect(() => {
     if (!loginCooldownUntil) {
@@ -451,8 +573,10 @@ function IntegrationsSettingsPage() {
     currentUrl.searchParams.delete('notionMessage');
     currentUrl.searchParams.delete('notionCompanyId');
     window.history.replaceState({}, '', currentUrl.toString());
-    void loadNotionStatus();
-  }, [companyId, loadNotionStatus]);
+    if (notionEnabled) {
+      void loadNotionStatus();
+    }
+  }, [companyId, loadNotionStatus, notionEnabled]);
 
   const loginCooldownRemainingMs = loginCooldownUntil
     ? Math.max(0, loginCooldownUntil - clockMs)
@@ -490,6 +614,10 @@ function IntegrationsSettingsPage() {
       showToast.error('Unable to resolve your user identity');
       return;
     }
+    if (!githubEnabled) {
+      showToast.error('Enable GitHub integration for this company first');
+      return;
+    }
     if (isLoginCoolingDown) {
       showToast.warning(
         `Please wait ${formatDuration(loginCooldownRemainingMs)} before retrying GitHub login`
@@ -523,6 +651,10 @@ function IntegrationsSettingsPage() {
       showToast.error('Unable to resolve your user identity');
       return;
     }
+    if (!githubEnabled) {
+      showToast.error('Enable GitHub integration for this company first');
+      return;
+    }
 
     setIsDisconnecting(true);
     try {
@@ -542,6 +674,10 @@ function IntegrationsSettingsPage() {
   const handleSyncNotifications = async () => {
     if (!userId) {
       showToast.error('Unable to resolve your user identity');
+      return;
+    }
+    if (!githubEnabled) {
+      showToast.error('Enable GitHub integration for this company first');
       return;
     }
 
@@ -570,6 +706,143 @@ function IntegrationsSettingsPage() {
     }
   };
 
+  const handleLoadNotionAssigneeOptions = async () => {
+    if (!userId) {
+      showToast.error('Unable to resolve your user identity');
+      return;
+    }
+    if (!companyId) {
+      showToast.error('Select a company before configuring Notion');
+      return;
+    }
+    if (!notionConnected) {
+      showToast.error('Connect Notion before configuring assignee filters');
+      return;
+    }
+    if (!notionEnabled) {
+      showToast.error('Enable Notion integration for this company first');
+      return;
+    }
+    if (!notionAssigneeSourceUrl.trim()) {
+      showToast.error('Paste a Notion page URL to load people properties');
+      return;
+    }
+
+    setIsLoadingNotionAssigneeOptions(true);
+    try {
+      const payload = await getNotionAssigneePropertyOptions(
+        userId,
+        companyId,
+        notionAssigneeSourceUrl.trim()
+      );
+      setNotionAssigneeOptions(payload.options.options);
+      setNotionAssigneeDataSourceId(payload.options.dataSourceId);
+      setNotionAssigneeError(null);
+
+      if (
+        payload.options.selected.mode === 'specific_property' &&
+        payload.options.selected.propertyId
+      ) {
+        setSelectedNotionAssigneePropertyId(
+          payload.options.selected.propertyId
+        );
+        const matchedOption = payload.options.options.find(
+          option => option.id === payload.options.selected.propertyId
+        );
+        setSelectedNotionAssigneePropertyName(
+          matchedOption?.name ?? payload.options.selected.propertyName
+        );
+      } else {
+        setSelectedNotionAssigneePropertyId(ANY_PEOPLE_PROPERTY_VALUE);
+        setSelectedNotionAssigneePropertyName(null);
+      }
+
+      showToast.success(
+        payload.options.options.length > 0
+          ? `Loaded ${payload.options.options.length} people properties`
+          : 'No people properties found on that page'
+      );
+    } catch (error) {
+      const message = formatNotionServiceError(error);
+      setNotionAssigneeError(message);
+      showToast.error(message);
+    } finally {
+      setIsLoadingNotionAssigneeOptions(false);
+    }
+  };
+
+  const handleSaveNotionAssigneeFilter = async () => {
+    if (!userId) {
+      showToast.error('Unable to resolve your user identity');
+      return;
+    }
+    if (!companyId) {
+      showToast.error('Select a company before configuring Notion');
+      return;
+    }
+    if (!notionConnected) {
+      showToast.error('Connect Notion before configuring assignee filters');
+      return;
+    }
+    if (!notionEnabled) {
+      showToast.error('Enable Notion integration for this company first');
+      return;
+    }
+
+    const selectedOption = notionAssigneeOptions.find(
+      option => option.id === selectedNotionAssigneePropertyId
+    );
+
+    let nextFilter: NotionAssigneeFilter;
+    if (selectedNotionAssigneePropertyId === ANY_PEOPLE_PROPERTY_VALUE) {
+      nextFilter = {
+        mode: 'any_people',
+        dataSourceId: null,
+        propertyId: null,
+        propertyName: null,
+      };
+    } else {
+      if (!notionAssigneeDataSourceId) {
+        showToast.error(
+          'Load people properties from a Notion page before selecting a specific property'
+        );
+        return;
+      }
+
+      nextFilter = {
+        mode: 'specific_property',
+        dataSourceId: notionAssigneeDataSourceId,
+        propertyId: selectedNotionAssigneePropertyId,
+        propertyName:
+          selectedOption?.name ?? selectedNotionAssigneePropertyName,
+      };
+    }
+
+    setIsSavingNotionAssigneeFilter(true);
+    try {
+      const payload = await updateNotionAssigneeFilter(
+        userId,
+        companyId,
+        nextFilter
+      );
+      setNotionConnection(payload.connection);
+      setNotionStatusError(null);
+      setNotionAssigneeError(null);
+      setSelectedNotionAssigneePropertyName(nextFilter.propertyName);
+      showToast.success(
+        nextFilter.mode === 'specific_property'
+          ? `Notion filter saved (${nextFilter.propertyName ?? 'selected property'})`
+          : 'Notion filter saved (any people property)'
+      );
+    } catch (error) {
+      const message = formatNotionServiceError(error);
+      setNotionAssigneeError(message);
+      showToast.error(message);
+    } finally {
+      setIsSavingNotionAssigneeFilter(false);
+    }
+  };
+
   const handleStartNotionLogin = async () => {
     if (!userId) {
       showToast.error('Unable to resolve your user identity');
@@ -577,6 +850,10 @@ function IntegrationsSettingsPage() {
     }
     if (!companyId) {
       showToast.error('Select a company before connecting Notion');
+      return;
+    }
+    if (!notionEnabled) {
+      showToast.error('Enable Notion integration for this company first');
       return;
     }
 
@@ -608,12 +885,22 @@ function IntegrationsSettingsPage() {
       showToast.error('Select a company before disconnecting Notion');
       return;
     }
+    if (!notionEnabled) {
+      showToast.error('Enable Notion integration for this company first');
+      return;
+    }
 
     setIsDisconnectingNotion(true);
     try {
       const payload = await disconnectNotion(userId, companyId);
       setNotionConnection(payload.connection);
       setNotionStatusError(null);
+      setNotionAssigneeDataSourceId(null);
+      setNotionAssigneeOptions([]);
+      setSelectedNotionAssigneePropertyId(ANY_PEOPLE_PROPERTY_VALUE);
+      setSelectedNotionAssigneePropertyName(null);
+      setNotionAssigneeError(null);
+      setNotionAssigneeSourceUrl('');
       showToast.success('Notion disconnected');
     } catch (error) {
       const message = formatNotionServiceError(error);
@@ -624,8 +911,45 @@ function IntegrationsSettingsPage() {
     }
   };
 
+  const handleSetIntegrationEnabled = async (
+    integration: 'github' | 'notion',
+    enabled: boolean
+  ) => {
+    if (!companyId) {
+      showToast.error('Select a company before changing integration settings');
+      return;
+    }
+
+    const setLoading =
+      integration === 'github'
+        ? setIsUpdatingGithubEnabled
+        : setIsUpdatingNotionEnabled;
+    setLoading(true);
+    try {
+      await setIntegrationEnabled({
+        companyId,
+        integration,
+        enabled,
+      });
+      const label = integration === 'github' ? 'GitHub' : 'Notion';
+      showToast.success(
+        `${label} integration ${enabled ? 'enabled' : 'disabled'} for this company`
+      );
+    } catch (error) {
+      showToast.error(
+        error instanceof Error
+          ? error.message
+          : 'Failed to update integration setting'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const isConnected = connection?.state === 'connected';
   const isPending = connection?.state === 'pending';
+  const isGithubExpanded = expandedIntegration === 'github';
+  const isNotionExpanded = expandedIntegration === 'notion';
   const canDisconnect = Boolean(
     connection && connection.state !== 'disconnected'
   );
@@ -633,6 +957,48 @@ function IntegrationsSettingsPage() {
   const canDisconnectNotion = Boolean(
     notionConnection && notionConnection.state !== 'disconnected'
   );
+  const currentNotionAssigneeFilter = notionConnection?.assigneeFilter ?? null;
+  const displayedNotionAssigneePropertyName = useMemo(() => {
+    if (!currentNotionAssigneeFilter) {
+      return null;
+    }
+    if (currentNotionAssigneeFilter.mode !== 'specific_property') {
+      return null;
+    }
+    if (selectedNotionAssigneePropertyName) {
+      return selectedNotionAssigneePropertyName;
+    }
+    return currentNotionAssigneeFilter.propertyName;
+  }, [currentNotionAssigneeFilter, selectedNotionAssigneePropertyName]);
+  const notionAssigneeModeLabel =
+    currentNotionAssigneeFilter?.mode === 'specific_property'
+      ? `Specific people property${displayedNotionAssigneePropertyName ? ` (${displayedNotionAssigneePropertyName})` : ''}`
+      : notionConnected
+        ? 'Any people property'
+        : '—';
+  const notionAssigneeOptionsForSelect = useMemo(() => {
+    if (selectedNotionAssigneePropertyId === ANY_PEOPLE_PROPERTY_VALUE) {
+      return notionAssigneeOptions;
+    }
+    const alreadyPresent = notionAssigneeOptions.some(
+      option => option.id === selectedNotionAssigneePropertyId
+    );
+    if (alreadyPresent) {
+      return notionAssigneeOptions;
+    }
+    return [
+      {
+        id: selectedNotionAssigneePropertyId,
+        name:
+          displayedNotionAssigneePropertyName ?? 'Current configured property',
+      },
+      ...notionAssigneeOptions,
+    ];
+  }, [
+    displayedNotionAssigneePropertyName,
+    notionAssigneeOptions,
+    selectedNotionAssigneePropertyId,
+  ]);
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -645,324 +1011,550 @@ function IntegrationsSettingsPage() {
       <div className="h-[1px] bg-border" />
       <Card>
         <CardHeader>
-          <CardTitle>GitHub Integration</CardTitle>
-          <CardDescription>
-            Connect your GitHub account for notifications and PR discovery.
-            Authentication runs in the dedicated `gh-service` backend.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Connection status</p>
-              <Badge variant={getStatusBadgeVariant(connection?.state ?? null)}>
-                {getStatusLabel(connection?.state ?? null)}
-              </Badge>
-            </div>
-            <Button
+          <div className="flex items-start justify-between gap-3">
+            <button
               type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => void loadStatus()}
-              disabled={
-                isLoadingStatus || isStartingLogin || isDisconnecting || !userId
-              }
+              onClick={() => setExpandedIntegration('github')}
+              className="flex flex-1 items-start justify-between gap-3 text-left"
             >
-              {isLoadingStatus ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-2 h-4 w-4" />
+              <div>
+                <CardTitle>GitHub Integration</CardTitle>
+                <CardDescription className="mt-1">
+                  Connect your GitHub account for notifications and PR
+                  discovery. Authentication runs in the dedicated `gh-service`
+                  backend.
+                </CardDescription>
+              </div>
+              <ChevronDown
+                className={`mt-1 h-4 w-4 transition-transform ${isGithubExpanded ? 'rotate-180' : ''}`}
+              />
+            </button>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-xs text-muted-foreground">Enabled</span>
+              <Switch
+                checked={githubEnabled}
+                onCheckedChange={checked =>
+                  void handleSetIntegrationEnabled('github', checked)
+                }
+                disabled={!companyId || isUpdatingGithubEnabled || !userId}
+                aria-label="Toggle GitHub integration for this company"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        {isGithubExpanded && (
+          <>
+            <CardContent className="space-y-4">
+              {!githubEnabled && companyId && (
+                <Alert>
+                  <AlertDescription>
+                    GitHub integration is disabled for this company.
+                    Notification routing and sync are paused.
+                  </AlertDescription>
+                </Alert>
               )}
-              Refresh
-            </Button>
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 text-sm">
-            <div>
-              <p className="text-muted-foreground">Authenticated user</p>
-              <p>{connection?.githubUser ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Last checked</p>
-              <p>{formatTimestamp(connection?.checkedAt ?? null)}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Device code</p>
-              <p className="font-mono">{connection?.userCode ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">GitHub service runtime</p>
-              <p>
-                {runtime
-                  ? runtime.ghInstalled
-                    ? `Installed${runtime.ghVersion ? ` (${runtime.ghVersion})` : ''}`
-                    : 'Missing'
-                  : '—'}
-              </p>
-            </div>
-          </div>
-
-          {isPending && connection?.verificationUri && (
-            <Alert>
-              <AlertDescription>
-                Finish login in GitHub:
-                <a
-                  href={connection.verificationUri}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="ml-1 underline"
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">
+                    Connection status
+                  </p>
+                  <Badge
+                    variant={getStatusBadgeVariant(connection?.state ?? null)}
+                  >
+                    {getStatusLabel(connection?.state ?? null)}
+                  </Badge>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void loadStatus()}
+                  disabled={
+                    isLoadingStatus ||
+                    isStartingLogin ||
+                    isDisconnecting ||
+                    !userId ||
+                    !githubEnabled
+                  }
                 >
-                  {connection.verificationUri}
-                </a>
-              </AlertDescription>
-            </Alert>
-          )}
+                  {isLoadingStatus ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Refresh
+                </Button>
+              </div>
 
-          {connection?.lastError && (
-            <Alert variant="destructive">
-              <AlertDescription>{connection.lastError}</AlertDescription>
-            </Alert>
-          )}
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                <div>
+                  <p className="text-muted-foreground">Authenticated user</p>
+                  <p>{connection?.githubUser ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Last checked</p>
+                  <p>{formatTimestamp(connection?.checkedAt ?? null)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Device code</p>
+                  <p className="font-mono">{connection?.userCode ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">
+                    GitHub service runtime
+                  </p>
+                  <p>
+                    {runtime
+                      ? runtime.ghInstalled
+                        ? `Installed${runtime.ghVersion ? ` (${runtime.ghVersion})` : ''}`
+                        : 'Missing'
+                      : '—'}
+                  </p>
+                </div>
+              </div>
 
-          {isLoginCoolingDown && (
-            <Alert variant="destructive">
-              <AlertDescription>
-                GitHub asked us to slow down. Login retry is locked for{' '}
-                {formatDuration(loginCooldownRemainingMs)} (until{' '}
-                {formatTimestamp(loginCooldownUntil)}).
-              </AlertDescription>
-            </Alert>
-          )}
+              {isPending && connection?.verificationUri && (
+                <Alert>
+                  <AlertDescription>
+                    Finish login in GitHub:
+                    <a
+                      href={connection.verificationUri}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-1 underline"
+                    >
+                      {connection.verificationUri}
+                    </a>
+                  </AlertDescription>
+                </Alert>
+              )}
 
-          {statusError && (
-            <Alert variant="destructive">
-              <AlertDescription>{statusError}</AlertDescription>
-            </Alert>
-          )}
+              {connection?.lastError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{connection.lastError}</AlertDescription>
+                </Alert>
+              )}
 
-          {displayedSyncResult && displayedSyncResult.status === 'error' && (
-            <Alert variant="destructive">
-              <AlertDescription>
-                Last sync failed:{' '}
-                {displayedSyncResult.errorMessage ?? 'Unknown sync error'}.
-              </AlertDescription>
-            </Alert>
-          )}
+              {isLoginCoolingDown && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    GitHub asked us to slow down. Login retry is locked for{' '}
+                    {formatDuration(loginCooldownRemainingMs)} (until{' '}
+                    {formatTimestamp(loginCooldownUntil)}).
+                  </AlertDescription>
+                </Alert>
+              )}
 
-          {displayedSyncResult && displayedSyncResult.status !== 'error' && (
-            <Alert>
-              <AlertDescription>
-                Last sync ({formatTimestamp(displayedSyncResult.attemptedAt)}):
-                fetched {displayedSyncResult.notificationsFetched}, routed{' '}
-                {displayedSyncResult.notificationsFiltered}, created{' '}
-                {displayedSyncResult.deliveriesCreated}, updated{' '}
-                {displayedSyncResult.deliveriesUpdated}.
-                {lastSuccessfulSyncAt
-                  ? ` Last successful sync: ${formatTimestamp(lastSuccessfulSyncAt)}.`
-                  : ''}
-              </AlertDescription>
-            </Alert>
-          )}
+              {statusError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{statusError}</AlertDescription>
+                </Alert>
+              )}
 
-          {runtime?.error && (
-            <Alert variant="destructive">
-              <AlertDescription>{runtime.error}</AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-        <CardFooter className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            onClick={handleStartLogin}
-            disabled={
-              isStartingLogin ||
-              isDisconnecting ||
-              !userId ||
-              isLoginCoolingDown
-            }
-          >
-            {isStartingLogin && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            {isLoginCoolingDown
-              ? `Retry in ${formatDuration(loginCooldownRemainingMs)}`
-              : isConnected
-                ? 'Reconnect GitHub'
-                : 'Start GitHub Login'}
-          </Button>
+              {displayedSyncResult &&
+                displayedSyncResult.status === 'error' && (
+                  <Alert variant="destructive">
+                    <AlertDescription>
+                      Last sync failed:{' '}
+                      {displayedSyncResult.errorMessage ?? 'Unknown sync error'}
+                      .
+                    </AlertDescription>
+                  </Alert>
+                )}
 
-          {isPending && connection?.verificationUri && (
-            <Button type="button" variant="secondary" asChild>
-              <a
-                href={connection.verificationUri}
-                target="_blank"
-                rel="noreferrer"
+              {displayedSyncResult &&
+                displayedSyncResult.status !== 'error' && (
+                  <Alert>
+                    <AlertDescription>
+                      Last sync (
+                      {formatTimestamp(displayedSyncResult.attemptedAt)}):
+                      fetched {displayedSyncResult.notificationsFetched}, routed{' '}
+                      {displayedSyncResult.notificationsFiltered}, created{' '}
+                      {displayedSyncResult.deliveriesCreated}, updated{' '}
+                      {displayedSyncResult.deliveriesUpdated}.
+                      {lastSuccessfulSyncAt
+                        ? ` Last successful sync: ${formatTimestamp(lastSuccessfulSyncAt)}.`
+                        : ''}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+              {runtime?.error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{runtime.error}</AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+            <CardFooter className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={handleStartLogin}
+                disabled={
+                  isStartingLogin ||
+                  isDisconnecting ||
+                  !userId ||
+                  isLoginCoolingDown ||
+                  !githubEnabled
+                }
               >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                Open GitHub Login
-              </a>
-            </Button>
-          )}
+                {isStartingLogin && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                {isLoginCoolingDown
+                  ? `Retry in ${formatDuration(loginCooldownRemainingMs)}`
+                  : isConnected
+                    ? 'Reconnect GitHub'
+                    : 'Start GitHub Login'}
+              </Button>
 
-          <Button
-            type="button"
-            variant="destructive"
-            onClick={handleDisconnect}
-            disabled={
-              !canDisconnect || isDisconnecting || isStartingLogin || !userId
-            }
-          >
-            {isDisconnecting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Unplug className="mr-2 h-4 w-4" />
-            )}
-            Disconnect
-          </Button>
+              {isPending && connection?.verificationUri && (
+                <Button type="button" variant="secondary" asChild>
+                  <a
+                    href={connection.verificationUri}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Open GitHub Login
+                  </a>
+                </Button>
+              )}
 
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={handleSyncNotifications}
-            disabled={
-              !isConnected ||
-              !userId ||
-              isSyncingNotifications ||
-              isDisconnecting ||
-              isStartingLogin
-            }
-          >
-            {isSyncingNotifications && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Sync notifications now
-          </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleDisconnect}
+                disabled={
+                  !canDisconnect ||
+                  isDisconnecting ||
+                  isStartingLogin ||
+                  !userId ||
+                  !githubEnabled
+                }
+              >
+                {isDisconnecting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Unplug className="mr-2 h-4 w-4" />
+                )}
+                Disconnect
+              </Button>
 
-          <p className="w-full text-xs text-muted-foreground">
-            Service endpoint: {getGhServiceBaseUrl()}
-          </p>
-        </CardFooter>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleSyncNotifications}
+                disabled={
+                  !isConnected ||
+                  !githubEnabled ||
+                  !userId ||
+                  isSyncingNotifications ||
+                  isDisconnecting ||
+                  isStartingLogin
+                }
+              >
+                {isSyncingNotifications && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Sync notifications now
+              </Button>
+
+              <p className="w-full text-xs text-muted-foreground">
+                Service endpoint: {getGhServiceBaseUrl()}
+              </p>
+            </CardFooter>
+          </>
+        )}
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Notion Integration</CardTitle>
-          <CardDescription>
-            Connect one Notion workspace per company for task link validation
-            and inbox notifications.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Connection status</p>
-              <Badge
-                variant={getStatusBadgeVariant(notionConnection?.state ?? null)}
-              >
-                {getStatusLabel(notionConnection?.state ?? null)}
-              </Badge>
-            </div>
-            <Button
+          <div className="flex items-start justify-between gap-3">
+            <button
               type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => void loadNotionStatus()}
-              disabled={
-                isLoadingNotionStatus ||
-                isStartingNotionLogin ||
-                isDisconnectingNotion ||
-                !userId ||
-                !companyId
-              }
+              onClick={() => setExpandedIntegration('notion')}
+              className="flex flex-1 items-start justify-between gap-3 text-left"
             >
-              {isLoadingNotionStatus ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-2 h-4 w-4" />
+              <div>
+                <CardTitle>Notion Integration</CardTitle>
+                <CardDescription className="mt-1">
+                  Connect one Notion workspace per company for task link
+                  validation and inbox notifications.
+                </CardDescription>
+              </div>
+              <ChevronDown
+                className={`mt-1 h-4 w-4 transition-transform ${isNotionExpanded ? 'rotate-180' : ''}`}
+              />
+            </button>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-xs text-muted-foreground">Enabled</span>
+              <Switch
+                checked={notionEnabled}
+                onCheckedChange={checked =>
+                  void handleSetIntegrationEnabled('notion', checked)
+                }
+                disabled={!companyId || isUpdatingNotionEnabled || !userId}
+                aria-label="Toggle Notion integration for this company"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        {isNotionExpanded && (
+          <>
+            <CardContent className="space-y-4">
+              {!notionEnabled && companyId && (
+                <Alert>
+                  <AlertDescription>
+                    Notion integration is disabled for this company. Webhook
+                    routing and Notion-specific processing are paused.
+                  </AlertDescription>
+                </Alert>
               )}
-              Refresh
-            </Button>
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 text-sm">
-            <div>
-              <p className="text-muted-foreground">Selected company</p>
-              <p>{currentCompany?.name ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Last checked</p>
-              <p>{formatTimestamp(notionConnection?.checkedAt ?? null)}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Workspace</p>
-              <p>{notionConnection?.workspaceName ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Workspace ID</p>
-              <p className="font-mono">
-                {notionConnection?.workspaceId ?? '—'}
-              </p>
-            </div>
-          </div>
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">
+                    Connection status
+                  </p>
+                  <Badge
+                    variant={getStatusBadgeVariant(
+                      notionConnection?.state ?? null
+                    )}
+                  >
+                    {getStatusLabel(notionConnection?.state ?? null)}
+                  </Badge>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void loadNotionStatus()}
+                  disabled={
+                    isLoadingNotionStatus ||
+                    isStartingNotionLogin ||
+                    isDisconnectingNotion ||
+                    isLoadingNotionAssigneeOptions ||
+                    isSavingNotionAssigneeFilter ||
+                    !userId ||
+                    !companyId ||
+                    !notionEnabled
+                  }
+                >
+                  {isLoadingNotionStatus ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Refresh
+                </Button>
+              </div>
 
-          {!companyId && (
-            <Alert variant="destructive">
-              <AlertDescription>
-                Select a company to connect Notion. One company can be linked to
-                exactly one Notion workspace.
-              </AlertDescription>
-            </Alert>
-          )}
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                <div>
+                  <p className="text-muted-foreground">Selected company</p>
+                  <p>{currentCompany?.name ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Last checked</p>
+                  <p>{formatTimestamp(notionConnection?.checkedAt ?? null)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Workspace</p>
+                  <p>{notionConnection?.workspaceName ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Workspace ID</p>
+                  <p className="font-mono">
+                    {notionConnection?.workspaceId ?? '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Webhook assignee mode</p>
+                  <p>{notionAssigneeModeLabel}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Filter data source ID</p>
+                  <p className="font-mono">
+                    {currentNotionAssigneeFilter?.dataSourceId ?? '—'}
+                  </p>
+                </div>
+              </div>
 
-          {notionStatusError && (
-            <Alert variant="destructive">
-              <AlertDescription>{notionStatusError}</AlertDescription>
-            </Alert>
-          )}
+              {!companyId && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    Select a company to connect Notion. One company can be
+                    linked to exactly one Notion workspace.
+                  </AlertDescription>
+                </Alert>
+              )}
 
-          {notionConnection?.lastError && (
-            <Alert variant="destructive">
-              <AlertDescription>{notionConnection.lastError}</AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-        <CardFooter className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            onClick={handleStartNotionLogin}
-            disabled={
-              isStartingNotionLogin ||
-              isDisconnectingNotion ||
-              !userId ||
-              !companyId
-            }
-          >
-            {isStartingNotionLogin && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            {notionConnected ? 'Reconnect Notion' : 'Connect Notion'}
-          </Button>
+              {notionStatusError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{notionStatusError}</AlertDescription>
+                </Alert>
+              )}
 
-          <Button
-            type="button"
-            variant="destructive"
-            onClick={handleDisconnectNotion}
-            disabled={
-              !canDisconnectNotion ||
-              isDisconnectingNotion ||
-              isStartingNotionLogin ||
-              !userId ||
-              !companyId
-            }
-          >
-            {isDisconnectingNotion ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Unplug className="mr-2 h-4 w-4" />
-            )}
-            Disconnect
-          </Button>
-        </CardFooter>
+              {notionConnection?.lastError && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    {notionConnection.lastError}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {notionConnected && notionEnabled && (
+                <div className="space-y-3 rounded-md border p-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">
+                      Assignee property filter
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Load people properties from a task page URL, then select
+                      which people property should be used to route
+                      notifications to the authenticated Notion user.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Source page URL
+                    </p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input
+                        value={notionAssigneeSourceUrl}
+                        onChange={event =>
+                          setNotionAssigneeSourceUrl(event.currentTarget.value)
+                        }
+                        placeholder="https://www.notion.so/..."
+                        disabled={
+                          isLoadingNotionAssigneeOptions ||
+                          isSavingNotionAssigneeFilter
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handleLoadNotionAssigneeOptions}
+                        disabled={
+                          isLoadingNotionAssigneeOptions ||
+                          isSavingNotionAssigneeFilter
+                        }
+                      >
+                        {isLoadingNotionAssigneeOptions && (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        )}
+                        Load properties
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Property used for assignee matching
+                    </p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Select
+                        value={selectedNotionAssigneePropertyId}
+                        onValueChange={value => {
+                          setSelectedNotionAssigneePropertyId(value);
+                          const option = notionAssigneeOptionsForSelect.find(
+                            item => item.id === value
+                          );
+                          setSelectedNotionAssigneePropertyName(
+                            option?.name ?? null
+                          );
+                        }}
+                        disabled={isSavingNotionAssigneeFilter}
+                      >
+                        <SelectTrigger className="w-full sm:flex-1">
+                          <SelectValue placeholder="Select a people property" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ANY_PEOPLE_PROPERTY_VALUE}>
+                            Any people property
+                          </SelectItem>
+                          {notionAssigneeOptionsForSelect.map(option => (
+                            <SelectItem key={option.id} value={option.id}>
+                              {option.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      <Button
+                        type="button"
+                        onClick={handleSaveNotionAssigneeFilter}
+                        disabled={isSavingNotionAssigneeFilter}
+                      >
+                        {isSavingNotionAssigneeFilter && (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        )}
+                        Save filter
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Loaded data source ID:{' '}
+                      <span className="font-mono">
+                        {notionAssigneeDataSourceId ?? '—'}
+                      </span>
+                    </p>
+                  </div>
+
+                  {notionAssigneeError && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{notionAssigneeError}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={handleStartNotionLogin}
+                disabled={
+                  isStartingNotionLogin ||
+                  isDisconnectingNotion ||
+                  isLoadingNotionAssigneeOptions ||
+                  isSavingNotionAssigneeFilter ||
+                  !userId ||
+                  !companyId ||
+                  !notionEnabled
+                }
+              >
+                {isStartingNotionLogin && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                {notionConnected ? 'Reconnect Notion' : 'Connect Notion'}
+              </Button>
+
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleDisconnectNotion}
+                disabled={
+                  !canDisconnectNotion ||
+                  isDisconnectingNotion ||
+                  isStartingNotionLogin ||
+                  isLoadingNotionAssigneeOptions ||
+                  isSavingNotionAssigneeFilter ||
+                  !userId ||
+                  !companyId ||
+                  !notionEnabled
+                }
+              >
+                {isDisconnectingNotion ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Unplug className="mr-2 h-4 w-4" />
+                )}
+                Disconnect
+              </Button>
+            </CardFooter>
+          </>
+        )}
       </Card>
 
       {!userId && (

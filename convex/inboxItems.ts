@@ -1,5 +1,7 @@
 import { mutation, query } from './_generated/server';
+import { internal } from './_generated/api';
 import { v } from 'convex/values';
+import type { FunctionReference } from 'convex/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { assertNotDeleted } from './lib/helpers';
 
@@ -67,6 +69,22 @@ const inboxItemContentValidator = v.object({
   externalId: v.optional(v.string()),
   metadata: v.optional(v.any()),
 });
+
+const pushDeliveryApi = (
+  internal as unknown as {
+    inboxPushDelivery: {
+      sendToCompanySubscribers: FunctionReference<
+        'action',
+        'internal',
+        {
+          companyId: Id<'companies'>;
+          inboxItemId: Id<'inboxItems'>;
+        },
+        unknown
+      >;
+    };
+  }
+).inboxPushDelivery;
 
 export const listInboxItems = query({
   args: {
@@ -167,6 +185,14 @@ export const upsertInboxItem = mutation({
         deletedAt: null,
         updatedAt: now,
       });
+      await ctx.scheduler.runAfter(
+        0,
+        pushDeliveryApi.sendToCompanySubscribers,
+        {
+          companyId: args.companyId,
+          inboxItemId: existing._id,
+        }
+      );
       return existing._id;
     }
 
@@ -181,6 +207,11 @@ export const upsertInboxItem = mutation({
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
+    });
+
+    await ctx.scheduler.runAfter(0, pushDeliveryApi.sendToCompanySubscribers, {
+      companyId: args.companyId,
+      inboxItemId: inboxItemId,
     });
 
     return inboxItemId;
