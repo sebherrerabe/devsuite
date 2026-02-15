@@ -33,6 +33,17 @@ test('resolveTrustedDesktopOrigins does not trust localhost by default in produc
   assert.equal(trusted.size, 0);
 });
 
+test('resolveTrustedDesktopOrigins rejects opaque null origin from data: URLs', () => {
+  const trusted = resolveTrustedDesktopOrigins({
+    webUrl: 'data:text/html;charset=utf-8,%3Ch1%3Etest%3C/h1%3E',
+    nodeEnv: 'development',
+  });
+
+  // data: URLs produce opaque origin "null" which must not be trusted.
+  assert.equal(trusted.has('null'), false);
+  assert.equal(trusted.size, 0);
+});
+
 test('shouldExposeDesktopApis allows internal widget window', () => {
   const allowed = shouldExposeDesktopApis({
     currentOrigin: 'https://untrusted.example',

@@ -131,9 +131,10 @@ function Invoke-BoundedProcess {
   Write-Host "[desktop:install-smoke][$Phase] Launch: $FilePath $($Arguments -join ' ')"
 
   $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -NoNewWindow
-  $completed = $process | Wait-Process -Timeout $TimeoutSeconds -ErrorAction SilentlyContinue
+  # Wait-Process returns $null regardless of outcome; use HasExited instead.
+  $process | Wait-Process -Timeout $TimeoutSeconds -ErrorAction SilentlyContinue
 
-  if ($null -eq $completed) {
+  if (-not $process.HasExited) {
     $message = "Timed out after $TimeoutSeconds seconds."
     Write-Diagnostics -Phase $Phase -Reason $message
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue

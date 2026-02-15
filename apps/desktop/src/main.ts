@@ -85,6 +85,10 @@ const MAX_POLICY_AUDIT_LOG = 1000;
 const POLICY_TICK_INTERVAL_MS = 5_000;
 const WEBSITE_SOURCE_PREFIX = 'webcontents';
 const ENABLE_TEST_IPC = process.env.DEVSUITE_DESKTOP_ENABLE_TEST_IPC === '1';
+const TEST_IPC_RENDERER_SWITCH = '--devsuite-enable-test-ipc=1';
+const TEST_IPC_RENDERER_ARGS = ENABLE_TEST_IPC
+  ? [TEST_IPC_RENDERER_SWITCH]
+  : [];
 const DESKTOP_ADDITIONAL_NAV_ORIGINS =
   process.env.DEVSUITE_DESKTOP_NAV_ALLOW_ORIGINS;
 const TRAY_ICON_DATA_URL =
@@ -1066,6 +1070,7 @@ async function showSessionWidget(): Promise<void> {
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       partition: DESKTOP_PARTITION,
+      additionalArguments: TEST_IPC_RENDERER_ARGS,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -1424,6 +1429,7 @@ async function createMainWindow(options?: {
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       partition: DESKTOP_PARTITION,
+      additionalArguments: TEST_IPC_RENDERER_ARGS,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

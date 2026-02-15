@@ -7,7 +7,13 @@ export function resolveTrustedDesktopOrigins(params: {
   const rawWebUrl = params.webUrl?.trim();
   if (rawWebUrl) {
     try {
-      origins.add(new globalThis.URL(rawWebUrl).origin);
+      const parsed = new globalThis.URL(rawWebUrl).origin;
+      // Reject opaque origins ("null") produced by data:, blob:, and
+      // sandboxed contexts.  Trusting the literal string "null" would match
+      // every page loaded from those schemes, which is a security hole.
+      if (parsed && parsed !== 'null') {
+        origins.add(parsed);
+      }
     } catch {
       // Ignore invalid config values and fall back to development defaults.
     }

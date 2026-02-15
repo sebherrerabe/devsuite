@@ -1,4 +1,9 @@
-import { createRequire } from 'node:module';
+// NOTE: This preload runs in Electron's sandboxed renderer context.
+// Electron's sandbox loader ignores package.json "type" and loads .js as CJS,
+// so this file MUST be compiled to CommonJS (see tsconfig.preload.json).
+// TypeScript downlevels the `import` below to `require('electron')` which the
+// sandbox shims for preload scripts.
+import { contextBridge, ipcRenderer } from 'electron';
 
 import type { DesktopFocusSettings } from './focus-settings.js';
 import type { DesktopSettingsScope } from './focus-settings.js';
@@ -18,10 +23,6 @@ import type {
 } from './notifications.js';
 import type { DesktopProcessEvent } from './process-monitor.js';
 import type { StrictPolicyAuditEvent } from './strict-policy-engine.js';
-
-const require = createRequire(import.meta.url);
-const { contextBridge, ipcRenderer } =
-  require('electron') as typeof import('electron');
 
 type DesktopFocusApi = {
   get: (scope: DesktopSettingsScope) => Promise<DesktopFocusSettings>;
@@ -285,9 +286,13 @@ const trustedOrigins = resolveTrustedDesktopOrigins({
   webUrl: process.env.DEVSUITE_WEB_URL,
   nodeEnv: process.env.NODE_ENV,
 });
+const hasTestIpcRendererSwitch =
+  process.argv?.includes('--devsuite-enable-test-ipc=1') ?? false;
+const isE2ETestHarnessPage =
+  globalThis.location?.origin === 'null' &&
+  globalThis.location?.hash === '#devsuite-e2e';
 const shouldForceExposeApisForTestHarness =
-  process.env.DEVSUITE_DESKTOP_ENABLE_TEST_IPC === '1' &&
-  process.env.DEVSUITE_WEB_URL?.trim().startsWith('data:text/html');
+  hasTestIpcRendererSwitch && isE2ETestHarnessPage;
 const shouldExposeApis =
   shouldExposeDesktopApis({
     currentOrigin: globalThis.location?.origin,
@@ -308,7 +313,7 @@ if (shouldExposeApis) {
     desktopProcessMonitorApi
   );
   contextBridge.exposeInMainWorld('desktopPolicy', desktopPolicyApi);
-  if (process.env.DEVSUITE_DESKTOP_ENABLE_TEST_IPC === '1') {
+  if (shouldForceExposeApisForTestHarness) {
     contextBridge.exposeInMainWorld('desktopTest', desktopTestApi);
   }
 }

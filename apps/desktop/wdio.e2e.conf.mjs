@@ -6,13 +6,7 @@ const currentFile = fileURLToPath(import.meta.url);
 const projectRoot = dirname(currentFile);
 const fixtureDir = join(projectRoot, 'test', 'fixtures');
 const userDataDir = join(projectRoot, '.tmp', 'wdio-user-data');
-const electronBinaryPath = join(
-  projectRoot,
-  'node_modules',
-  'electron',
-  'dist',
-  'electron.exe'
-);
+const appEntryPointPath = join(projectRoot, 'dist', 'main.js');
 
 const fixtureFiles = [
   'desktop-session-scope.json',
@@ -109,7 +103,7 @@ const bootstrapHtml = `<!doctype html>
 process.env.DEVSUITE_DESKTOP_USER_DATA_PATH = userDataDir;
 process.env.DEVSUITE_WEB_URL = `data:text/html;charset=utf-8,${encodeURIComponent(
   bootstrapHtml
-)}`;
+)}#devsuite-e2e`;
 process.env.DEVSUITE_DESKTOP_DISABLE_GPU = '1';
 process.env.DEVSUITE_DESKTOP_ENABLE_TEST_IPC = '1';
 
@@ -134,7 +128,7 @@ export const config = {
   reporters: ['spec'],
   mochaOpts: {
     ui: 'bdd',
-    timeout: 60_000,
+    timeout: 90_000,
   },
   autoXvfb: true,
   services: ['electron'],
@@ -142,13 +136,15 @@ export const config = {
     {
       browserName: 'electron',
       'wdio:electronServiceOptions': {
-        appBinaryPath: electronBinaryPath,
-        appArgs: [
-          join(projectRoot, 'dist', 'main.js'),
-          '--no-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-        ],
+        // Use appEntryPoint (not appBinaryPath) so the service launches the
+        // locally-installed Electron binary with our main.js as the entry
+        // point.  appBinaryPath is for packaged apps where the binary already
+        // contains the app code.
+        appEntryPoint: appEntryPointPath,
+        appArgs: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+        // Give the CDP bridge enough time to connect on cold Windows startup.
+        // Default is 10 000 ms which is too tight for first-run or CI.
+        cdpBridgeTimeout: 30_000,
       },
     },
   ],

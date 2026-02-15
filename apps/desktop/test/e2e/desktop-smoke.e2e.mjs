@@ -67,17 +67,55 @@ async function resetPolicyState() {
 }
 
 async function waitForDesktopBridge() {
-  await browser.waitUntil(async () => {
-    return await browser.execute(() => {
-      const runtimeWindow = globalThis.window;
-      return Boolean(
-        runtimeWindow?.desktopFocus &&
-        runtimeWindow?.desktopSession &&
-        runtimeWindow?.desktopPolicy &&
-        runtimeWindow?.desktopTest
-      );
-    });
-  });
+  let lastSnapshot = null;
+
+  const readSnapshot = () => {
+    const runtimeWindow = globalThis.window;
+    return {
+      url: runtimeWindow?.location?.href ?? null,
+      origin: runtimeWindow?.location?.origin ?? null,
+      hash: runtimeWindow?.location?.hash ?? null,
+      hasDesktopFocus: Boolean(runtimeWindow?.desktopFocus),
+      hasDesktopSession: Boolean(runtimeWindow?.desktopSession),
+      hasDesktopPolicy: Boolean(runtimeWindow?.desktopPolicy),
+      hasDesktopTest: Boolean(runtimeWindow?.desktopTest),
+    };
+  };
+
+  try {
+    await browser.waitUntil(
+      async () => {
+        lastSnapshot = await browser.execute(readSnapshot);
+        return (
+          lastSnapshot.hasDesktopFocus &&
+          lastSnapshot.hasDesktopSession &&
+          lastSnapshot.hasDesktopPolicy &&
+          lastSnapshot.hasDesktopTest
+        );
+      },
+      {
+        timeout: 20_000,
+        interval: 250,
+      }
+    );
+  } catch (error) {
+    const snapshot = lastSnapshot ?? (await browser.execute(readSnapshot));
+
+    const missingApis = [
+      ['desktopFocus', snapshot.hasDesktopFocus],
+      ['desktopSession', snapshot.hasDesktopSession],
+      ['desktopPolicy', snapshot.hasDesktopPolicy],
+      ['desktopTest', snapshot.hasDesktopTest],
+    ]
+      .filter(([, present]) => !present)
+      .map(([name]) => name);
+
+    throw new Error(
+      `Desktop bridge not ready. missing=[${missingApis.join(
+        ','
+      )}] url=${snapshot.url} origin=${snapshot.origin} hash=${snapshot.hash}`
+    );
+  }
 }
 
 describe('desktop e2e smoke', () => {
@@ -445,6 +483,20 @@ describe('desktop e2e smoke', () => {
   });
 
   it('clears task reminders when remaining task count reaches zero', async () => {
+    // First trigger at least one reminder so there is state to clear.
+    await publishSessionState({
+      status: 'RUNNING',
+      sessionId: 'e2e-session-1',
+      effectiveDurationMs: 15_000,
+      remainingTaskCount: 3,
+    });
+
+    await browser.waitUntil(async () => {
+      const events = await getPolicyAuditEvents();
+      return events.some(event => event.type === 'tasks_reminder_sent');
+    });
+
+    // Now publish with zero remaining tasks to trigger the clear.
     await publishSessionState({
       status: 'RUNNING',
       sessionId: 'e2e-session-1',
