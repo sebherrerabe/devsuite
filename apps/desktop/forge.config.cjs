@@ -7,7 +7,9 @@ const buildVersion = (
 module.exports = {
   packagerConfig: {
     asar: true,
+    derefSymlinks: true,
     executableName: 'DevSuite',
+    prune: false,
   },
   makers: [
     {

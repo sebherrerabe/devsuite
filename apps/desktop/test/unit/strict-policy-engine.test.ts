@@ -441,3 +441,147 @@ test('remaining task reminders escalate and stop when backlog clears', () => {
     true
   );
 });
+
+test('strict policy state can resume after restart without duplicate immediate prompts', () => {
+  const settings = createSettings({
+    strictMode: 'prompt_then_close',
+    reminderIntervalSeconds: 30,
+    graceSeconds: 60,
+  });
+
+  const initial = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 1_000,
+      settings,
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'code.exe',
+          pid: 333,
+          category: 'ide',
+          timestamp: 1_000,
+        },
+      ],
+    })
+  );
+
+  const resumedAfterRestart = evaluateStrictPolicy(
+    initial.nextState,
+    createInput({
+      nowMs: 10_000,
+      settings,
+      processEvents: [],
+    })
+  );
+
+  assert.equal(
+    resumedAfterRestart.actions.some(
+      action =>
+        action.type === 'notify' && action.kind === 'ide_session_required'
+    ),
+    false
+  );
+  assert.equal(
+    resumedAfterRestart.actions.some(action => action.type === 'close_process'),
+    false
+  );
+});
+
+test('fail-safe can recover after action volume drops', () => {
+  const settings = createSettings({
+    strictMode: 'prompt_then_close',
+    reminderIntervalSeconds: 1,
+    graceSeconds: 0,
+  });
+
+  const noisyState = {
+    ...createDefaultStrictPolicyState(),
+    failSafeActive: true,
+    recentActionTimestamps: [1_995, 1_996, 1_997],
+  };
+  const recovered = evaluateStrictPolicy(
+    noisyState,
+    createInput({
+      nowMs: 2_000,
+      settings,
+      processEvents: [],
+      sessionStatus: 'IDLE',
+    })
+  );
+
+  assert.equal(recovered.nextState.failSafeActive, false);
+  assert.equal(
+    recovered.auditEvents.some(event => event.type === 'fail_safe_recovered'),
+    true
+  );
+});
+
+test('close-process requests always emit matching audit events', () => {
+  const settings = createSettings({
+    strictMode: 'prompt_then_close',
+    appActionMode: 'warn_then_close',
+    reminderIntervalSeconds: 1,
+    graceSeconds: 0,
+  });
+
+  const ideClose = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 5_000,
+      settings,
+      sessionStatus: 'IDLE',
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'code.exe',
+          pid: 19,
+          category: 'ide',
+          timestamp: 1_000,
+        },
+      ],
+    })
+  );
+
+  assert.equal(
+    ideClose.actions.some(
+      action =>
+        action.type === 'close_process' && action.reason === 'ide_no_session'
+    ),
+    true
+  );
+  assert.equal(
+    ideClose.auditEvents.some(event => event.type === 'ide_close_requested'),
+    true
+  );
+
+  const appClose = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 5_000,
+      settings,
+      sessionStatus: 'RUNNING',
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'whatsapp.exe',
+          pid: 44,
+          category: 'app_block',
+          timestamp: 1_000,
+        },
+      ],
+    })
+  );
+
+  assert.equal(
+    appClose.actions.some(
+      action =>
+        action.type === 'close_process' && action.reason === 'distractor_app'
+    ),
+    true
+  );
+  assert.equal(
+    appClose.auditEvents.some(event => event.type === 'app_close_requested'),
+    true
+  );
+});

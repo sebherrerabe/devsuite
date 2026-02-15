@@ -25,6 +25,12 @@ This matrix is a release-gate input for `TASK-17-015`.
 | Website block-list enforcement               | Not enforced                                       | Signal-aware warn/escalate only; safe fallback when URL signal unavailable | Same settings schema; enforcement desktop-only                                            | `partial` | `apps/desktop/src/main.ts`, `apps/desktop/src/strict-policy-engine.ts`                    |
 | Settings management                          | User edits desktop focus settings in profile       | Same settings consumed by desktop runtime                                  | Shared schema/normalization through backend + desktop parser                              | `partial` | `convex/schema.ts`, `convex/userSettings.ts`, `apps/desktop/src/focus-settings.ts`        |
 
+## Backend Contract Validation Evidence
+
+- `apps/desktop/test/integration/backend-contract-parity.test.ts`: shared session/task status contract assertions and desktop transition parity checks.
+- `apps/desktop/test/e2e/desktop-smoke.e2e.mjs`: tenant-scope mismatch rejection assertions for focus/session/policy/process paths.
+- `apps/desktop/test/unit/strict-policy-engine.test.ts`: policy state transition, fail-safe, restart-resilience, and audit event coverage checks.
+
 ## Intentional Desktop-Only Behaviors
 
 | Behavior                        | Why Desktop-Only                     | Web Fallback                      | Owner               | Remediation Status          |
@@ -37,11 +43,11 @@ This matrix is a release-gate input for `TASK-17-015`.
 
 ## Known Deviations and Risks
 
-| Deviation                                                                         | Risk                                                 | Mitigation                                                                       | Owner         | Status |
-| --------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------- | ------------- | ------ |
-| Desktop E2E real install/auth evidence still pending on Windows runner            | Hidden first-run regressions                         | Run `.github/workflows/desktop-windows-e2e.yml` and attach report in `STATUS.md` | QA / Platform | Open   |
-| Process monitor overhead benchmark pending on Windows hardware                    | Potential runtime overhead under heavy process lists | Execute `TASK-17-007` benchmark evidence run and set thresholds                  | Platform      | Open   |
-| Tenant parity validation across multi-company contexts not fully evidenced in E2E | Scope bleed risk                                     | Add explicit multi-tenant E2E case in `TASK-17-014` Windows run                  | QA / Platform | Open   |
+| Deviation                                                                                       | Risk                                                 | Mitigation                                                                                            | Owner         | Status    |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------- | --------- |
+| Desktop E2E real install/auth evidence still pending on Windows runner                          | Hidden first-run regressions                         | Run `.github/workflows/desktop-windows-e2e.yml` and attach report in `STATUS.md`                      | QA / Platform | Open      |
+| Process monitor overhead benchmark pending on Windows hardware                                  | Potential runtime overhead under heavy process lists | Execute `TASK-17-007` benchmark evidence run and set thresholds                                       | Platform      | Open      |
+| Tenant parity validation across multi-company contexts lacked explicit negative-path assertions | Scope bleed risk                                     | Added explicit mismatch assertions in desktop E2E; keep Windows-run evidence as final execution proof | QA / Platform | Mitigated |
 
 ## Rollout Gate Usage (TASK-17-015)
 

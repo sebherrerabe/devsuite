@@ -23,7 +23,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.15.4
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -45,6 +45,9 @@ jobs:
 
       - name: Desktop unit tests
         run: pnpm --filter @devsuite/desktop test:unit
+
+      - name: Desktop integration contract tests
+        run: pnpm --filter @devsuite/desktop test:int
 
       - name: Desktop process monitor overhead benchmark
         env:

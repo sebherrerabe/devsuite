@@ -285,11 +285,15 @@ const trustedOrigins = resolveTrustedDesktopOrigins({
   webUrl: process.env.DEVSUITE_WEB_URL,
   nodeEnv: process.env.NODE_ENV,
 });
-const shouldExposeApis = shouldExposeDesktopApis({
-  currentOrigin: globalThis.location?.origin,
-  currentHash: globalThis.location?.hash,
-  trustedOrigins,
-});
+const shouldForceExposeApisForTestHarness =
+  process.env.DEVSUITE_DESKTOP_ENABLE_TEST_IPC === '1' &&
+  process.env.DEVSUITE_WEB_URL?.trim().startsWith('data:text/html');
+const shouldExposeApis =
+  shouldExposeDesktopApis({
+    currentOrigin: globalThis.location?.origin,
+    currentHash: globalThis.location?.hash,
+    trustedOrigins,
+  }) || shouldForceExposeApisForTestHarness;
 
 if (shouldExposeApis) {
   contextBridge.exposeInMainWorld('desktopFocus', desktopFocusApi);

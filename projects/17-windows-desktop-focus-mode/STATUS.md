@@ -57,23 +57,28 @@
 - [x] Added Electron permission policy: default-deny checks/requests with minimal trusted-origin allowlist and blocked device permissions (2026-02-14)
 - [x] Added deterministic process-monitor overhead benchmark harness (`test:process-overhead`) and wired it into Windows CI workflow (2026-02-14)
 - [x] Expanded desktop E2E coverage with tenant-scope mismatch rejection assertions for policy/process/session IPC paths (2026-02-14)
+- [x] Added desktop integration parity test suite (`test:int`) for shared session/task contract checks (2026-02-14)
+- [x] Added strict-policy resilience/audit tests for restart continuity, fail-safe recovery, and close-action audit pairing (2026-02-14)
+- [x] Added rollout artifacts for hardening gate execution (`ROLLOUT_CHECKLIST.md`, `TDD_EVIDENCE.md`) (2026-02-14)
+- [x] Completed TASK-17-003 tenant-scope auth/session bridge hardening acceptance criteria (2026-02-14)
+- [x] Completed TASK-17-016 shared backend contract parity validation criteria (2026-02-14)
+- [x] Passed web static regression gate (`pnpm --filter @devsuite/web build`) and documented runtime-regression evidence gap separately (2026-02-14)
 
 ### In Progress
 
-- [ ] TASK-17-003 auth + tenant session bridge hardening (tenant enforcement completeness and secure token pathway validation) (started: 2026-02-14)
 - [ ] TASK-17-007 process detection hardening (monitoring overhead validation on Windows target environments) (started: 2026-02-14)
 - [ ] TASK-17-013 installer/release hardening (Windows VM install/upgrade/uninstall validation evidence and first-run checks) (started: 2026-02-14)
 - [ ] TASK-17-014 critical-path E2E completion (tray/widget flow, IDE-triggered prompts, app-block escalation on Windows runners) (started: 2026-02-14)
-- [ ] TASK-17-016 compatibility validation completion (backend contract parity evidence + sign-off) (started: 2026-02-14)
+- [ ] TASK-17-015 hardening/audit/rollout closure (web regression runtime evidence + Windows-runner dependent gates) (started: 2026-02-14)
 - [ ] Dependency readiness validation against upstream session/task modules (started: 2026-02-14)
 
 ### Pending
 
 - [ ] Execute Windows VM validation for install/upgrade/uninstall and first-run smoke (`TASK-17-013` acceptance closure)
 - [ ] Collect first pass/fail evidence from Windows `desktop-windows-e2e` workflow runs (`TASK-17-014`)
-- [ ] Complete backend contract parity validation and sign-off owner handoff for `COMPATIBILITY_MATRIX.md` (`TASK-17-016`)
 - [ ] Collect pass/fail evidence for process-monitor overhead benchmark on Windows target hardware/runners (`TASK-17-007`)
 - [ ] Publish local desktop CI workflow to remote default branch/relevant PR branch so Windows evidence can execute in GitHub Actions (`TASK-17-013`/`TASK-17-014`)
+- [ ] Capture explicit runtime regression evidence for core web session/task/inbox flows beyond build/type static validation (`TASK-17-015`)
 
 ## Blockers
 
@@ -106,9 +111,11 @@
 | 2026-02-14 | Process-monitor performance gate runs in Windows CI via `test:process-overhead` with a `p95` latency threshold budget.                                                                                       | Adds deterministic overhead guardrail to reduce risk of focus-agent CPU regressions.                               | User + Codex |
 | 2026-02-14 | Electron window navigation policy is default-deny for non-trusted origins; external links are opened in the system browser, and extra trusted origins require explicit `DEVSUITE_DESKTOP_NAV_ALLOW_ORIGINS`. | Reduces attack surface from in-app navigation/popup abuse while retaining controlled auth/integration flexibility. | User + Codex |
 | 2026-02-14 | Electron permission policy is default-deny with explicit safe allowlist (`clipboard-sanitized-write`) gated by trusted origin checks.                                                                        | Minimizes browser-surface capability exposure while preserving low-risk clipboard workflows.                       | User + Codex |
+| 2026-02-14 | Added desktop `test:int` contract suite to keep shared session/task semantics aligned between desktop bridge and backend/shared contracts.                                                                   | Detects parity drift earlier than Windows runtime execution and supports TASK-17-016 closure on Linux.             | User + Codex |
 
 ## Notes
 
 - Enforcement actions must remain transparent, reversible by policy, and fully auditable.
 - Tenant isolation and no-hard-delete rules remain mandatory for all produced artifacts and data models.
 - Forced non-Windows E2E attempt (`DEVSUITE_E2E_ALLOW_NON_WINDOWS=1`) fails at Electron WebDriver bootstrap (`DevToolsActivePort`), so authoritative desktop evidence remains Windows-runner only.
+- Web app production build currently passes (`pnpm --filter @devsuite/web build`); runtime user-flow regression evidence still requires explicit interactive validation.

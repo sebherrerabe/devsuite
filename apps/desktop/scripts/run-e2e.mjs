@@ -10,9 +10,22 @@ if (process.platform !== 'win32' && !allowNonWindows) {
   process.exit(0);
 }
 
-const child = spawn('pnpm', ['exec', 'wdio', 'run', './wdio.e2e.conf.mjs'], {
+const pnpmExecPath = process.env.npm_execpath;
+const command = pnpmExecPath
+  ? process.execPath
+  : process.platform === 'win32'
+    ? 'pnpm.cmd'
+    : 'pnpm';
+const args = pnpmExecPath
+  ? [pnpmExecPath, 'exec', 'wdio', 'run', './wdio.e2e.conf.mjs']
+  : ['exec', 'wdio', 'run', './wdio.e2e.conf.mjs'];
+const childEnv = { ...process.env };
+
+delete childEnv.ELECTRON_RUN_AS_NODE;
+
+const child = spawn(command, args, {
   stdio: 'inherit',
-  env: process.env,
+  env: childEnv,
 });
 
 child.on('exit', code => {

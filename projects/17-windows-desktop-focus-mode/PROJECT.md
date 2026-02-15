@@ -103,6 +103,8 @@ Extends existing session/task architecture with a Windows desktop shell and loca
 - [Tasks](./TASKS.md)
 - [Test Matrix](./TEST_MATRIX.md)
 - [Compatibility Matrix](./COMPATIBILITY_MATRIX.md)
+- [Rollout Checklist](./ROLLOUT_CHECKLIST.md)
+- [TDD Evidence](./TDD_EVIDENCE.md)
 - [Status](./STATUS.md)
 
 ## Notes for AI PM
