@@ -96,16 +96,39 @@ Windows CI profile: `.github/workflows/desktop-windows-e2e.yml`
 
 ## Reporting Template
 
-| Field            | Value                  |
-| ---------------- | ---------------------- |
-| Build ID         | `TODO`                 |
-| Test Date        | `YYYY-MM-DD`           |
-| Environment      | `ENV-01/ENV-02/ENV-03` |
-| Total Cases      | `N`                    |
-| Passed           | `N`                    |
-| Failed           | `N`                    |
-| Waivers          | `None or linked`       |
-| Release Decision | `GO/NO-GO`             |
+### Local Validation Run (2026-02-15)
+
+| Field             | Value                                                         |
+| ----------------- | ------------------------------------------------------------- |
+| Build ID          | `local-dev (commit 981a071 + 52095bc)`                        |
+| Test Date         | `2026-02-15`                                                  |
+| Environment       | `ENV-01` (Windows 11 local dev machine)                       |
+| Unit Tests        | 46 passed, 0 failed                                           |
+| Integration Tests | 3 passed, 0 failed                                            |
+| E2E Tests         | 17 passed, 0 failed                                           |
+| Overhead Bench    | p95=12.47ms (budget=120ms) — PASS                             |
+| Install Smoke     | install/upgrade/uninstall — PASS                              |
+| Lint + Typecheck  | PASS (workspace-wide)                                         |
+| Web Regression    | `apps/web` build clean; no web-specific tests exist           |
+| Waivers           | None                                                          |
+| Release Decision  | GO (local); CI runner evidence pending for authoritative gate |
+
+### CI Validation Run (2026-02-15)
+
+| Field             | Value                                                             |
+| ----------------- | ----------------------------------------------------------------- |
+| Build ID          | `0.0.0-rc.2` (run #22036217569)                                   |
+| Test Date         | `2026-02-15`                                                      |
+| Environment       | `ENV-01` equivalent (windows-latest GitHub Actions runner)        |
+| Unit Tests        | 46 passed, 0 failed                                               |
+| Integration Tests | 3 passed, 0 failed                                                |
+| Overhead Bench    | PASS                                                              |
+| E2E Tests         | 17 passed, 0 failed                                               |
+| Make Win          | PASS (artifacts uploaded)                                         |
+| Install Smoke     | PASS                                                              |
+| Waivers           | None                                                              |
+| Release Decision  | GO                                                                |
+| CI Run URL        | https://github.com/sebherrerabe/devsuite/actions/runs/22036217569 |
 
 ## Traceability
 

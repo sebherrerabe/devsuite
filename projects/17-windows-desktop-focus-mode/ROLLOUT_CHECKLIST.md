@@ -8,18 +8,18 @@ Provide release gate checks, rollback instructions, and fallback behavior for `T
 
 ### Gate A: Static + Contract Validation (Linux/Any Host)
 
-- [ ] `pnpm --filter @devsuite/desktop build`
-- [ ] `pnpm --filter @devsuite/desktop test:unit`
-- [ ] `pnpm --filter @devsuite/desktop test:int`
-- [ ] `pnpm --filter @devsuite/desktop test:process-overhead`
-- [ ] `pnpm lint`
-- [ ] `pnpm typecheck`
+- [x] `pnpm --filter @devsuite/desktop build` — passed 2026-02-15
+- [x] `pnpm --filter @devsuite/desktop test:unit` — 46/46 passed 2026-02-15
+- [x] `pnpm --filter @devsuite/desktop test:int` — 3/3 passed 2026-02-15
+- [x] `pnpm --filter @devsuite/desktop test:process-overhead` — p95=12.47ms (budget=120ms), passed 2026-02-15
+- [x] `pnpm lint` — passed 2026-02-15
+- [x] `pnpm typecheck` — passed 2026-02-15
 
 ### Gate B: Windows Runtime Validation (Authoritative)
 
-- [ ] `pnpm --filter @devsuite/desktop make:win`
-- [ ] `pnpm --filter @devsuite/desktop test:install-smoke`
-- [ ] `pnpm --filter @devsuite/desktop test:e2e`
+- [x] `pnpm --filter @devsuite/desktop make:win` — artifacts produced 2026-02-15
+- [x] `pnpm --filter @devsuite/desktop test:install-smoke` — install/upgrade/uninstall all passed 2026-02-15 (root cause fix: Squirrel lifecycle handling in main.ts)
+- [x] `pnpm --filter @devsuite/desktop test:e2e` — 17/17 passed on local Windows 11, 2026-02-15 (root cause fix: esbuild preload bundling, appEntryPoint config)
 - [ ] Manual smoke:
   - [ ] tray start/pause/resume/end
   - [ ] widget timer + reconnection states
@@ -28,9 +28,9 @@ Provide release gate checks, rollback instructions, and fallback behavior for `T
 
 ### Gate C: Parity + Audit Validation
 
-- [ ] `COMPATIBILITY_MATRIX.md` parity row validation updated
-- [ ] tenant isolation checks pass for IPC and bridge actions
-- [ ] strict-policy audit events verified for notify/close/escalation paths
+- [x] `COMPATIBILITY_MATRIX.md` parity row validation updated (2026-02-14)
+- [x] tenant isolation checks pass for IPC and bridge actions (E2E tenant-scope mismatch tests pass 2026-02-15)
+- [x] strict-policy audit events verified for notify/close/escalation paths (unit + E2E policy audit tests pass 2026-02-15)
 
 ## Rollback Plan
 
