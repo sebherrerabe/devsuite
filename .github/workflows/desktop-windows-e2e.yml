@@ -46,6 +46,9 @@ jobs:
       - name: Desktop unit tests
         run: pnpm --filter @devsuite/desktop test:unit
 
+      - name: Desktop integration contract tests
+        run: pnpm --filter @devsuite/desktop test:int
+
       - name: Desktop process monitor overhead benchmark
         env:
           DEVSUITE_PROCESS_MONITOR_P95_MS: '120'

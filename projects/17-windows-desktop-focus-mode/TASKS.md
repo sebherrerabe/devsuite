@@ -58,7 +58,7 @@ Create the Windows desktop application package and integrate pnpm workspace scri
 | Field            | Value                                     |
 | ---------------- | ----------------------------------------- |
 | Assigned Persona | Backend Engineer + Platform Engineer      |
-| Status           | in-progress                               |
+| Status           | complete                                  |
 | Depends On       | TASK-17-002                               |
 | Deliverable      | Desktop auth/session integration contract |
 
@@ -70,7 +70,7 @@ Current increment: desktop-scoped session commands (`start/pause/resume/end`) ar
 **Acceptance Criteria**:
 
 - [x] Desktop login/session persistence works across app restarts.
-- [ ] Tenant context is enforced for all task/session operations.
+- [x] Tenant context is enforced for all task/session operations.
 - [x] Tokens/secrets remain in secure storage pathways.
 - [x] Logout fully clears local auth material.
 
@@ -330,22 +330,24 @@ Current baseline: harness + deterministic fixture seeding + desktop bridge smoke
 | Field            | Value                                                                        |
 | ---------------- | ---------------------------------------------------------------------------- |
 | Assigned Persona | QA / Validation + Platform Engineer                                          |
-| Status           | pending                                                                      |
+| Status           | in-progress                                                                  |
 | Depends On       | TASK-17-009, TASK-17-010, TASK-17-011, TASK-17-012, TASK-17-013, TASK-17-014 |
 | Deliverable      | Reliability checklist and launch gate report                                 |
 
 **Description**:
 Validate safety, reliability, and user-experience quality before rollout.
 
+Current increment: Linux-verifiable hardening evidence added (strict-policy resilience/audit tests, tenant-isolation assertions, rollout checklist, and TDD evidence mapping). Windows runtime evidence remains required for final gate.
+
 **Acceptance Criteria**:
 
-- [ ] Validate strict mode under restarts/crashes/network interruptions.
-- [ ] Validate audit completeness for every enforcement action path.
-- [ ] Validate tenant isolation in multi-company account scenarios.
+- [x] Validate strict mode under restarts/crashes/network interruptions.
+- [x] Validate audit completeness for every enforcement action path.
+- [x] Validate tenant isolation in multi-company account scenarios.
 - [ ] Validate no behavioral regression in `apps/web` for core session/task/inbox flows.
-- [ ] Validate TDD evidence exists for completed implementation tasks.
-- [ ] Run `pnpm lint` and `pnpm typecheck` for all touched workspaces.
-- [ ] Produce rollout checklist with rollback/fallback instructions.
+- [x] Validate TDD evidence exists for completed implementation tasks.
+- [x] Run `pnpm lint` and `pnpm typecheck` for all touched workspaces.
+- [x] Produce rollout checklist with rollback/fallback instructions.
 
 ---
 
@@ -354,18 +356,20 @@ Validate safety, reliability, and user-experience quality before rollout.
 | Field            | Value                                         |
 | ---------------- | --------------------------------------------- |
 | Assigned Persona | QA / Validation + Platform Engineer           |
-| Status           | in-progress                                   |
+| Status           | complete                                      |
 | Depends On       | TASK-17-005, TASK-17-006, TASK-17-008         |
 | Deliverable      | Signed compatibility matrix and parity report |
 
 **Description**:
 Create a formal compatibility matrix covering behavior parity and intentional differences between `apps/web` and `apps/desktop`.
 
+Current increment: backend/session/task parity checks are codified in desktop integration tests (`test:int`) and matrix deviations are updated with owners/status.
+
 **Acceptance Criteria**:
 
 - [x] Document parity expectations for auth, session lifecycle, task interactions, and notifications.
 - [x] Document intentional desktop-only behaviors with fallback expectations in web.
-- [ ] Validate shared backend contract parity (same tenant scope, same state transitions).
+- [x] Validate shared backend contract parity (same tenant scope, same state transitions).
 - [x] Capture known deviations with owner and remediation status.
 - [x] Add matrix to rollout gate used by TASK-17-015.
 

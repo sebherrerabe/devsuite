@@ -108,6 +108,29 @@ describe('desktop e2e smoke', () => {
     ]);
   });
 
+  it('rejects focus settings reads for mismatched tenant scope', async () => {
+    const message = await browser.execute(
+      async requestedScope => {
+        try {
+          await globalThis.window.desktopFocus.get(requestedScope);
+          return null;
+        } catch (error) {
+          if (error && typeof error === 'object' && 'message' in error) {
+            return String(error.message);
+          }
+          return String(error);
+        }
+      },
+      {
+        userId: TEST_SCOPE.userId,
+        companyId: 'mismatch-company',
+      }
+    );
+
+    assert.equal(typeof message, 'string');
+    assert.match(message, /scope mismatch/i);
+  });
+
   it('rejects policy audit reads for mismatched tenant scope', async () => {
     const message = await browser.execute(
       async requestedScope => {
@@ -182,6 +205,32 @@ describe('desktop e2e smoke', () => {
     assert.match(message, /scope mismatch/i);
   });
 
+  it('rejects session state publish for mismatched tenant scope', async () => {
+    const message = await browser.execute(
+      async ({ scope, state }) => {
+        try {
+          await globalThis.window.desktopSession.publishState(scope, state);
+          return null;
+        } catch (error) {
+          if (error && typeof error === 'object' && 'message' in error) {
+            return String(error.message);
+          }
+          return String(error);
+        }
+      },
+      {
+        scope: {
+          userId: TEST_SCOPE.userId,
+          companyId: 'wrong-company',
+        },
+        state: createConnectedSessionState(),
+      }
+    );
+
+    assert.equal(typeof message, 'string');
+    assert.match(message, /scope mismatch/i);
+  });
+
   it('rejects session state reads for mismatched tenant scope', async () => {
     const message = await browser.execute(
       async requestedScope => {
@@ -198,6 +247,33 @@ describe('desktop e2e smoke', () => {
       {
         userId: TEST_SCOPE.userId,
         companyId: 'another-company',
+      }
+    );
+
+    assert.equal(typeof message, 'string');
+    assert.match(message, /scope mismatch/i);
+  });
+
+  it('rejects policy override requests for mismatched tenant scope', async () => {
+    const message = await browser.execute(
+      async requestedScope => {
+        try {
+          await globalThis.window.desktopPolicy.applyOverride({
+            scope: requestedScope,
+            durationMs: 30_000,
+            reason: 'e2e_scope_mismatch',
+          });
+          return null;
+        } catch (error) {
+          if (error && typeof error === 'object' && 'message' in error) {
+            return String(error.message);
+          }
+          return String(error);
+        }
+      },
+      {
+        userId: 'wrong-user',
+        companyId: TEST_SCOPE.companyId,
       }
     );
 
@@ -233,6 +309,22 @@ describe('desktop e2e smoke', () => {
     await browser.waitUntil(
       async () => (await getSessionState()).status === 'IDLE'
     );
+  });
+
+  it('does not dispatch session actions while connection is syncing', async () => {
+    await publishSessionState({
+      status: 'IDLE',
+      connectionState: 'syncing',
+      updatedAt: Date.now(),
+    });
+
+    await browser.execute(async scope => {
+      await globalThis.window.desktopSession.requestAction(scope, 'start');
+    }, TEST_SCOPE);
+
+    await browser.pause(350);
+    const state = await getSessionState();
+    assert.equal(state.status, 'IDLE');
   });
 
   it('records IDE prompt audit when watched IDE starts without an active session', async () => {
