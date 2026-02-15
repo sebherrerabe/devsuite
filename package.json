@@ -5,7 +5,7 @@
   "description": "DevSuite - Developer Productivity Platform",
   "version": "0.0.0",
   "scripts": {
-    "dev": "pnpm -r --parallel run dev",
+    "dev": "pnpm -r --parallel --filter=!@devsuite/desktop run dev",
     "build": "pnpm -r run build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
