@@ -98,7 +98,7 @@ async function waitForDesktopBridge() {
         interval: 250,
       }
     );
-  } catch (error) {
+  } catch {
     const snapshot = lastSnapshot ?? (await browser.execute(readSnapshot));
 
     const missingApis = [

@@ -153,6 +153,31 @@ function Invoke-BoundedProcess {
   Write-Host "[desktop:install-smoke][$Phase] Completed successfully."
 }
 
+function Wait-ForDevSuiteRemoval {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $InstallRoot,
+    [Parameter(Mandatory = $true)]
+    [int] $TimeoutSeconds
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  do {
+    $matches = @()
+    if (Test-Path -Path $InstallRoot) {
+      $matches = @(Get-ChildItem -Path $InstallRoot -Recurse -Filter 'DevSuite.exe' -ErrorAction SilentlyContinue)
+    }
+
+    if ($matches.Count -eq 0) {
+      return $true
+    }
+
+    Start-Sleep -Seconds 1
+  } while ((Get-Date) -lt $deadline)
+
+  return $false
+}
+
 $scriptDir = Split-Path -Parent $PSCommandPath
 $desktopRoot = Split-Path -Parent $scriptDir
 $makeRoot = Join-Path $desktopRoot 'out/make'
@@ -172,9 +197,10 @@ if ($null -eq $setupCandidate) {
 $installTimeoutSeconds = Get-PositiveIntFromEnv -Name 'DEVSUITE_INSTALL_SMOKE_INSTALL_TIMEOUT_SECONDS' -DefaultValue 180
 $upgradeTimeoutSeconds = Get-PositiveIntFromEnv -Name 'DEVSUITE_INSTALL_SMOKE_UPGRADE_TIMEOUT_SECONDS' -DefaultValue 180
 $uninstallTimeoutSeconds = Get-PositiveIntFromEnv -Name 'DEVSUITE_INSTALL_SMOKE_UNINSTALL_TIMEOUT_SECONDS' -DefaultValue 180
+$uninstallSettleTimeoutSeconds = Get-PositiveIntFromEnv -Name 'DEVSUITE_INSTALL_SMOKE_UNINSTALL_SETTLE_TIMEOUT_SECONDS' -DefaultValue 30
 
 Write-Host "[desktop:install-smoke] Using installer: $($setupCandidate.FullName)"
-Write-Host "[desktop:install-smoke] Timeouts (s): install=$installTimeoutSeconds upgrade=$upgradeTimeoutSeconds uninstall=$uninstallTimeoutSeconds"
+Write-Host "[desktop:install-smoke] Timeouts (s): install=$installTimeoutSeconds upgrade=$upgradeTimeoutSeconds uninstall=$uninstallTimeoutSeconds uninstall_settle=$uninstallSettleTimeoutSeconds"
 
 $installRoot = Join-Path $env:LOCALAPPDATA 'devsuite_desktop'
 $updateExe = Join-Path $installRoot 'Update.exe'
@@ -217,15 +243,18 @@ try {
   Write-Host '[desktop:install-smoke] Upgrade check passed.'
 
   Invoke-BoundedProcess -Phase 'uninstall' -FilePath $updateExe -Arguments @('--uninstall', '-s') -TimeoutSeconds $uninstallTimeoutSeconds
-  Start-Sleep -Seconds 4
+  Start-Sleep -Seconds 2
 
   $appCandidatesAfterUninstall = @()
   if (Test-Path -Path $installRoot) {
     $appCandidatesAfterUninstall = @(Get-ChildItem -Path $installRoot -Recurse -Filter 'DevSuite.exe')
   }
 
-  if ($appCandidatesAfterUninstall.Count -gt 0) {
-    throw "Uninstall check failed: DevSuite.exe still present under $installRoot"
+  if ($appCandidatesAfterUninstall.Count -gt 0 -and -not (Wait-ForDevSuiteRemoval -InstallRoot $installRoot -TimeoutSeconds $uninstallSettleTimeoutSeconds)) {
+    $appCandidatesAfterUninstall = @(Get-ChildItem -Path $installRoot -Recurse -Filter 'DevSuite.exe' -ErrorAction SilentlyContinue)
+    $paths = @($appCandidatesAfterUninstall | Select-Object -ExpandProperty FullName)
+    $pathDetails = if ($paths.Count -gt 0) { $paths -join '; ' } else { '(none)' }
+    throw "Uninstall check failed: DevSuite.exe still present under $installRoot. Remaining files: $pathDetails"
   }
 
   Write-Host '[desktop:install-smoke] Uninstall check passed.'

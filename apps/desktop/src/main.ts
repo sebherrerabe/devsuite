@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
-import { execFile } from 'node:child_process';
-import { dirname, join } from 'node:path';
+import { execFile, spawn } from 'node:child_process';
+import { basename, dirname, join } from 'node:path';
 import { clearInterval, setInterval } from 'node:timers';
 import { promisify } from 'node:util';
 import { URL, fileURLToPath } from 'node:url';
@@ -74,6 +74,51 @@ const {
   nativeImage,
   Notification,
 } = require('electron') as typeof import('electron');
+// ---------------------------------------------------------------------------
+// Squirrel.Windows lifecycle events
+// ---------------------------------------------------------------------------
+// During install, update, and uninstall Squirrel spawns the app with a special
+// --squirrel-* argument.  The app must manage desktop shortcuts and quit within
+// ~15 seconds or Squirrel cancels the hook and the operation fails silently.
+// See: https://www.electronforge.io/config/makers/squirrel.windows#handling-startup-events
+let isSquirrelStartup = false;
+
+if (process.platform === 'win32') {
+  const squirrelArg = process.argv[1];
+  if (
+    typeof squirrelArg === 'string' &&
+    squirrelArg.startsWith('--squirrel-')
+  ) {
+    isSquirrelStartup = true;
+    const updateExe = join(dirname(process.execPath), '..', 'Update.exe');
+    const appExeName = basename(process.execPath);
+
+    if (
+      squirrelArg === '--squirrel-install' ||
+      squirrelArg === '--squirrel-updated'
+    ) {
+      try {
+        spawn(updateExe, ['--createShortcut=' + appExeName], {
+          detached: true,
+        });
+      } catch {
+        /* best effort */
+      }
+    } else if (squirrelArg === '--squirrel-uninstall') {
+      try {
+        spawn(updateExe, ['--removeShortcut=' + appExeName], {
+          detached: true,
+        });
+      } catch {
+        /* best effort */
+      }
+    }
+
+    // Quit immediately — do not proceed with normal app initialisation.
+    app.quit();
+  }
+}
+
 const DESKTOP_PARTITION = 'persist:devsuite';
 const SESSION_COMMAND_CHANNEL = 'desktop-session:command';
 const SESSION_STATE_CHANGED_CHANNEL = 'desktop-session:state-changed';
@@ -1466,35 +1511,37 @@ async function ensureMainWindow(options?: {
   return mainWindowRef;
 }
 
-app.whenReady().then(async () => {
-  registerIpcHandlers();
-  setDesktopScope(await loadDesktopSessionScope());
-  applyDesktopPermissionPolicy();
-  ensureTray();
-  if (!policyTickTimer) {
-    policyTickTimer = setInterval(() => {
-      void evaluateAndRunStrictPolicy();
-    }, POLICY_TICK_INTERVAL_MS);
-  }
-  await ensureMainWindow({ show: true });
+if (!isSquirrelStartup) {
+  app.whenReady().then(async () => {
+    registerIpcHandlers();
+    setDesktopScope(await loadDesktopSessionScope());
+    applyDesktopPermissionPolicy();
+    ensureTray();
+    if (!policyTickTimer) {
+      policyTickTimer = setInterval(() => {
+        void evaluateAndRunStrictPolicy();
+      }, POLICY_TICK_INTERVAL_MS);
+    }
+    await ensureMainWindow({ show: true });
 
-  app.on('activate', async () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      await ensureMainWindow({ show: true });
+    app.on('activate', async () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        await ensureMainWindow({ show: true });
+      }
+    });
+  });
+
+  app.on('before-quit', () => {
+    processMonitor.stop();
+    if (policyTickTimer) {
+      clearInterval(policyTickTimer);
+      policyTickTimer = null;
     }
   });
-});
 
-app.on('before-quit', () => {
-  processMonitor.stop();
-  if (policyTickTimer) {
-    clearInterval(policyTickTimer);
-    policyTickTimer = null;
-  }
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
+}
