@@ -66,8 +66,23 @@ async function resetPolicyState() {
   });
 }
 
+async function waitForDesktopBridge() {
+  await browser.waitUntil(async () => {
+    return await browser.execute(() => {
+      const runtimeWindow = globalThis.window;
+      return Boolean(
+        runtimeWindow?.desktopFocus &&
+        runtimeWindow?.desktopSession &&
+        runtimeWindow?.desktopPolicy &&
+        runtimeWindow?.desktopTest
+      );
+    });
+  });
+}
+
 describe('desktop e2e smoke', () => {
   beforeEach(async () => {
+    await waitForDesktopBridge();
     await resetPolicyState();
     await publishSessionState();
   });

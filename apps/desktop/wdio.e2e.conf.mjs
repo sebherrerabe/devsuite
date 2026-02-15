@@ -6,6 +6,13 @@ const currentFile = fileURLToPath(import.meta.url);
 const projectRoot = dirname(currentFile);
 const fixtureDir = join(projectRoot, 'test', 'fixtures');
 const userDataDir = join(projectRoot, '.tmp', 'wdio-user-data');
+const electronBinaryPath = join(
+  projectRoot,
+  'node_modules',
+  'electron',
+  'dist',
+  'electron.exe'
+);
 
 const fixtureFiles = [
   'desktop-session-scope.json',
@@ -135,11 +142,13 @@ export const config = {
     {
       browserName: 'electron',
       'wdio:electronServiceOptions': {
-        appEntryPoint: join(projectRoot, 'dist', 'main.js'),
-        appArgs: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-      },
-      'goog:chromeOptions': {
-        args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+        appBinaryPath: electronBinaryPath,
+        appArgs: [
+          join(projectRoot, 'dist', 'main.js'),
+          '--no-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+        ],
       },
     },
   ],

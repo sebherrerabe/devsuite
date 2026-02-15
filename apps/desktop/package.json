@@ -2,6 +2,7 @@
   "name": "@devsuite/desktop",
   "version": "0.0.0",
   "description": "Windows desktop shell for DevSuite",
+  "author": "DevSuite",
   "private": true,
   "type": "module",
   "main": "dist/main.js",
@@ -19,17 +20,18 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@devsuite/shared": "workspace:^",
-    "electron": "^30.5.1"
+    "@devsuite/shared": "workspace:^"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.8.1",
+    "@electron-forge/core": "^7.8.1",
     "@electron-forge/maker-squirrel": "^7.8.1",
     "@wdio/cli": "^9.20.0",
     "@wdio/local-runner": "^9.20.0",
     "@wdio/mocha-framework": "^9.20.0",
     "@wdio/spec-reporter": "^9.20.0",
     "@types/node": "^25.1.0",
+    "electron": "^30.5.1",
     "expect-webdriverio": "^5.4.3",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
