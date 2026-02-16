@@ -57,6 +57,7 @@ const DEFAULT_DESKTOP_FOCUS_SETTINGS: DesktopFocusSettingsState = {
   graceSeconds: 45,
   reminderIntervalSeconds: 120,
 };
+const DEFAULT_COMPANION_SHORTCUT = 'Ctrl+Alt+D';
 
 function getSessionUserId(sessionData: unknown): string | null {
   if (!sessionData || typeof sessionData !== 'object') {
@@ -166,9 +167,15 @@ function ProfileSettingsPage() {
   const [desktopReminderSeconds, setDesktopReminderSeconds] = useState(
     String(DEFAULT_DESKTOP_FOCUS_SETTINGS.reminderIntervalSeconds)
   );
+  const [desktopCompanionShortcut, setDesktopCompanionShortcut] = useState(
+    DEFAULT_COMPANION_SHORTCUT
+  );
   const [isSaving, setIsSaving] = useState(false);
   const isDesktopRuntime =
     typeof window !== 'undefined' && typeof window.desktopFocus !== 'undefined';
+  const hasDesktopCompanionApi =
+    typeof window !== 'undefined' &&
+    typeof window.desktopCompanion !== 'undefined';
 
   useEffect(() => {
     if (settings?.timezone) {
@@ -199,6 +206,31 @@ function ProfileSettingsPage() {
     setDesktopGraceSeconds(String(desktopFocus.graceSeconds));
     setDesktopReminderSeconds(String(desktopFocus.reminderIntervalSeconds));
   }, [settings?.desktopFocus]);
+
+  useEffect(() => {
+    if (!hasDesktopCompanionApi) {
+      setDesktopCompanionShortcut(DEFAULT_COMPANION_SHORTCUT);
+      return;
+    }
+
+    let active = true;
+    void window.desktopCompanion
+      ?.getShortcut()
+      .then(shortcut => {
+        if (active) {
+          setDesktopCompanionShortcut(shortcut);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setDesktopCompanionShortcut(DEFAULT_COMPANION_SHORTCUT);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [hasDesktopCompanionApi]);
 
   const toggleModule = (module: AppModule, enabled: boolean) => {
     setModuleFlags(prev => {
@@ -270,6 +302,14 @@ function ProfileSettingsPage() {
           { userId, companyId },
           desktopFocusPayload
         );
+      }
+      if (hasDesktopCompanionApi) {
+        const savedShortcut = await window.desktopCompanion?.setShortcut(
+          desktopCompanionShortcut
+        );
+        if (savedShortcut) {
+          setDesktopCompanionShortcut(savedShortcut);
+        }
       }
 
       showToast.success('Profile settings updated');
@@ -343,6 +383,10 @@ function ProfileSettingsPage() {
           </p>
           <p className="text-xs text-muted-foreground">
             Runtime: {isDesktopRuntime ? 'Desktop bridge detected' : 'Web only'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Companion API:{' '}
+            {hasDesktopCompanionApi ? 'Available' : 'Not available'}
           </p>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
@@ -523,6 +567,20 @@ function ProfileSettingsPage() {
                 }
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-medium">Companion Shortcut</label>
+            <Input
+              value={desktopCompanionShortcut}
+              onChange={event =>
+                setDesktopCompanionShortcut(event.target.value)
+              }
+              placeholder={DEFAULT_COMPANION_SHORTCUT}
+              disabled={!hasDesktopCompanionApi}
+            />
+            <p className="text-xs text-muted-foreground">
+              Electron accelerator used to open the companion window.
+            </p>
           </div>
         </div>
         <Button onClick={handleSave} disabled={isSaving}>

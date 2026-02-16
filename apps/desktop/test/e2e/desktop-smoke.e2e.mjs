@@ -68,6 +68,7 @@ async function resetPolicyState() {
 
 async function waitForDesktopBridge() {
   let lastSnapshot = null;
+  let lastHandle = null;
 
   const readSnapshot = () => {
     const runtimeWindow = globalThis.window;
@@ -82,9 +83,28 @@ async function waitForDesktopBridge() {
     };
   };
 
+  const focusHarnessWindow = async () => {
+    const handles = await browser.getWindowHandles();
+    for (const handle of handles) {
+      await browser.switchToWindow(handle);
+      const hash = await browser.execute(
+        () => globalThis.window?.location?.hash ?? null
+      );
+      if (hash === '#devsuite-e2e') {
+        lastHandle = handle;
+        return;
+      }
+    }
+
+    if (lastHandle) {
+      await browser.switchToWindow(lastHandle);
+    }
+  };
+
   try {
     await browser.waitUntil(
       async () => {
+        await focusHarnessWindow();
         lastSnapshot = await browser.execute(readSnapshot);
         return (
           lastSnapshot.hasDesktopFocus &&
@@ -159,6 +179,15 @@ describe('desktop e2e smoke', () => {
       'x.com',
       'instagram.com',
     ]);
+  });
+
+  it('show-companion IPC handler responds', async () => {
+    const opened = await browser.execute(async () => {
+      await globalThis.window.desktopSession.showCompanion();
+      return true;
+    });
+
+    assert.equal(opened, true);
   });
 
   it('rejects focus settings reads for mismatched tenant scope', async () => {

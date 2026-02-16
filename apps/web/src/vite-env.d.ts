@@ -131,12 +131,17 @@ interface Window {
       scope: DesktopSettingsScope,
       action: DesktopSessionAction
     ) => Promise<void>;
+    showCompanion: () => Promise<void>;
     onCommand: (
       listener: (command: DesktopSessionCommand) => void | Promise<void>
     ) => () => void;
     onStateChanged: (
       listener: (state: DesktopSessionState) => void | Promise<void>
     ) => () => void;
+  };
+  desktopCompanion?: {
+    getShortcut: () => Promise<string>;
+    setShortcut: (shortcut: string) => Promise<string>;
   };
   desktopNotification?: {
     emit: (payload: {
