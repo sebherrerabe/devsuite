@@ -1,13 +1,15 @@
 ---
 id: '16-ticktick-integration'
 title: 'TickTick Integration'
-status: 'pending'
+status: 'standby'
 priority: 13
 assigned_pm: null
 depends_on: ['07-task-module']
 unlocks: []
 estimated_complexity: 'low'
 ---
+
+This project might not be implemented at all for now.
 
 # TickTick Integration
 
