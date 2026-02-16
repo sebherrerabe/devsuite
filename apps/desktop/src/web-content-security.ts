@@ -12,6 +12,15 @@ export function normalizeHttpOrigin(rawUrl: string): string | null {
   }
 }
 
+function isBundledRendererUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new globalThis.URL(rawUrl);
+    return parsed.protocol === 'devsuite:' && parsed.hostname === 'app';
+  } catch {
+    return false;
+  }
+}
+
 function parseAdditionalOrigins(rawOrigins: string | undefined): Set<string> {
   const origins = new Set<string>();
   const value = rawOrigins?.trim();
@@ -62,6 +71,10 @@ export function shouldAllowInAppNavigation(params: {
   }
 
   if (normalized.startsWith('data:text/html')) {
+    return true;
+  }
+
+  if (isBundledRendererUrl(params.url)) {
     return true;
   }
 
