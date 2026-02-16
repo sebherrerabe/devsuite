@@ -10,7 +10,7 @@ module.exports = {
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
-    createDesktopIcon: true,
+    createDesktopShortcut: true,
     createStartMenuShortcut: true,
     installerIcon: 'assets/icon.ico',
     uninstallerIcon: 'assets/icon.ico',
