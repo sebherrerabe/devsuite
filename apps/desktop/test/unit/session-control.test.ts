@@ -16,6 +16,7 @@ test('parseDesktopSessionState accepts a valid payload', () => {
     connectionState: 'connected',
     lastError: null,
     updatedAt: 1739555000000,
+    publishedAt: 1739555001000,
   });
 
   assert.deepEqual(parsed, {
@@ -26,6 +27,7 @@ test('parseDesktopSessionState accepts a valid payload', () => {
     connectionState: 'connected',
     lastError: null,
     updatedAt: 1739555000000,
+    publishedAt: 1739555001000,
   });
 });
 
@@ -99,6 +101,20 @@ test('parseDesktopSessionState rejects invalid payloads', () => {
       }),
     /connectionState must be one of/
   );
+});
+
+test('parseDesktopSessionState defaults publishedAt to updatedAt', () => {
+  const parsed = parseDesktopSessionState({
+    status: 'IDLE',
+    sessionId: null,
+    effectiveDurationMs: 0,
+    remainingTaskCount: null,
+    connectionState: 'connected',
+    lastError: null,
+    updatedAt: 1739555000000,
+  });
+
+  assert.equal(parsed.publishedAt, 1739555000000);
 });
 
 test('parseDesktopSessionCommand validates scope, action and timestamp', () => {

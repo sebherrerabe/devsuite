@@ -17,11 +17,15 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { User, LogOut, Menu } from 'lucide-react';
 import { useCurrentCompany } from '@/lib/company-context';
+import { WindowControls } from './window-controls';
 
 export function Header() {
   const { data: session } = authClient.useSession();
   const { isModuleEnabled } = useCurrentCompany();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const hasDesktopWindowControls =
+    typeof window !== 'undefined' &&
+    typeof window.desktopWindow !== 'undefined';
 
   const handleSignOut = async () => {
     if (window.desktopAuth) {
@@ -39,8 +43,12 @@ export function Header() {
   };
 
   return (
-    <header className="fixed top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-14 items-center px-4 md:px-6">
+    <header
+      className={`fixed top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 [&_a]:[-webkit-app-region:no-drag] [&_button]:[-webkit-app-region:no-drag] ${hasDesktopWindowControls ? '[-webkit-app-region:drag]' : ''}`}
+    >
+      <div
+        className={`flex h-14 items-center px-4 md:px-6 ${hasDesktopWindowControls ? 'md:pr-[136px]' : ''}`}
+      >
         <div className="flex items-center gap-3 md:gap-6">
           <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
             <SheetTrigger asChild>
@@ -116,6 +124,7 @@ export function Header() {
           </DropdownMenu>
         </div>
       </div>
+      {hasDesktopWindowControls ? <WindowControls /> : null}
     </header>
   );
 }

@@ -1,5 +1,6 @@
 import type { DesktopFocusSettings } from './focus-settings.js';
 import type { DesktopProcessEvent } from './process-monitor.js';
+import { runtimeLog, type RuntimeLogWriter } from './runtime-logger.js';
 import type { DesktopSessionState } from './session-control.js';
 
 type SessionStatus = DesktopSessionState['status'];
@@ -357,7 +358,8 @@ function normalizeRemainingTaskCount(value: number | null): number | null {
 
 export function evaluateStrictPolicy(
   state: StrictPolicyState,
-  input: StrictPolicyInput
+  input: StrictPolicyInput,
+  logger: RuntimeLogWriter = runtimeLog
 ): StrictPolicyEvaluationResult {
   const auditEvents: StrictPolicyAuditEvent[] = [];
   const actions: StrictPolicyAction[] = [];
@@ -425,8 +427,21 @@ export function evaluateStrictPolicy(
         const existingEntry = appEntries[key];
         const entry = existingEntry ?? createEntry(event);
         appEntries[key] = entry;
+        const shouldEnforce = sessionIsActive && !overrideActive;
 
-        if (sessionIsActive && !overrideActive) {
+        logger.debug(
+          'strict-policy',
+          `app_block rule evaluated: executable=${entry.executable}, pid=${entry.pid}, sessionActive=${sessionIsActive}, overrideActive=${overrideActive}, result=${shouldEnforce ? 'action' : 'skip'}`
+        );
+
+        if (!existingEntry) {
+          logger.info(
+            'strict-policy',
+            `app entry created: ${entry.executable}:${entry.pid}, reason=process_started`
+          );
+        }
+
+        if (shouldEnforce) {
           actions.push(
             buildAppPromptNotification({
               scope: input.scope,
@@ -444,7 +459,12 @@ export function evaluateStrictPolicy(
           );
         }
       } else if (event.type === 'process_stopped' && appEntries[key]) {
+        const clearedEntry = appEntries[key];
         delete appEntries[key];
+        logger.info(
+          'strict-policy',
+          `app entry cleared: ${clearedEntry.executable}:${clearedEntry.pid}, reason=process_stopped`
+        );
         auditEvents.push(
           toAuditEvent('app_entry_cleared', event.timestamp, {
             executable: event.executable,
@@ -463,8 +483,14 @@ export function evaluateStrictPolicy(
       const existingEntry = websiteEntries[key];
       const entry = existingEntry ?? createWebsiteEntry(event);
       websiteEntries[key] = entry;
+      const shouldEnforce = sessionIsActive && !overrideActive;
 
-      if (sessionIsActive && !overrideActive) {
+      logger.debug(
+        'strict-policy',
+        `website rule evaluated: domain=${entry.domain}, sessionActive=${sessionIsActive}, result=${shouldEnforce ? 'action' : 'skip'}`
+      );
+
+      if (shouldEnforce) {
         actions.push(
           buildWebsitePromptNotification({
             scope: input.scope,
@@ -511,6 +537,10 @@ export function evaluateStrictPolicy(
 
   if (!sessionIsActive) {
     for (const entry of Object.values(appEntries)) {
+      logger.info(
+        'strict-policy',
+        `app entry cleared: ${entry.executable}:${entry.pid}, reason=session_inactive`
+      );
       auditEvents.push(
         toAuditEvent('app_entry_cleared', input.nowMs, {
           executable: entry.executable,

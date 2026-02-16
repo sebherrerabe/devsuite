@@ -4,6 +4,15 @@ import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { authClient } from '@/lib/auth';
 import { useCurrentCompany } from '@/lib/company-context';
+import {
+  createDesktopPublishTimestamps,
+  DESKTOP_STATE_PUBLISH_INTERVAL_MS,
+} from './desktop-session-bridge-config';
+import {
+  logDesktopBridgeCommandFailed,
+  logDesktopBridgeCommandReceived,
+  logDesktopBridgePublish,
+} from './desktop-session-bridge-logging';
 
 interface DesktopScope {
   userId: string;
@@ -240,6 +249,9 @@ export function DesktopSessionBridge() {
     const nextConnectionState: DesktopBridgeConnectionState = commandError
       ? 'error'
       : connectionState;
+    const { updatedAt, publishedAt } = createDesktopPublishTimestamps(
+      Date.now()
+    );
 
     const payload = {
       status: activeSessionStatus,
@@ -248,8 +260,15 @@ export function DesktopSessionBridge() {
       remainingTaskCount,
       connectionState: nextConnectionState,
       lastError: commandError,
-      updatedAt: Date.now(),
+      updatedAt,
+      publishedAt,
     };
+    logDesktopBridgePublish({
+      status: payload.status,
+      effectiveDurationMs: payload.effectiveDurationMs,
+      connectionState: payload.connectionState,
+      updatedAt: payload.updatedAt,
+    });
 
     void window.desktopSession.publishState(scope, payload).catch(error => {
       console.warn('[desktop] Failed to publish desktop session state.', error);
@@ -276,7 +295,7 @@ export function DesktopSessionBridge() {
 
     const interval = window.setInterval(() => {
       publishDesktopState();
-    }, 15000);
+    }, DESKTOP_STATE_PUBLISH_INTERVAL_MS);
     return () => {
       window.clearInterval(interval);
     };
@@ -390,6 +409,11 @@ export function DesktopSessionBridge() {
         return;
       }
 
+      logDesktopBridgeCommandReceived({
+        action: command.action,
+        status: snapshot.activeStatus,
+      });
+
       if (commandInFlightRef.current) {
         return;
       }
@@ -451,10 +475,10 @@ export function DesktopSessionBridge() {
         setCommandError(null);
       } catch (error) {
         setCommandError(normalizeErrorMessage(error));
-        console.warn(
-          '[desktop] Failed to execute desktop session command.',
-          error
-        );
+        logDesktopBridgeCommandFailed({
+          action: command.action,
+          error,
+        });
       } finally {
         commandInFlightRef.current = false;
       }

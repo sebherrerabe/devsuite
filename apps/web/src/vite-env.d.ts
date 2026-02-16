@@ -57,6 +57,7 @@ interface DesktopSessionState {
   connectionState: DesktopSessionConnectionState;
   lastError: string | null;
   updatedAt: number;
+  publishedAt?: number;
 }
 
 interface DesktopSessionCommand {
@@ -189,5 +190,14 @@ interface Window {
       scope: DesktopSettingsScope;
       overrideUntilMs: number | null;
     }>;
+  };
+  desktopWindow?: {
+    minimize: () => Promise<void>;
+    maximize: () => Promise<void>;
+    close: () => Promise<void>;
+    isMaximized: () => Promise<boolean>;
+    onMaximizeChange: (
+      listener: (maximized: boolean) => void | Promise<void>
+    ) => () => void;
   };
 }

@@ -1,10 +1,8 @@
 import { createRequire } from 'node:module';
-import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { clearInterval, setInterval } from 'node:timers';
-import { promisify } from 'node:util';
 import { URL, fileURLToPath } from 'node:url';
 import type {
   BrowserWindow as BrowserWindowType,
@@ -53,6 +51,12 @@ import {
   type DesktopProcessEvent,
 } from './process-monitor.js';
 import {
+  blockDomains,
+  cleanupStaleBlocks,
+  reconcileDomains,
+  unblockAll,
+} from './hosts-manager.js';
+import {
   applyStrictPolicyOverride,
   createDefaultStrictPolicyState,
   evaluateStrictPolicy,
@@ -60,6 +64,18 @@ import {
   type StrictPolicyAuditEvent,
   type StrictPolicyState,
 } from './strict-policy-engine.js';
+import { executeStrictPolicyActions } from './strict-policy-actions.js';
+import { runtimeLog } from './runtime-logger.js';
+import { broadcastDesktopSessionStateToWindows } from './session-state-broadcast.js';
+import { createSessionWidgetHtml } from './session-widget-html.js';
+import {
+  getSessionWidgetWindowOptions,
+  positionWidgetBottomRight,
+} from './widget-window.js';
+import {
+  registerDesktopWindowIpcHandlers,
+  wireDesktopWindowMaximizeEvents,
+} from './window-controls-ipc.js';
 import {
   resolveAllowedDesktopNavigationOrigins,
   shouldAllowInAppNavigation,
@@ -83,6 +99,7 @@ const {
   nativeImage,
   Notification,
   globalShortcut,
+  screen,
 } = require('electron') as typeof import('electron');
 const DESKTOP_PARTITION = 'persist:devsuite';
 const SESSION_COMMAND_CHANNEL = 'desktop-session:command';
@@ -210,7 +227,6 @@ let policyTickTimer: ReturnType<typeof setInterval> | null = null;
 let rendererProtocolRegistered = false;
 let companionShortcut = DEFAULT_COMPANION_SHORTCUT;
 let registeredCompanionShortcut: string | null = null;
-const execFileAsync = promisify(execFile);
 const allowedDesktopNavigationOrigins = resolveAllowedDesktopNavigationOrigins({
   webUrl: process.env.DEVSUITE_WEB_URL,
   nodeEnv: process.env.NODE_ENV,
@@ -332,13 +348,36 @@ function getDesktopSessionStateSnapshot(): DesktopSessionState {
   };
 }
 
+function isRunningOrPaused(status: DesktopSessionState['status']): boolean {
+  return status === 'RUNNING' || status === 'PAUSED';
+}
+
+async function syncHostsBlockingForSessionTransition(params: {
+  previousStatus: DesktopSessionState['status'];
+  nextStatus: DesktopSessionState['status'];
+  domains: string[];
+}): Promise<void> {
+  if (params.previousStatus === 'IDLE' && params.nextStatus === 'RUNNING') {
+    await blockDomains(params.domains);
+    return;
+  }
+
+  if (
+    isRunningOrPaused(params.previousStatus) &&
+    params.nextStatus === 'IDLE'
+  ) {
+    await unblockAll();
+  }
+}
+
 function broadcastDesktopSessionState(): void {
   const snapshot = getDesktopSessionStateSnapshot();
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) {
-      window.webContents.send(SESSION_STATE_CHANGED_CHANNEL, snapshot);
-    }
-  }
+  broadcastDesktopSessionStateToWindows({
+    windows: BrowserWindow.getAllWindows(),
+    channel: SESSION_STATE_CHANGED_CHANNEL,
+    snapshot,
+    logger: runtimeLog,
+  });
 }
 
 function appendProcessEvents(events: DesktopProcessEvent[]): void {
@@ -529,47 +568,6 @@ async function reconcileBlockedWebsiteSignals(): Promise<void> {
   }
 }
 
-async function executeStrictPolicyActions(
-  scope: DesktopSettingsScope,
-  actions: ReturnType<typeof evaluateStrictPolicy>['actions']
-): Promise<void> {
-  for (const action of actions) {
-    if (action.type === 'notify') {
-      await emitDesktopNotification({
-        scope,
-        kind: action.kind,
-        title: action.title,
-        body: action.body,
-        action: action.action,
-        route: action.route,
-        throttleKey: action.throttleKey,
-        throttleMs: action.throttleMs,
-      });
-      if (action.kind === 'ide_session_required') {
-        void showSessionWidget();
-      }
-      continue;
-    }
-
-    if (action.type === 'close_process' && process.platform === 'win32') {
-      try {
-        await execFileAsync('taskkill', ['/PID', `${action.pid}`, '/F', '/T'], {
-          windowsHide: true,
-          timeout: 8_000,
-          maxBuffer: 1024 * 1024,
-        });
-      } catch (error) {
-        console.warn('[desktop] Failed to close process from policy action.', {
-          executable: action.executable,
-          pid: action.pid,
-          reason: action.reason,
-          error,
-        });
-      }
-    }
-  }
-}
-
 async function evaluateAndRunStrictPolicy(input?: {
   processEvents?: DesktopProcessEvent[];
   websiteEvents?: DesktopWebsiteEvent[];
@@ -593,7 +591,16 @@ async function evaluateAndRunStrictPolicy(input?: {
     });
     strictPolicyState = evaluation.nextState;
     appendPolicyAuditEvents(evaluation.auditEvents, activeScope);
-    await executeStrictPolicyActions(activeScope, evaluation.actions);
+    await executeStrictPolicyActions({
+      scope: activeScope,
+      actions: evaluation.actions,
+      dependencies: {
+        emitNotification: emitDesktopNotification,
+        showSessionWidget,
+        logger: runtimeLog,
+        platform: process.platform,
+      },
+    });
   } catch (error) {
     console.warn('[desktop] Strict policy evaluation failed.', error);
   }
@@ -606,6 +613,7 @@ async function refreshProcessMonitorForScope(
   if (!scope) {
     desktopFocusSettings = createDefaultDesktopFocusSettings();
     processMonitor.setConfig(normalizeProcessWatchConfig({}));
+    await unblockAll();
     return;
   }
 
@@ -615,6 +623,9 @@ async function refreshProcessMonitorForScope(
     desktopFocusSettings = settings;
     const config = createProcessWatchConfigFromFocusSettings(settings);
     processMonitor.setConfig(config);
+    if (desktopSessionState.status === 'RUNNING') {
+      await blockDomains(desktopFocusSettings.websiteBlockList);
+    }
     await reconcileBlockedWebsiteSignals();
     await evaluateAndRunStrictPolicy();
   } catch (error) {
@@ -897,209 +908,16 @@ function setDesktopScope(nextScope: DesktopSettingsScope | null): void {
     processEventLog = [];
     policyAuditLog = [];
     blockedWebsiteBySourceId.clear();
+    void unblockAll().catch(error => {
+      console.warn(
+        '[desktop] Failed to clear hosts block on scope change.',
+        error
+      );
+    });
     rebuildTrayMenu();
     broadcastDesktopSessionState();
     void refreshProcessMonitorForScope(nextScope);
   }
-}
-
-function createSessionWidgetHtml() {
-  return `
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DevSuite Session Widget</title>
-    <style>
-      :root {
-        font-family: "Segoe UI", sans-serif;
-      }
-      body {
-        margin: 0;
-        padding: 14px;
-        background: #0f172a;
-        color: #e2e8f0;
-      }
-      .card {
-        border-radius: 10px;
-        border: 1px solid #334155;
-        background: #111827;
-        padding: 12px;
-      }
-      .status {
-        font-size: 13px;
-        margin-bottom: 6px;
-      }
-      .meta {
-        font-size: 12px;
-        color: #93c5fd;
-        margin-bottom: 6px;
-      }
-      .timer {
-        font-size: 18px;
-        font-weight: 600;
-        margin-bottom: 8px;
-      }
-      .error {
-        min-height: 16px;
-        margin-bottom: 10px;
-        font-size: 11px;
-        color: #fca5a5;
-      }
-      .actions {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
-      }
-      button {
-        font: inherit;
-        padding: 8px;
-        border-radius: 7px;
-        border: 1px solid #3b82f6;
-        background: #1d4ed8;
-        color: #eff6ff;
-        cursor: pointer;
-      }
-      button:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <div class="status" id="status">Status: IDLE</div>
-      <div class="meta" id="meta">Syncing desktop bridge...</div>
-      <div class="timer" id="timer">00:00:00</div>
-      <div class="error" id="error"></div>
-      <div class="actions">
-        <button id="start">Start</button>
-        <button id="pause">Pause</button>
-        <button id="resume">Resume</button>
-        <button id="end">End</button>
-      </div>
-    </div>
-    <script>
-      const statusElement = document.getElementById('status');
-      const metaElement = document.getElementById('meta');
-      const timerElement = document.getElementById('timer');
-      const errorElement = document.getElementById('error');
-      const startButton = document.getElementById('start');
-      const pauseButton = document.getElementById('pause');
-      const resumeButton = document.getElementById('resume');
-      const endButton = document.getElementById('end');
-      let currentState = null;
-      let lastBridgeSignalAt = 0;
-
-      function formatDuration(totalMs) {
-        const seconds = Math.floor(Math.max(0, totalMs) / 1000);
-        const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
-        const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-        const remaining = String(seconds % 60).padStart(2, '0');
-        return hours + ':' + minutes + ':' + remaining;
-      }
-
-      function calculateEffectiveDuration(state) {
-        const base = Number.isFinite(state.effectiveDurationMs)
-          ? state.effectiveDurationMs
-          : 0;
-        if (state.status !== 'RUNNING') {
-          return base;
-        }
-        if (state.connectionState !== 'connected') {
-          return base;
-        }
-        return base + Math.max(0, Date.now() - state.updatedAt);
-      }
-
-      function updateTimer() {
-        if (!currentState) {
-          timerElement.textContent = '00:00:00';
-          return;
-        }
-        timerElement.textContent = formatDuration(calculateEffectiveDuration(currentState));
-      }
-
-      function setButtonStates(state) {
-        const connected = state.connectionState === 'connected';
-        startButton.disabled = !connected || state.status !== 'IDLE';
-        pauseButton.disabled = !connected || state.status !== 'RUNNING';
-        resumeButton.disabled = !connected || state.status !== 'PAUSED';
-        endButton.disabled = !connected || state.status === 'IDLE';
-      }
-
-      function formatMeta(state) {
-        const suffix = state.sessionId ? 'session=' + state.sessionId : 'session=none';
-        const connection = 'connection=' + state.connectionState;
-        return connection + ' · ' + suffix;
-      }
-
-      function renderState(state) {
-        currentState = state;
-        lastBridgeSignalAt = Date.now();
-        statusElement.textContent = 'Status: ' + state.status;
-        metaElement.textContent = formatMeta(state);
-        errorElement.textContent = state.lastError || '';
-        setButtonStates(state);
-        updateTimer();
-      }
-
-      async function resolveScope() {
-        const scope = await window.desktopAuth.getScope();
-        if (!scope) {
-          throw new Error('Desktop scope is not initialized.');
-        }
-        return scope;
-      }
-
-      async function request(action) {
-        try {
-          const scope = await resolveScope();
-          await window.desktopSession.requestAction(scope, action);
-        } catch (error) {
-          const message = error && error.message ? error.message : String(error);
-          errorElement.textContent = message;
-        }
-      }
-
-      startButton.addEventListener('click', () => request('start'));
-      pauseButton.addEventListener('click', () => request('pause'));
-      resumeButton.addEventListener('click', () => request('resume'));
-      endButton.addEventListener('click', () => request('end'));
-
-      window.desktopSession.onStateChanged(nextState => {
-        renderState(nextState);
-      });
-
-      resolveScope()
-        .then(scope => window.desktopSession.getState(scope))
-        .then(renderState)
-        .catch(error => {
-          const message = error && error.message ? error.message : String(error);
-          errorElement.textContent = message;
-        });
-
-      setInterval(() => {
-        updateTimer();
-
-        if (!currentState) {
-          return;
-        }
-
-        const staleForMs = Date.now() - lastBridgeSignalAt;
-        if (staleForMs > 45000) {
-          metaElement.textContent = 'connection=stale · waiting for sync';
-          startButton.disabled = true;
-          pauseButton.disabled = true;
-          resumeButton.disabled = true;
-          endButton.disabled = true;
-        }
-      }, 1000);
-    </script>
-  </body>
-</html>
-  `;
 }
 
 async function showSessionWidget(): Promise<void> {
@@ -1109,33 +927,33 @@ async function showSessionWidget(): Promise<void> {
     return;
   }
 
-  sessionWidgetWindowRef = new BrowserWindow({
-    width: 310,
-    height: 230,
-    resizable: false,
-    minimizable: true,
-    maximizable: false,
-    alwaysOnTop: true,
-    autoHideMenuBar: true,
-    skipTaskbar: false,
-    title: 'DevSuite Session Widget',
-    backgroundColor: '#0f172a',
-    icon: APP_ICON_PATH,
-    webPreferences: {
-      preload: join(__dirname, 'preload.js'),
+  sessionWidgetWindowRef = new BrowserWindow(
+    getSessionWidgetWindowOptions({
+      iconPath: APP_ICON_PATH,
+      preloadPath: join(__dirname, 'preload.js'),
       partition: DESKTOP_PARTITION,
       additionalArguments: TEST_IPC_RENDERER_ARGS,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      webviewTag: false,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-    },
+    })
+  );
+  const applyBottomRightPosition = () => {
+    if (!sessionWidgetWindowRef || sessionWidgetWindowRef.isDestroyed()) {
+      return;
+    }
+
+    positionWidgetBottomRight({
+      window: sessionWidgetWindowRef,
+      workAreaSize: screen.getPrimaryDisplay().workAreaSize,
+    });
+  };
+  screen.on('display-metrics-changed', applyBottomRightPosition);
+
+  sessionWidgetWindowRef.once('ready-to-show', () => {
+    applyBottomRightPosition();
   });
   applyWindowNavigationSecurity(sessionWidgetWindowRef);
 
   sessionWidgetWindowRef.on('closed', () => {
+    screen.removeListener('display-metrics-changed', applyBottomRightPosition);
     sessionWidgetWindowRef = null;
   });
 
@@ -1441,6 +1259,16 @@ function registerIpcHandlers(): void {
     return;
   }
 
+  registerDesktopWindowIpcHandlers({
+    ipcMain,
+    browserWindowModule: {
+      fromWebContents: sender =>
+        BrowserWindow.fromWebContents(
+          sender as Parameters<typeof BrowserWindow.fromWebContents>[0]
+        ),
+    },
+  });
+
   ipcMain.handle(
     'desktop-focus-settings:get',
     async (_event, scope: unknown) => {
@@ -1452,6 +1280,11 @@ function registerIpcHandlers(): void {
     'desktop-focus-settings:set',
     async (_event, scope: unknown, payload: unknown) => {
       const resolvedScope = await resolveScopedDesktopContext(scope);
+      const previousWebsiteBlockList =
+        desktopSessionScope &&
+        areScopesEqual(desktopSessionScope, resolvedScope)
+          ? [...desktopFocusSettings.websiteBlockList]
+          : null;
       const savedSettings = await saveDesktopFocusSettings(
         resolvedScope,
         payload
@@ -1460,6 +1293,12 @@ function registerIpcHandlers(): void {
         desktopSessionScope &&
         areScopesEqual(desktopSessionScope, resolvedScope)
       ) {
+        if (isRunningOrPaused(desktopSessionState.status)) {
+          await reconcileDomains({
+            currentDomains: previousWebsiteBlockList ?? [],
+            newDomains: savedSettings.websiteBlockList,
+          });
+        }
         await refreshProcessMonitorForScope(desktopSessionScope, savedSettings);
       }
       return savedSettings;
@@ -1506,7 +1345,13 @@ function registerIpcHandlers(): void {
         desktopSessionScope = resolvedScope;
       }
 
+      const previousStatus = desktopSessionState.status;
       desktopSessionState = parseDesktopSessionState(payload);
+      await syncHostsBlockingForSessionTransition({
+        previousStatus,
+        nextStatus: desktopSessionState.status,
+        domains: desktopFocusSettings.websiteBlockList,
+      });
       rebuildTrayMenu();
       broadcastDesktopSessionState();
       await evaluateAndRunStrictPolicy();
@@ -1643,15 +1488,11 @@ async function createMainWindow(options?: {
     height: 860,
     minWidth: 680,
     minHeight: 640,
+    frame: false,
     autoHideMenuBar: true,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#0f172a',
     show,
     icon: APP_ICON_PATH,
-    titleBarOverlay: {
-      color: '#0f172a',
-      symbolColor: '#e2e8f0',
-      height: 36,
-    },
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       partition: DESKTOP_PARTITION,
@@ -1666,6 +1507,9 @@ async function createMainWindow(options?: {
   });
 
   applyWindowNavigationSecurity(mainWindow);
+  wireDesktopWindowMaximizeEvents({
+    window: mainWindow,
+  });
   registerWebsiteSignalHandlers(mainWindow);
   await loadWindowContent(mainWindow);
 
@@ -1730,6 +1574,14 @@ if (!hasSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.devsuite.desktop');
+    try {
+      await cleanupStaleBlocks();
+    } catch (error) {
+      console.warn(
+        '[desktop] Failed to clean stale hosts block on startup.',
+        error
+      );
+    }
     await registerRendererProtocol();
     registerIpcHandlers();
     setDesktopScope(await loadDesktopSessionScope());
@@ -1765,6 +1617,9 @@ app.on('before-quit', () => {
     clearInterval(policyTickTimer);
     policyTickTimer = null;
   }
+  void unblockAll().catch(error => {
+    console.warn('[desktop] Failed to clear hosts block before quit.', error);
+  });
 });
 
 app.on('window-all-closed', () => {

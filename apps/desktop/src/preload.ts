@@ -113,6 +113,16 @@ type DesktopPolicyApi = {
   }>;
 };
 
+type DesktopWindowApi = {
+  minimize: () => Promise<void>;
+  maximize: () => Promise<void>;
+  close: () => Promise<void>;
+  isMaximized: () => Promise<boolean>;
+  onMaximizeChange: (
+    listener: (maximized: boolean) => void | Promise<void>
+  ) => () => void;
+};
+
 type DesktopTestWebsiteEvent = {
   type: 'website_blocked_started' | 'website_blocked_stopped';
   domain: string;
@@ -167,6 +177,7 @@ const SESSION_STATE_CHANGED_CHANNEL = 'desktop-session:state-changed';
 const NOTIFICATION_ACTION_CHANNEL = 'desktop-notification:action';
 const PROCESS_EVENTS_CHANNEL = 'desktop-process-monitor:events';
 const POLICY_AUDIT_CHANNEL = 'desktop-policy:audit-events';
+const WINDOW_MAXIMIZE_CHANGED_CHANNEL = 'desktop-window:maximize-changed';
 
 const desktopSessionApi: DesktopSessionApi = {
   getState: async scope =>
@@ -288,6 +299,29 @@ const desktopPolicyApi: DesktopPolicyApi = {
     }>,
 };
 
+const desktopWindowApi: DesktopWindowApi = {
+  minimize: async () => {
+    await ipcRenderer.invoke('desktop-window:minimize');
+  },
+  maximize: async () => {
+    await ipcRenderer.invoke('desktop-window:maximize');
+  },
+  close: async () => {
+    await ipcRenderer.invoke('desktop-window:close');
+  },
+  isMaximized: async () =>
+    ipcRenderer.invoke('desktop-window:is-maximized') as Promise<boolean>,
+  onMaximizeChange: listener => {
+    const wrapped = (_event: unknown, maximized: boolean) => {
+      void listener(maximized);
+    };
+    ipcRenderer.on(WINDOW_MAXIMIZE_CHANGED_CHANNEL, wrapped);
+    return () => {
+      ipcRenderer.removeListener(WINDOW_MAXIMIZE_CHANGED_CHANNEL, wrapped);
+    };
+  },
+};
+
 const desktopTestApi: DesktopTestApi = {
   injectProcessEvents: async events =>
     ipcRenderer.invoke(
@@ -340,6 +374,7 @@ if (shouldExposeApis) {
     desktopProcessMonitorApi
   );
   contextBridge.exposeInMainWorld('desktopPolicy', desktopPolicyApi);
+  contextBridge.exposeInMainWorld('desktopWindow', desktopWindowApi);
   if (shouldForceExposeApisForTestHarness) {
     contextBridge.exposeInMainWorld('desktopTest', desktopTestApi);
   }
@@ -354,6 +389,7 @@ declare global {
     desktopNotification?: DesktopNotificationApi;
     desktopProcessMonitor?: DesktopProcessMonitorApi;
     desktopPolicy?: DesktopPolicyApi;
+    desktopWindow?: DesktopWindowApi;
     desktopTest?: DesktopTestApi;
   }
 }

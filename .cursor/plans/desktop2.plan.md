@@ -4,31 +4,31 @@ overview: 'Fix and enhance the desktop app in 4 phases: (1) foundation logger, (
 todos:
   - id: p1-runtime-logger
     content: '[Phase 1] Create runtime-logger.ts -- append-only file logger with rotation, subsystem tags, and unit tests. Foundation for all other phases.'
-    status: pending
+    status: completed
   - id: p2a-process-monitor-logging
     content: '[Phase 2a] Add diagnostic logging to process-monitor.ts (pollOnce catch block, listWindowsProcesses/Verbose stderr, EPERM/EACCES). Unit tests for log output. Worktree: feat/p2a-process-logging'
-    status: pending
+    status: completed
   - id: p2b-policy-engine-logging
     content: '[Phase 2b] Add diagnostic logging to strict-policy-engine.ts and executeStrictPolicyActions in main.ts (rule eval, taskkill commands, entry lifecycle). Unit tests. Worktree: feat/p2b-policy-logging'
-    status: pending
+    status: completed
   - id: p2c-session-bridge-logging
     content: '[Phase 2c] Add diagnostic logging to desktop-session-bridge.tsx (publishDesktopState, onCommand) and widget JS (renderState, stale detection). Unit tests. Worktree: feat/p2c-session-logging'
-    status: pending
+    status: completed
   - id: p3a-timer-sync-fix
     content: '[Phase 3a] Fix timer mismatch: reduce publish interval to 5s, add publishedAt field, smooth jumps in widget JS. Unit tests for duration calc + e2e for sync. Worktree: feat/p3a-timer-sync'
-    status: pending
+    status: completed
   - id: p3b-hosts-blocking
     content: '[Phase 3b] Create hosts-manager.ts for hosts-file website blocking with block/unblock, crash recovery, DNS flush, elevated perms. Integrate with session lifecycle. Unit tests + e2e. Worktree: feat/p3b-hosts-blocking'
-    status: pending
+    status: completed
   - id: p3c-main-window-frameless
     content: '[Phase 3c] Make main window frameless (frame:false), add custom titlebar component to web app header with drag region + minimize/maximize/close buttons, add IPC channels in preload, conditionally render only in desktop mode. Unit tests + e2e. Worktree: feat/p3c-frameless-main'
-    status: pending
+    status: completed
   - id: p4a-widget-visual-parity
     content: '[Phase 4a] Redesign createSessionWidgetHtml() to match web session-widget.tsx: cyan accent, monospace timer, shadcn-like buttons, status badges, contextual button visibility. E2e snapshot tests. Worktree: feat/p4a-widget-visual'
-    status: pending
+    status: completed
   - id: p4b-frameless-overlay
     content: '[Phase 4b] Make widget frameless+transparent, CSS drag region, hover close button, bottom-right positioning, skipTaskbar, opacity 0.92. E2e tests for window properties. Worktree: feat/p4b-frameless-overlay'
-    status: pending
+    status: completed
 isProject: false
 ---
 

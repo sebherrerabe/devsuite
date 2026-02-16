@@ -15,6 +15,7 @@ export interface DesktopSessionState {
   connectionState: DesktopSessionConnectionState;
   lastError: string | null;
   updatedAt: number;
+  publishedAt?: number;
 }
 
 export interface DesktopSessionActionAvailability {
@@ -80,6 +81,17 @@ function parseTimestamp(value: unknown, fieldName: string): number {
   return numericValue;
 }
 
+function parseOptionalTimestamp(
+  value: unknown,
+  fieldName: string
+): number | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  return parseTimestamp(value, fieldName);
+}
+
 function parseNonNegativeInteger(value: unknown, fieldName: string): number {
   if (!Number.isInteger(value)) {
     throw new Error(`${fieldName} must be an integer.`);
@@ -126,6 +138,7 @@ export function parseDesktopSessionAction(
 }
 
 export function createDefaultDesktopSessionState(): DesktopSessionState {
+  const now = Date.now();
   return {
     status: 'IDLE',
     sessionId: null,
@@ -133,7 +146,8 @@ export function createDefaultDesktopSessionState(): DesktopSessionState {
     remainingTaskCount: null,
     connectionState: 'syncing',
     lastError: null,
-    updatedAt: Date.now(),
+    updatedAt: now,
+    publishedAt: now,
   };
 }
 
@@ -141,6 +155,10 @@ export function parseDesktopSessionState(input: unknown): DesktopSessionState {
   if (!isRecord(input)) {
     throw new Error('Desktop session state payload must be an object.');
   }
+
+  const updatedAt = parseTimestamp(input.updatedAt, 'updatedAt');
+  const publishedAt =
+    parseOptionalTimestamp(input.publishedAt, 'publishedAt') ?? updatedAt;
 
   return {
     status: parseSessionStatus(input.status),
@@ -159,7 +177,8 @@ export function parseDesktopSessionState(input: unknown): DesktopSessionState {
           ),
     connectionState: parseConnectionState(input.connectionState),
     lastError: parseOptionalError(input.lastError),
-    updatedAt: parseTimestamp(input.updatedAt, 'updatedAt'),
+    updatedAt,
+    publishedAt,
   };
 }
 
