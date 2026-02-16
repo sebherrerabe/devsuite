@@ -11,6 +11,7 @@
     "dev": "pnpm run build && node scripts/run-electron.mjs",
     "build": "tsc -p tsconfig.json && node scripts/bundle-preload.mjs",
     "generate-icons": "node scripts/generate-icons.mjs",
+    "build:all": "pnpm --filter @devsuite/shared build && pnpm --filter @devsuite/web build && pnpm run build && node scripts/copy-renderer.mjs",
     "start": "node scripts/run-electron.mjs",
     "package": "pnpm run build && electron-forge package",
     "make:win": "pnpm run build && electron-forge make --platform win32 --arch x64",
