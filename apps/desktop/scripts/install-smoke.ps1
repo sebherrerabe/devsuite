@@ -180,7 +180,7 @@ function Wait-ForDevSuiteRemoval {
 
 $scriptDir = Split-Path -Parent $PSCommandPath
 $desktopRoot = Split-Path -Parent $scriptDir
-$makeRoot = Join-Path $desktopRoot 'out/make'
+$makeRoot = Join-Path $desktopRoot 'out'
 
 if (-not (Test-Path -Path $makeRoot)) {
   throw "Installer output path not found: $makeRoot. Run 'pnpm --filter @devsuite/desktop make:win' first."
@@ -202,8 +202,8 @@ $uninstallSettleTimeoutSeconds = Get-PositiveIntFromEnv -Name 'DEVSUITE_INSTALL_
 Write-Host "[desktop:install-smoke] Using installer: $($setupCandidate.FullName)"
 Write-Host "[desktop:install-smoke] Timeouts (s): install=$installTimeoutSeconds upgrade=$upgradeTimeoutSeconds uninstall=$uninstallTimeoutSeconds uninstall_settle=$uninstallSettleTimeoutSeconds"
 
-$installRoot = Join-Path $env:LOCALAPPDATA 'devsuite_desktop'
-$updateExe = Join-Path $installRoot 'Update.exe'
+$installRoot = Join-Path $env:PROGRAMFILES 'DevSuite'
+$uninstallExe = Join-Path $installRoot 'Uninstall DevSuite.exe'
 
 try {
   Invoke-BoundedProcess -Phase 'install' -FilePath $setupCandidate.FullName -Arguments @('/S') -TimeoutSeconds $installTimeoutSeconds
@@ -214,15 +214,11 @@ try {
     $appCandidates = @(Get-ChildItem -Path $installRoot -Recurse -Filter 'DevSuite.exe')
   }
 
-  if (-not (Test-Path -Path $updateExe)) {
-    throw "Installer did not create expected Update.exe at $updateExe"
-  }
-
   if ($appCandidates.Count -lt 1) {
     throw "Installer did not produce DevSuite.exe under $installRoot"
   }
 
-  Write-Host '[desktop:install-smoke] Install check passed. Found Update.exe and DevSuite.exe.'
+  Write-Host '[desktop:install-smoke] Install check passed.'
 
   Invoke-BoundedProcess -Phase 'upgrade' -FilePath $setupCandidate.FullName -Arguments @('/S') -TimeoutSeconds $upgradeTimeoutSeconds
   Start-Sleep -Seconds 4
@@ -232,17 +228,17 @@ try {
     $appCandidatesAfterUpgrade = @(Get-ChildItem -Path $installRoot -Recurse -Filter 'DevSuite.exe')
   }
 
-  if (-not (Test-Path -Path $updateExe)) {
-    throw "Upgrade check failed: Update.exe missing at $updateExe after second install pass"
-  }
-
   if ($appCandidatesAfterUpgrade.Count -lt 1) {
     throw "Upgrade check failed: DevSuite.exe missing under $installRoot after second install pass"
   }
 
   Write-Host '[desktop:install-smoke] Upgrade check passed.'
 
-  Invoke-BoundedProcess -Phase 'uninstall' -FilePath $updateExe -Arguments @('--uninstall', '-s') -TimeoutSeconds $uninstallTimeoutSeconds
+  if (-not (Test-Path -Path $uninstallExe)) {
+    throw "Uninstall executable not found at $uninstallExe"
+  }
+
+  Invoke-BoundedProcess -Phase 'uninstall' -FilePath $uninstallExe -Arguments @('/S') -TimeoutSeconds $uninstallTimeoutSeconds
   Start-Sleep -Seconds 2
 
   $appCandidatesAfterUninstall = @()
