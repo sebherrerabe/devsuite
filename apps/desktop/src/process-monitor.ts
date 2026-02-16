@@ -518,6 +518,32 @@ export async function listWindowsProcessesVerbose(
       logger,
       verbose: true,
     });
+
+    if (isTimeoutError(error)) {
+      logger.warn(
+        'process-monitor',
+        'Falling back to non-verbose tasklist listing after verbose timeout.'
+      );
+
+      try {
+        const basicProcesses = await listWindowsProcesses({
+          executor,
+          logger,
+        });
+        return dedupeRunningProcessesByExecutable(
+          basicProcesses.map(process => ({
+            executable: process.executable,
+            windowTitle: '',
+          }))
+        );
+      } catch (fallbackError) {
+        logger.error(
+          'process-monitor',
+          `tasklist fallback failed: ${formatProcessMonitorError(fallbackError)}`
+        );
+      }
+    }
+
     throw error;
   }
 }

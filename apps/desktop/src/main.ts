@@ -348,6 +348,18 @@ function getDesktopSessionStateSnapshot(): DesktopSessionState {
   };
 }
 
+function getAuthenticatedDesktopScope(): DesktopSettingsScope | null {
+  if (!desktopSessionScope) {
+    return null;
+  }
+
+  if (desktopSessionState.connectionState !== 'connected') {
+    return null;
+  }
+
+  return desktopSessionScope;
+}
+
 function isRunningOrPaused(status: DesktopSessionState['status']): boolean {
   return status === 'RUNNING' || status === 'PAUSED';
 }
@@ -573,7 +585,7 @@ async function evaluateAndRunStrictPolicy(input?: {
   websiteEvents?: DesktopWebsiteEvent[];
   websiteSignalAvailable?: boolean;
 }): Promise<void> {
-  const activeScope = desktopSessionScope;
+  const activeScope = getAuthenticatedDesktopScope();
   if (!activeScope) {
     return;
   }
@@ -675,11 +687,13 @@ async function showMainWindow(): Promise<void> {
 async function routeDesktopNotificationAction(
   requestedAction: DesktopNotificationActionEvent
 ): Promise<void> {
-  const resolvedScope = await resolveScopedDesktopContext(
-    requestedAction.scope
-  );
+  const activeScope = getAuthenticatedDesktopScope();
+  if (!activeScope || !areScopesEqual(activeScope, requestedAction.scope)) {
+    return;
+  }
+
   const actionEvent: DesktopNotificationActionEvent = {
-    scope: resolvedScope,
+    scope: activeScope,
     action: requestedAction.action,
     route: requestedAction.route,
     requestedAt: requestedAction.requestedAt,
@@ -699,7 +713,14 @@ async function emitDesktopNotification(payload: unknown): Promise<{
   throttled: boolean;
 }> {
   const request = parseDesktopNotificationRequest(payload);
-  const resolvedScope = await resolveScopedDesktopContext(request.scope);
+  const activeScope = getAuthenticatedDesktopScope();
+  if (!activeScope || !areScopesEqual(activeScope, request.scope)) {
+    return {
+      delivered: false,
+      throttled: false,
+    };
+  }
+
   const now = Date.now();
   const lastSentAt = notificationSentAtByKey.get(request.throttleKey) ?? null;
   const isThrottled = shouldThrottleDesktopNotification(
@@ -718,7 +739,7 @@ async function emitDesktopNotification(payload: unknown): Promise<{
   notificationSentAtByKey.set(request.throttleKey, now);
 
   const actionEvent: DesktopNotificationActionEvent = {
-    scope: resolvedScope,
+    scope: activeScope,
     action: request.action,
     route: request.route,
     requestedAt: now,
@@ -854,7 +875,7 @@ function rebuildTrayMenu(): void {
     },
     {
       label: 'Show Session Widget',
-      enabled: hasScope,
+      enabled: hasScope && isConnected,
       click: () => {
         void showSessionWidget();
       },
@@ -903,6 +924,7 @@ function setDesktopScope(nextScope: DesktopSettingsScope | null): void {
   desktopSessionScope = nextScope;
 
   if (hasChanged) {
+    closeSessionWidgetIfOpen();
     desktopSessionState = createDefaultDesktopSessionState();
     strictPolicyState = createDefaultStrictPolicyState();
     processEventLog = [];
@@ -920,7 +942,24 @@ function setDesktopScope(nextScope: DesktopSettingsScope | null): void {
   }
 }
 
+function closeSessionWidgetIfOpen(): void {
+  if (!sessionWidgetWindowRef) {
+    return;
+  }
+
+  if (sessionWidgetWindowRef.isDestroyed()) {
+    sessionWidgetWindowRef = null;
+    return;
+  }
+
+  sessionWidgetWindowRef.close();
+}
+
 async function showSessionWidget(): Promise<void> {
+  if (!getAuthenticatedDesktopScope()) {
+    return;
+  }
+
   if (sessionWidgetWindowRef && !sessionWidgetWindowRef.isDestroyed()) {
     sessionWidgetWindowRef.show();
     sessionWidgetWindowRef.focus();
@@ -1092,6 +1131,8 @@ function applyWindowNavigationSecurity(browserWindow: BrowserWindowType): void {
   });
 }
 
+const BUNDLED_RENDERER_ORIGIN = `${RENDERER_PROTOCOL_SCHEME}://${RENDERER_PROTOCOL_HOST}`;
+
 function applyDesktopPermissionPolicy(): void {
   const desktopSession = session.fromPartition(DESKTOP_PARTITION);
 
@@ -1117,6 +1158,46 @@ function applyDesktopPermissionPolicy(): void {
   );
 
   desktopSession.setDevicePermissionHandler(() => false);
+
+  desktopSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = { ...details.requestHeaders };
+    const isExternalRequest =
+      details.url.startsWith('https://') || details.url.startsWith('http://');
+    const isFromBundledRenderer =
+      !details.referrer ||
+      details.referrer.startsWith(`${BUNDLED_RENDERER_ORIGIN}/`);
+
+    if (isExternalRequest && isFromBundledRenderer) {
+      headers['Origin'] = BUNDLED_RENDERER_ORIGIN;
+    }
+
+    callback({ requestHeaders: headers });
+  });
+
+  desktopSession.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders: Record<string, string | string[]> = {
+      ...(details.responseHeaders ?? {}),
+    };
+    const isExternalRequest =
+      details.url.startsWith('https://') || details.url.startsWith('http://');
+
+    if (!isExternalRequest) {
+      callback({ responseHeaders });
+      return;
+    }
+
+    responseHeaders['access-control-allow-origin'] = BUNDLED_RENDERER_ORIGIN;
+    responseHeaders['access-control-allow-credentials'] = 'true';
+
+    if (details.method === 'OPTIONS') {
+      responseHeaders['access-control-allow-methods'] =
+        'GET, POST, PUT, PATCH, DELETE, OPTIONS';
+      responseHeaders['access-control-allow-headers'] = '*';
+      responseHeaders['access-control-max-age'] = '86400';
+    }
+
+    callback({ responseHeaders });
+  });
 }
 
 async function resolveScopedDesktopContext(
@@ -1208,7 +1289,7 @@ async function registerRendererProtocol(): Promise<void> {
     return;
   }
 
-  await protocol.handle(RENDERER_PROTOCOL_SCHEME, async request => {
+  const handler = async (request: { url: string }) => {
     const resolvedPath = resolveRendererFilePath(request.url);
     if (!resolvedPath) {
       return new globalThis.Response('Not found', { status: 404 });
@@ -1230,7 +1311,11 @@ async function registerRendererProtocol(): Promise<void> {
       });
       return new globalThis.Response('Not found', { status: 404 });
     }
-  });
+  };
+
+  await protocol.handle(RENDERER_PROTOCOL_SCHEME, handler);
+  const desktopSession = session.fromPartition(DESKTOP_PARTITION);
+  await desktopSession.protocol.handle(RENDERER_PROTOCOL_SCHEME, handler);
 
   rendererProtocolRegistered = true;
 }
@@ -1347,6 +1432,9 @@ function registerIpcHandlers(): void {
 
       const previousStatus = desktopSessionState.status;
       desktopSessionState = parseDesktopSessionState(payload);
+      if (desktopSessionState.connectionState !== 'connected') {
+        closeSessionWidgetIfOpen();
+      }
       await syncHostsBlockingForSessionTransition({
         previousStatus,
         nextStatus: desktopSessionState.status,
