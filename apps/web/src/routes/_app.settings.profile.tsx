@@ -2,9 +2,17 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { useCurrentCompany } from '@/lib/company-context';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import { showToast } from '@/lib/toast';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
@@ -45,6 +53,11 @@ type DesktopFocusSettingsState = {
 type DesktopAppBlockItem = {
   executable: string;
   enabled: boolean;
+};
+
+type RunningDesktopProcess = {
+  executable: string;
+  windowTitle: string;
 };
 
 const DEFAULT_DESKTOP_FOCUS_SETTINGS: DesktopFocusSettingsState = {
@@ -117,11 +130,209 @@ function formatListValue(values: string[]): string {
   return values.join('\n');
 }
 
+function addExecutableToListInput(
+  inputValue: string,
+  executable: string
+): string {
+  const normalizedExecutable = normalizeExecutableInput(executable);
+  if (!normalizedExecutable) {
+    return inputValue;
+  }
+
+  const existingValues = Array.from(
+    new Set(parseListInput(inputValue).map(normalizeExecutableInput))
+  );
+  if (existingValues.includes(normalizedExecutable)) {
+    return formatListValue(existingValues);
+  }
+
+  return formatListValue([...existingValues, normalizedExecutable]);
+}
+
 function clampInteger(value: number, fallbackValue: number): number {
   if (!Number.isFinite(value)) {
     return fallbackValue;
   }
   return Math.max(1, Math.trunc(value));
+}
+
+type ProcessPickerProps = {
+  ideExecutables: string[];
+  appBlockExecutables: string[];
+  onAddIdeExecutable: (executable: string) => void;
+  onAddAppBlockExecutable: (executable: string) => void;
+};
+
+function ProcessPicker({
+  ideExecutables,
+  appBlockExecutables,
+  onAddIdeExecutable,
+  onAddAppBlockExecutable,
+}: ProcessPickerProps) {
+  const [runningProcesses, setRunningProcesses] = useState<
+    RunningDesktopProcess[]
+  >([]);
+  const [query, setQuery] = useState('');
+  const [selectedExecutable, setSelectedExecutable] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const refreshProcesses = useCallback(async () => {
+    if (
+      typeof window === 'undefined' ||
+      typeof window.desktopProcessMonitor?.listRunningProcesses !== 'function'
+    ) {
+      setRunningProcesses([]);
+      return;
+    }
+
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const listed = await window.desktopProcessMonitor.listRunningProcesses();
+      const normalized = listed
+        .map(process => {
+          const executable = normalizeExecutableInput(process.executable ?? '');
+          const windowTitle = (process.windowTitle ?? '').trim();
+          return {
+            executable,
+            windowTitle,
+          };
+        })
+        .filter(process => process.executable)
+        .sort((left, right) => {
+          const leftLabel = left.windowTitle || left.executable;
+          const rightLabel = right.windowTitle || right.executable;
+          return leftLabel.localeCompare(rightLabel);
+        });
+
+      setRunningProcesses(normalized);
+      setSelectedExecutable(previousSelection =>
+        normalized.some(process => process.executable === previousSelection)
+          ? previousSelection
+          : ''
+      );
+    } catch (error) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to list running processes.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshProcesses();
+  }, [refreshProcesses]);
+
+  const selectedProcess = runningProcesses.find(
+    process => process.executable === selectedExecutable
+  );
+  const normalizedIdeSet = new Set(
+    ideExecutables.map(normalizeExecutableInput).filter(Boolean)
+  );
+  const normalizedAppBlockSet = new Set(
+    appBlockExecutables.map(normalizeExecutableInput).filter(Boolean)
+  );
+
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium">Running Process Picker</p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={refreshProcesses}
+          disabled={isLoading}
+        >
+          {isLoading ? 'Refreshing...' : 'Refresh'}
+        </Button>
+      </div>
+      <Command className="rounded-md border">
+        <CommandInput
+          value={query}
+          onValueChange={setQuery}
+          placeholder="Search running executables or window titles"
+        />
+        <CommandList>
+          <CommandEmpty>
+            {isLoading ? 'Loading running processes...' : 'No processes found.'}
+          </CommandEmpty>
+          <CommandGroup heading="Processes">
+            {runningProcesses.map(process => (
+              <CommandItem
+                key={process.executable}
+                value={`${process.executable} ${process.windowTitle}`}
+                onSelect={() => {
+                  setSelectedExecutable(process.executable);
+                }}
+              >
+                <div className="flex w-full items-center justify-between gap-2">
+                  <span className="truncate text-xs">
+                    {process.windowTitle || '(No window title)'}
+                  </span>
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    {process.executable}
+                  </span>
+                </div>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </Command>
+      {loadError ? <p className="text-xs text-red-500">{loadError}</p> : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={
+            !selectedProcess || normalizedIdeSet.has(selectedProcess.executable)
+          }
+          onClick={() => {
+            if (!selectedProcess) {
+              return;
+            }
+            onAddIdeExecutable(selectedProcess.executable);
+          }}
+        >
+          Add to IDE Watch List
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={
+            !selectedProcess ||
+            normalizedAppBlockSet.has(selectedProcess.executable)
+          }
+          onClick={() => {
+            if (!selectedProcess) {
+              return;
+            }
+            onAddAppBlockExecutable(selectedProcess.executable);
+          }}
+        >
+          Add to App Block List
+        </Button>
+      </div>
+      {selectedProcess ? (
+        <p className="text-xs text-muted-foreground">
+          Selected: {selectedProcess.executable}
+          {selectedProcess.windowTitle
+            ? ` (${selectedProcess.windowTitle})`
+            : ''}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Select a process to add it to a list.
+        </p>
+      )}
+    </div>
+  );
 }
 
 export const Route = createFileRoute('/_app/settings/profile')({
@@ -169,6 +380,9 @@ function ProfileSettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const isDesktopRuntime =
     typeof window !== 'undefined' && typeof window.desktopFocus !== 'undefined';
+  const hasDesktopProcessPicker =
+    typeof window !== 'undefined' &&
+    typeof window.desktopProcessMonitor?.listRunningProcesses === 'function';
 
   useEffect(() => {
     if (settings?.timezone) {
@@ -215,8 +429,8 @@ function ProfileSettingsPage() {
     });
   };
 
-  const addDesktopAppBlockItem = () => {
-    const normalized = normalizeExecutableInput(desktopAppBlockCandidate);
+  const addDesktopAppBlockExecutable = (executable: string) => {
+    const normalized = normalizeExecutableInput(executable);
     if (!normalized) {
       return;
     }
@@ -233,7 +447,17 @@ function ProfileSettingsPage() {
 
       return [...previousItems, { executable: normalized, enabled: true }];
     });
+  };
+
+  const addDesktopAppBlockItem = () => {
+    addDesktopAppBlockExecutable(desktopAppBlockCandidate);
     setDesktopAppBlockCandidate('');
+  };
+
+  const addDesktopIdeWatchExecutable = (executable: string) => {
+    setDesktopIdeWatchListInput(previousValue =>
+      addExecutableToListInput(previousValue, executable)
+    );
   };
 
   const handleSave = async () => {
@@ -344,6 +568,16 @@ function ProfileSettingsPage() {
           <p className="text-xs text-muted-foreground">
             Runtime: {isDesktopRuntime ? 'Desktop bridge detected' : 'Web only'}
           </p>
+          {hasDesktopProcessPicker ? (
+            <ProcessPicker
+              ideExecutables={parseListInput(desktopIdeWatchListInput)}
+              appBlockExecutables={desktopAppBlockItems.map(
+                item => item.executable
+              )}
+              onAddIdeExecutable={addDesktopIdeWatchExecutable}
+              onAddAppBlockExecutable={addDesktopAppBlockExecutable}
+            />
+          ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-xs font-medium">IDE Watch List</label>

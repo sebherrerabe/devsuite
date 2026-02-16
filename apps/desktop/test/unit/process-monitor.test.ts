@@ -4,9 +4,11 @@ import test from 'node:test';
 import {
   buildMonitoredEntries,
   createProcessWatchConfigFromFocusSettings,
+  dedupeRunningProcessesByExecutable,
   diffProcessEntries,
   normalizeProcessWatchConfig,
   parseTasklistCsv,
+  parseTasklistCsvVerbose,
   shouldMonitorProcesses,
 } from '../../src/process-monitor.js';
 
@@ -23,6 +25,50 @@ test('parseTasklistCsv parses tasklist output rows', () => {
     { executable: 'code.exe', pid: 1234 },
     { executable: 'cursor.exe', pid: 3333 },
   ]);
+});
+
+test('parseTasklistCsvVerbose parses verbose tasklist rows with quoted values', () => {
+  const parsed = parseTasklistCsvVerbose(
+    [
+      '"Code.exe","1234","Console","1","100,000 K","Running","ME\\\\user","0:00:04","Project Alpha"',
+      '"Cursor.exe","3333","Console","1","99,999 K","Running","ME\\\\user","0:00:07","N/A"',
+      '"Broken.exe","3333","Console"',
+    ].join('\n')
+  );
+
+  assert.deepEqual(parsed, [
+    { executable: 'code.exe', windowTitle: 'Project Alpha' },
+    { executable: 'cursor.exe', windowTitle: '' },
+  ]);
+});
+
+test('dedupeRunningProcessesByExecutable keeps entry with best window title', () => {
+  const deduped = dedupeRunningProcessesByExecutable([
+    { executable: 'code.exe', windowTitle: '' },
+    { executable: 'code.exe', windowTitle: 'Workspace A' },
+    { executable: 'code.exe', windowTitle: 'Workspace Alpha (Backend)' },
+    { executable: 'cursor.exe', windowTitle: 'Narrow' },
+    { executable: 'cursor.exe', windowTitle: 'Wider title for chooser' },
+  ]);
+
+  assert.deepEqual(deduped, [
+    { executable: 'code.exe', windowTitle: 'Workspace Alpha (Backend)' },
+    { executable: 'cursor.exe', windowTitle: 'Wider title for chooser' },
+  ]);
+});
+
+test('parseTasklistCsvVerbose handles escaped quotes and empty rows', () => {
+  const parsed = parseTasklistCsvVerbose(
+    [
+      '"Notepad.exe","412","Console","1","5,000 K","Running","ME\\\\user","0:00:01","Notes ""Draft"""',
+      '   ',
+    ].join('\n')
+  );
+
+  assert.deepEqual(parsed, [
+    { executable: 'notepad.exe', windowTitle: 'Notes "Draft"' },
+  ]);
+  assert.deepEqual(parseTasklistCsvVerbose(''), []);
 });
 
 test('createProcessWatchConfigFromFocusSettings normalizes and deduplicates', () => {
