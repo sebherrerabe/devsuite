@@ -12,10 +12,7 @@ test('resolveTrustedDesktopOrigins uses configured web URL origin', () => {
     nodeEnv: 'production',
   });
 
-  assert.deepEqual(
-    [...trusted],
-    ['devsuite://app', 'https://app.devsuite.example']
-  );
+  assert.deepEqual([...trusted], ['https://app.devsuite.example']);
 });
 
 test('resolveTrustedDesktopOrigins falls back to localhost in non-production', () => {
@@ -33,7 +30,7 @@ test('resolveTrustedDesktopOrigins does not trust localhost by default in produc
     nodeEnv: 'production',
   });
 
-  assert.deepEqual([...trusted], ['devsuite://app']);
+  assert.equal(trusted.size, 0);
 });
 
 test('resolveTrustedDesktopOrigins rejects opaque null origin from data: URLs', () => {
@@ -44,7 +41,7 @@ test('resolveTrustedDesktopOrigins rejects opaque null origin from data: URLs', 
 
   // data: URLs produce opaque origin "null" which must not be trusted.
   assert.equal(trusted.has('null'), false);
-  assert.deepEqual([...trusted], ['devsuite://app']);
+  assert.equal(trusted.size, 0);
 });
 
 test('shouldExposeDesktopApis allows internal widget window', () => {

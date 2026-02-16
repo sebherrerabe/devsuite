@@ -2,7 +2,7 @@ export function resolveTrustedDesktopOrigins(params: {
   webUrl: string | undefined;
   nodeEnv: string | undefined;
 }): Set<string> {
-  const origins = new Set<string>(['devsuite://app']);
+  const origins = new Set<string>();
 
   const rawWebUrl = params.webUrl?.trim();
   if (rawWebUrl) {

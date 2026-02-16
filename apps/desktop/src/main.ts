@@ -1,8 +1,6 @@
 import { createRequire } from 'node:module';
 import { execFile, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import { basename, dirname, extname, join, normalize, sep } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { clearInterval, setInterval } from 'node:timers';
 import { promisify } from 'node:util';
 import { URL, fileURLToPath } from 'node:url';
@@ -62,7 +60,6 @@ import {
   shouldOpenInExternalBrowser,
 } from './web-content-security.js';
 import { shouldGrantDesktopPermission } from './desktop-permissions.js';
-import { resolveRendererUrl as resolveRendererUrlWithOptions } from './renderer-url.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -75,7 +72,6 @@ const {
   shell,
   Menu,
   Tray,
-  protocol,
   nativeImage,
   Notification,
 } = require('electron') as typeof import('electron');
@@ -141,8 +137,7 @@ const TEST_IPC_RENDERER_ARGS = ENABLE_TEST_IPC
   : [];
 const DESKTOP_ADDITIONAL_NAV_ORIGINS =
   process.env.DEVSUITE_DESKTOP_NAV_ALLOW_ORIGINS;
-const TRAY_ICON_DATA_URL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAQAAAC1QeVaAAAAQ0lEQVR42mNgwAf8////PwMDA8P///9nYGBgYGBgMHDgQGJiYl4GBgYGmQBJWJiY4A4jS0sLw2A0E0YBqM4AAB8eQdunfG59AAAAAElFTkSuQmCC';
+const APP_ICON_PATH = join(__dirname, '..', 'assets', 'icon.png');
 
 if (
   process.env.CI === 'true' ||
@@ -198,39 +193,6 @@ const BOOTSTRAP_HTML = `
   </body>
 </html>
 `;
-const RENDERER_PROTOCOL_SCHEME = 'devsuite';
-const RENDERER_PROTOCOL_HOST = 'app';
-const RENDERER_DIRECTORY = join(__dirname, '..', 'renderer');
-const RENDERER_INDEX_PATH = join(RENDERER_DIRECTORY, 'index.html');
-const RENDERER_MIME_TYPES: Record<string, string> = {
-  '.css': 'text/css; charset=utf-8',
-  '.gif': 'image/gif',
-  '.html': 'text/html; charset=utf-8',
-  '.ico': 'image/x-icon',
-  '.jpeg': 'image/jpeg',
-  '.jpg': 'image/jpeg',
-  '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.map': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.txt': 'text/plain; charset=utf-8',
-  '.webp': 'image/webp',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-};
-
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: RENDERER_PROTOCOL_SCHEME,
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      stream: true,
-    },
-  },
-]);
 
 let ipcRegistered = false;
 let mainWindowRef: BrowserWindowType | null = null;
@@ -247,7 +209,6 @@ let processEventLog: DesktopProcessEvent[] = [];
 let policyAuditLog: StrictPolicyAuditEvent[] = [];
 const blockedWebsiteBySourceId = new Map<string, string>();
 let policyTickTimer: ReturnType<typeof setInterval> | null = null;
-let rendererProtocolRegistered = false;
 const execFileAsync = promisify(execFile);
 const allowedDesktopNavigationOrigins = resolveAllowedDesktopNavigationOrigins({
   webUrl: process.env.DEVSUITE_WEB_URL,
@@ -904,7 +865,7 @@ function ensureTray(): void {
   }
 
   try {
-    trayRef = new Tray(nativeImage.createFromDataURL(TRAY_ICON_DATA_URL));
+    trayRef = new Tray(nativeImage.createFromPath(APP_ICON_PATH));
     trayRef.on('click', () => {
       void showMainWindow();
     });
@@ -1151,6 +1112,7 @@ async function showSessionWidget(): Promise<void> {
     skipTaskbar: false,
     title: 'DevSuite Session Widget',
     backgroundColor: '#0f172a',
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       partition: DESKTOP_PARTITION,
@@ -1288,99 +1250,16 @@ async function resolveScopedDesktopContext(
 }
 
 function resolveRendererUrl(): string | undefined {
-  return resolveRendererUrlWithOptions({
-    envUrl: process.env.DEVSUITE_WEB_URL,
-    isPackaged: app.isPackaged,
-    rendererExists: existsSync(RENDERER_INDEX_PATH),
-  });
-}
-
-function resolveRendererContentType(filePath: string): string {
-  const extension = extname(filePath).toLowerCase();
-  return RENDERER_MIME_TYPES[extension] ?? 'application/octet-stream';
-}
-
-function parseRendererRequestPath(requestUrl: string): string | null {
-  try {
-    const parsed = new URL(requestUrl);
-    if (
-      parsed.protocol !== `${RENDERER_PROTOCOL_SCHEME}:` ||
-      parsed.hostname !== RENDERER_PROTOCOL_HOST
-    ) {
-      return null;
-    }
-
-    const decodedPath = decodeURIComponent(parsed.pathname);
-    const trimmedPath = decodedPath.replace(/^\/+/, '');
-    return trimmedPath || 'index.html';
-  } catch {
-    return null;
-  }
-}
-
-function resolveRendererFilePath(requestUrl: string): string | null {
-  const requestPath = parseRendererRequestPath(requestUrl);
-  if (!requestPath) {
-    return null;
+  const explicitUrl = process.env.DEVSUITE_WEB_URL?.trim();
+  if (explicitUrl) {
+    return explicitUrl;
   }
 
-  const sanitizedSegments = requestPath
-    .split('/')
-    .filter(
-      segment => segment.length > 0 && segment !== '.' && segment !== '..'
-    )
-    .join(sep);
-  const normalizedRoot = normalize(RENDERER_DIRECTORY);
-  const resolvedFilePath = normalize(join(normalizedRoot, sanitizedSegments));
-
-  if (
-    resolvedFilePath !== normalizedRoot &&
-    !resolvedFilePath.startsWith(`${normalizedRoot}${sep}`)
-  ) {
-    return null;
+  if (!app.isPackaged) {
+    return 'http://localhost:5173';
   }
 
-  if (existsSync(resolvedFilePath)) {
-    return resolvedFilePath;
-  }
-
-  if (extname(resolvedFilePath) === '' && existsSync(RENDERER_INDEX_PATH)) {
-    return RENDERER_INDEX_PATH;
-  }
-
-  return null;
-}
-
-async function registerRendererProtocol(): Promise<void> {
-  if (rendererProtocolRegistered) {
-    return;
-  }
-
-  await protocol.handle(RENDERER_PROTOCOL_SCHEME, async request => {
-    const resolvedPath = resolveRendererFilePath(request.url);
-    if (!resolvedPath) {
-      return new globalThis.Response('Not found', { status: 404 });
-    }
-
-    try {
-      const contents = await readFile(resolvedPath);
-      return new globalThis.Response(contents, {
-        status: 200,
-        headers: {
-          'content-type': resolveRendererContentType(resolvedPath),
-        },
-      });
-    } catch (error) {
-      console.warn('[desktop] Failed to serve renderer asset.', {
-        requestUrl: request.url,
-        resolvedPath,
-        error,
-      });
-      return new globalThis.Response('Not found', { status: 404 });
-    }
-  });
-
-  rendererProtocolRegistered = true;
+  return undefined;
 }
 
 async function loadWindowContent(mainWindow: BrowserWindowType): Promise<void> {
@@ -1595,12 +1474,12 @@ async function createMainWindow(options?: {
   const mainWindow = new BrowserWindow({
     width: 1320,
     height: 860,
-    minWidth: 680,
+    minWidth: 980,
     minHeight: 640,
     autoHideMenuBar: true,
-    titleBarOverlay: { color: '#0f172a', symbolColor: '#e2e8f0', height: 36 },
     backgroundColor: '#f8fafc',
     show,
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       partition: DESKTOP_PARTITION,
@@ -1643,7 +1522,7 @@ async function ensureMainWindow(options?: {
 
 if (!isSquirrelStartup) {
   app.whenReady().then(async () => {
-    await registerRendererProtocol();
+    app.setAppUserModelId('com.devsuite.desktop');
     registerIpcHandlers();
     setDesktopScope(await loadDesktopSessionScope());
     applyDesktopPermissionPolicy();

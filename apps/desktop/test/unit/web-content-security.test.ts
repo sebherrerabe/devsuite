@@ -56,13 +56,6 @@ test('shouldAllowInAppNavigation allows trusted origins and internal bootstrap p
   );
   assert.equal(
     shouldAllowInAppNavigation({
-      url: 'devsuite://app/settings/profile',
-      allowedOrigins,
-    }),
-    true
-  );
-  assert.equal(
-    shouldAllowInAppNavigation({
       url: 'https://malicious.example/phish',
       allowedOrigins,
     }),

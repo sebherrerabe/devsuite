@@ -1,5 +1,6 @@
 {
   "name": "@devsuite/desktop",
+  "productName": "DevSuite",
   "version": "0.0.0",
   "description": "Windows desktop shell for DevSuite",
   "author": "DevSuite",
@@ -9,7 +10,7 @@
   "scripts": {
     "dev": "pnpm run build && node scripts/run-electron.mjs",
     "build": "tsc -p tsconfig.json && node scripts/bundle-preload.mjs",
-    "build:all": "pnpm --filter @devsuite/shared build && pnpm --filter @devsuite/web build && pnpm run build && node scripts/copy-renderer.mjs",
+    "generate-icons": "node scripts/generate-icons.mjs",
     "start": "node scripts/run-electron.mjs",
     "package": "pnpm run build && electron-forge package",
     "make:win": "pnpm run build && electron-forge make --platform win32 --arch x64",
@@ -35,6 +36,9 @@
     "electron": "^30.5.1",
     "esbuild": "^0.27.3",
     "expect-webdriverio": "^5.4.3",
+    "bmp-js": "^0.1.0",
+    "png-to-ico": "^2.1.2",
+    "sharp": "^0.34.3",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "wdio-electron-service": "^9.2.1",
