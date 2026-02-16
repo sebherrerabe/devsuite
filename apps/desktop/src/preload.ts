@@ -82,6 +82,9 @@ type DesktopNotificationApi = {
 
 type DesktopProcessMonitorApi = {
   getEvents: (scope: DesktopSettingsScope) => Promise<DesktopProcessEvent[]>;
+  listRunningProcesses: () => Promise<
+    Array<{ executable: string; windowTitle: string }>
+  >;
   onEvents: (
     listener: (events: DesktopProcessEvent[]) => void | Promise<void>
   ) => () => void;
@@ -224,6 +227,10 @@ const desktopProcessMonitorApi: DesktopProcessMonitorApi = {
   getEvents: async scope =>
     ipcRenderer.invoke('desktop-process-monitor:get-events', scope) as Promise<
       DesktopProcessEvent[]
+    >,
+  listRunningProcesses: async () =>
+    ipcRenderer.invoke('desktop-process-monitor:list-running') as Promise<
+      Array<{ executable: string; windowTitle: string }>
     >,
   onEvents: listener => {
     const wrapped = (_event: unknown, payload: DesktopProcessEvent[]) => {

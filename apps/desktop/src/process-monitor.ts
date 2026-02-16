@@ -31,6 +31,11 @@ export interface MonitoredProcess {
   pid: number;
 }
 
+export interface RunningProcessSummary {
+  executable: string;
+  windowTitle: string;
+}
+
 type ProcessEntryWithCategory = MonitoredProcess & {
   category: DesktopProcessCategory;
 };
@@ -103,6 +108,82 @@ export function parseTasklistCsv(rawOutput: string): MonitoredProcess[] {
   }
 
   return entries;
+}
+
+function normalizeWindowTitle(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'n/a') {
+    return '';
+  }
+  return trimmed;
+}
+
+export function parseTasklistCsvVerbose(
+  rawOutput: string
+): RunningProcessSummary[] {
+  const lines = rawOutput
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  const entries: RunningProcessSummary[] = [];
+
+  for (const line of lines) {
+    const columns = parseCsvLine(line);
+    if (columns.length < 9) {
+      continue;
+    }
+
+    const executable = normalizeExecutable(columns[0] ?? '');
+    if (!executable) {
+      continue;
+    }
+
+    entries.push({
+      executable,
+      windowTitle: normalizeWindowTitle(columns[8] ?? ''),
+    });
+  }
+
+  return entries;
+}
+
+function pickBetterRunningProcess(
+  current: RunningProcessSummary,
+  candidate: RunningProcessSummary
+): RunningProcessSummary {
+  if (!current.windowTitle && candidate.windowTitle) {
+    return candidate;
+  }
+
+  if (candidate.windowTitle.length > current.windowTitle.length) {
+    return candidate;
+  }
+
+  return current;
+}
+
+export function dedupeRunningProcessesByExecutable(
+  entries: RunningProcessSummary[]
+): RunningProcessSummary[] {
+  const bestByExecutable = new Map<string, RunningProcessSummary>();
+
+  for (const entry of entries) {
+    const current = bestByExecutable.get(entry.executable);
+    if (!current) {
+      bestByExecutable.set(entry.executable, entry);
+      continue;
+    }
+
+    bestByExecutable.set(
+      entry.executable,
+      pickBetterRunningProcess(current, entry)
+    );
+  }
+
+  return Array.from(bestByExecutable.values()).sort((left, right) =>
+    left.executable.localeCompare(right.executable)
+  );
 }
 
 export function createProcessWatchConfigFromFocusSettings(
@@ -245,6 +326,21 @@ async function listWindowsProcesses(): Promise<MonitoredProcess[]> {
     maxBuffer: 16 * 1024 * 1024,
   });
   return parseTasklistCsv(stdout);
+}
+
+export async function listWindowsProcessesVerbose(): Promise<
+  RunningProcessSummary[]
+> {
+  const { stdout } = await execFileAsync(
+    'tasklist',
+    ['/fo', 'csv', '/v', '/nh'],
+    {
+      windowsHide: true,
+      timeout: 8_000,
+      maxBuffer: 16 * 1024 * 1024,
+    }
+  );
+  return dedupeRunningProcessesByExecutable(parseTasklistCsvVerbose(stdout));
 }
 
 export function shouldMonitorProcesses(

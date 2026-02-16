@@ -160,6 +160,9 @@ interface Window {
   };
   desktopProcessMonitor?: {
     getEvents: (scope: DesktopSettingsScope) => Promise<DesktopProcessEvent[]>;
+    listRunningProcesses: () => Promise<
+      Array<{ executable: string; windowTitle: string }>
+    >;
     onEvents: (
       listener: (events: DesktopProcessEvent[]) => void | Promise<void>
     ) => () => void;

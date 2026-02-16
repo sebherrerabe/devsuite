@@ -42,6 +42,7 @@ import {
 import {
   WindowsProcessMonitor,
   createProcessWatchConfigFromFocusSettings,
+  listWindowsProcessesVerbose,
   normalizeProcessWatchConfig,
   type DesktopProcessEvent,
 } from './process-monitor.js';
@@ -1379,6 +1380,13 @@ function registerIpcHandlers(): void {
       return getProcessEventLogSnapshot();
     }
   );
+  ipcMain.handle('desktop-process-monitor:list-running', async () => {
+    if (process.platform !== 'win32') {
+      return [];
+    }
+
+    return listWindowsProcessesVerbose();
+  });
   ipcMain.handle(
     'desktop-policy:get-audit-events',
     async (_event, scope: unknown) => {
