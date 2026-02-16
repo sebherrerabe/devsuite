@@ -1466,9 +1466,10 @@ async function createMainWindow(options?: {
   const mainWindow = new BrowserWindow({
     width: 1320,
     height: 860,
-    minWidth: 980,
+    minWidth: 680,
     minHeight: 640,
     autoHideMenuBar: true,
+    titleBarOverlay: { color: '#0f172a', symbolColor: '#e2e8f0', height: 36 },
     backgroundColor: '#f8fafc',
     show,
     webPreferences: {

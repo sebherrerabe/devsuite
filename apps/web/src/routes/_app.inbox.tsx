@@ -110,6 +110,8 @@ function InboxPage() {
     requestPermission,
     disable,
   } = useInboxDesktopNotifications();
+  const isDesktopRuntime =
+    typeof window !== 'undefined' && 'desktopNotification' in window;
 
   const [sourceFilter, setSourceFilter] = useState<InboxItemSource | 'all'>(
     'all'
@@ -366,19 +368,22 @@ function InboxPage() {
       <Alert>
         <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
           <span>
-            {!desktopNotificationsSupported
-              ? 'This browser does not support desktop notifications.'
-              : desktopNotificationPermission === 'denied'
-                ? 'Desktop notifications are blocked. Re-enable notifications for this site in your browser settings.'
-                : desktopNotificationPermission === 'granted' &&
-                    desktopNotificationsEnabled
-                  ? 'Desktop notifications are enabled for new inbox items.'
-                  : desktopNotificationPermission === 'granted'
-                    ? 'Desktop notification permission is granted, but alerts are currently disabled in DevSuite.'
-                    : 'Enable desktop notifications to get alerts when new inbox items arrive.'}
+            {isDesktopRuntime
+              ? 'Notifications are handled by the DevSuite desktop app.'
+              : !desktopNotificationsSupported
+                ? 'This browser does not support desktop notifications.'
+                : desktopNotificationPermission === 'denied'
+                  ? 'Desktop notifications are blocked. Re-enable notifications for this site in your browser settings.'
+                  : desktopNotificationPermission === 'granted' &&
+                      desktopNotificationsEnabled
+                    ? 'Desktop notifications are enabled for new inbox items.'
+                    : desktopNotificationPermission === 'granted'
+                      ? 'Desktop notification permission is granted, but alerts are currently disabled in DevSuite.'
+                      : 'Enable desktop notifications to get alerts when new inbox items arrive.'}
           </span>
 
-          {desktopNotificationsSupported &&
+          {!isDesktopRuntime &&
+            desktopNotificationsSupported &&
             (desktopNotificationPermission === 'granted' &&
             desktopNotificationsEnabled ? (
               <Button
