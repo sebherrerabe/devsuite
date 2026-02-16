@@ -11,6 +11,8 @@ import {
 } from './focus-settings.js';
 
 const SETTINGS_FILE_NAME = 'desktop-focus-settings.json';
+const MAX_COMPANION_SHORTCUT_LENGTH = 120;
+export const DEFAULT_COMPANION_SHORTCUT = 'Ctrl+Alt+D';
 const require = createRequire(import.meta.url);
 const { app } = require('electron') as typeof import('electron');
 const USER_DATA_PATH_ENV = 'DEVSUITE_DESKTOP_USER_DATA_PATH';
@@ -27,6 +29,7 @@ function resolveDesktopUserDataPath(): string {
 interface StoredDesktopFocusSettings {
   version: 1;
   byScope: Record<string, DesktopFocusSettings>;
+  companionShortcut: string;
 }
 
 function getSettingsFilePath(): string {
@@ -37,6 +40,7 @@ function createEmptyStorage(): StoredDesktopFocusSettings {
   return {
     version: 1,
     byScope: {},
+    companionShortcut: DEFAULT_COMPANION_SHORTCUT,
   };
 }
 
@@ -44,14 +48,43 @@ function getScopeKey(scope: DesktopSettingsScope): string {
   return `${scope.userId}::${scope.companyId}`;
 }
 
+export function parseCompanionShortcut(input: unknown): string {
+  if (typeof input !== 'string') {
+    throw new Error('Companion shortcut must be a string.');
+  }
+
+  const normalized = input.trim();
+  if (!normalized) {
+    throw new Error('Companion shortcut must be a non-empty string.');
+  }
+  if (normalized.length > MAX_COMPANION_SHORTCUT_LENGTH) {
+    throw new Error(
+      `Companion shortcut must be at most ${MAX_COMPANION_SHORTCUT_LENGTH} characters.`
+    );
+  }
+
+  return normalized;
+}
+
 function parseStoredData(input: unknown): StoredDesktopFocusSettings {
   if (!input || typeof input !== 'object') {
     return createEmptyStorage();
   }
 
-  const raw = input as { byScope?: unknown };
+  const raw = input as { byScope?: unknown; companionShortcut?: unknown };
   if (!raw.byScope || typeof raw.byScope !== 'object') {
-    return createEmptyStorage();
+    const emptyStorage = createEmptyStorage();
+    if (raw.companionShortcut === undefined) {
+      return emptyStorage;
+    }
+    try {
+      return {
+        ...emptyStorage,
+        companionShortcut: parseCompanionShortcut(raw.companionShortcut),
+      };
+    } catch {
+      return emptyStorage;
+    }
   }
 
   const parsedByScope: Record<string, DesktopFocusSettings> = {};
@@ -63,10 +96,32 @@ function parseStoredData(input: unknown): StoredDesktopFocusSettings {
     }
   }
 
+  let companionShortcut = DEFAULT_COMPANION_SHORTCUT;
+  if (raw.companionShortcut !== undefined) {
+    try {
+      companionShortcut = parseCompanionShortcut(raw.companionShortcut);
+    } catch {
+      // Keep default when the persisted shortcut is malformed.
+    }
+  }
+
   return {
     version: 1,
     byScope: parsedByScope,
+    companionShortcut,
   };
+}
+
+async function writeStorage(
+  settingsFilePath: string,
+  storage: StoredDesktopFocusSettings
+): Promise<void> {
+  await mkdir(dirname(settingsFilePath), { recursive: true });
+  await writeFile(
+    settingsFilePath,
+    `${JSON.stringify(storage, null, 2)}\n`,
+    'utf-8'
+  );
 }
 
 export async function loadDesktopFocusSettings(
@@ -105,12 +160,40 @@ export async function saveDesktopFocusSettings(
 
   storage.byScope[scopeKey] = normalizedSettings;
 
-  await mkdir(dirname(settingsFilePath), { recursive: true });
-  await writeFile(
-    settingsFilePath,
-    `${JSON.stringify(storage, null, 2)}\n`,
-    'utf-8'
-  );
+  await writeStorage(settingsFilePath, storage);
 
   return normalizedSettings;
+}
+
+export async function loadCompanionShortcut(): Promise<string> {
+  const settingsFilePath = getSettingsFilePath();
+
+  try {
+    const fileContents = await readFile(settingsFilePath, 'utf-8');
+    const parsedJson = JSON.parse(fileContents) as unknown;
+    const storage = parseStoredData(parsedJson);
+    return storage.companionShortcut;
+  } catch {
+    return DEFAULT_COMPANION_SHORTCUT;
+  }
+}
+
+export async function saveCompanionShortcut(
+  nextShortcut: unknown
+): Promise<string> {
+  const normalizedShortcut = parseCompanionShortcut(nextShortcut);
+  const settingsFilePath = getSettingsFilePath();
+  let storage = createEmptyStorage();
+
+  try {
+    const fileContents = await readFile(settingsFilePath, 'utf-8');
+    storage = parseStoredData(JSON.parse(fileContents));
+  } catch {
+    // Start with empty storage when no file exists.
+  }
+
+  storage.companionShortcut = normalizedShortcut;
+  await writeStorage(settingsFilePath, storage);
+
+  return normalizedShortcut;
 }

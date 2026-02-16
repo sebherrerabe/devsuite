@@ -114,6 +114,9 @@ export function SessionWidget({
   >([]);
   const [isFinishing, setIsFinishing] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const hasCompanion =
+    typeof window !== 'undefined' &&
+    typeof window.desktopSession?.showCompanion === 'function';
 
   const isRunning = sessionDetail?.session?.status === 'RUNNING';
 
@@ -632,6 +635,24 @@ export function SessionWidget({
                 <Badge variant={statusBadgeVariant(status)}>{status}</Badge>
               )}
             </div>
+            {hasCompanion && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  void window.desktopSession?.showCompanion().catch(error => {
+                    showToast.error(
+                      error instanceof Error
+                        ? error.message
+                        : 'Failed to open companion'
+                    );
+                  });
+                }}
+              >
+                Open companion
+              </Button>
+            )}
 
             {status === 'IDLE' ? (
               <div className="space-y-3">

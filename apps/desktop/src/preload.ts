@@ -49,12 +49,18 @@ type DesktopSessionApi = {
     scope: DesktopSettingsScope,
     action: DesktopSessionAction
   ) => Promise<void>;
+  showCompanion: () => Promise<void>;
   onCommand: (
     listener: (command: DesktopSessionCommand) => void | Promise<void>
   ) => () => void;
   onStateChanged: (
     listener: (state: DesktopSessionState) => void | Promise<void>
   ) => () => void;
+};
+
+type DesktopCompanionApi = {
+  getShortcut: () => Promise<string>;
+  setShortcut: (shortcut: string) => Promise<string>;
 };
 
 type DesktopNotificationPayload = {
@@ -177,6 +183,9 @@ const desktopSessionApi: DesktopSessionApi = {
   requestAction: async (scope, action) => {
     await ipcRenderer.invoke('desktop-session:request-action', scope, action);
   },
+  showCompanion: async () => {
+    await ipcRenderer.invoke('desktop-session:show-companion');
+  },
   onCommand: listener => {
     const wrapped = (_event: unknown, payload: DesktopSessionCommand) => {
       void listener(payload);
@@ -195,6 +204,16 @@ const desktopSessionApi: DesktopSessionApi = {
       ipcRenderer.removeListener(SESSION_STATE_CHANGED_CHANNEL, wrapped);
     };
   },
+};
+
+const desktopCompanionApi: DesktopCompanionApi = {
+  getShortcut: async () =>
+    ipcRenderer.invoke('desktop-companion:get-shortcut') as Promise<string>,
+  setShortcut: async shortcut =>
+    ipcRenderer.invoke(
+      'desktop-companion:set-shortcut',
+      shortcut
+    ) as Promise<string>,
 };
 
 const desktopNotificationApi: DesktopNotificationApi = {
@@ -311,6 +330,7 @@ if (shouldExposeApis) {
   contextBridge.exposeInMainWorld('desktopFocus', desktopFocusApi);
   contextBridge.exposeInMainWorld('desktopAuth', desktopAuthApi);
   contextBridge.exposeInMainWorld('desktopSession', desktopSessionApi);
+  contextBridge.exposeInMainWorld('desktopCompanion', desktopCompanionApi);
   contextBridge.exposeInMainWorld(
     'desktopNotification',
     desktopNotificationApi
@@ -330,6 +350,7 @@ declare global {
     desktopFocus: DesktopFocusApi;
     desktopAuth?: DesktopAuthApi;
     desktopSession?: DesktopSessionApi;
+    desktopCompanion?: DesktopCompanionApi;
     desktopNotification?: DesktopNotificationApi;
     desktopProcessMonitor?: DesktopProcessMonitorApi;
     desktopPolicy?: DesktopPolicyApi;

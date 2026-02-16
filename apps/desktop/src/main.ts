@@ -13,7 +13,11 @@ import type {
 } from 'electron';
 
 import {
+  DEFAULT_COMPANION_SHORTCUT,
+  loadCompanionShortcut,
   loadDesktopFocusSettings,
+  parseCompanionShortcut,
+  saveCompanionShortcut,
   saveDesktopFocusSettings,
 } from './settings-store.js';
 import {
@@ -78,6 +82,7 @@ const {
   protocol,
   nativeImage,
   Notification,
+  globalShortcut,
 } = require('electron') as typeof import('electron');
 const DESKTOP_PARTITION = 'persist:devsuite';
 const SESSION_COMMAND_CHANNEL = 'desktop-session:command';
@@ -94,6 +99,7 @@ const TEST_IPC_RENDERER_SWITCH = '--devsuite-enable-test-ipc=1';
 const TEST_IPC_RENDERER_ARGS = ENABLE_TEST_IPC
   ? [TEST_IPC_RENDERER_SWITCH]
   : [];
+const SHOW_COMPANION_ARG = '--show-companion';
 const DESKTOP_ADDITIONAL_NAV_ORIGINS =
   process.env.DEVSUITE_DESKTOP_NAV_ALLOW_ORIGINS;
 const APP_ICON_PATH = join(__dirname, '..', 'assets', 'icon.png');
@@ -202,6 +208,8 @@ let policyAuditLog: StrictPolicyAuditEvent[] = [];
 const blockedWebsiteBySourceId = new Map<string, string>();
 let policyTickTimer: ReturnType<typeof setInterval> | null = null;
 let rendererProtocolRegistered = false;
+let companionShortcut = DEFAULT_COMPANION_SHORTCUT;
+let registeredCompanionShortcut: string | null = null;
 const execFileAsync = promisify(execFile);
 const allowedDesktopNavigationOrigins = resolveAllowedDesktopNavigationOrigins({
   webUrl: process.env.DEVSUITE_WEB_URL,
@@ -231,6 +239,10 @@ function parseNonEmptyString(value: unknown, fieldName: string): string {
   }
 
   return trimmed;
+}
+
+function hasShowCompanionArg(argv: readonly string[]): boolean {
+  return argv.includes(SHOW_COMPANION_ARG);
 }
 
 function parseDesktopProcessEventForTest(input: unknown): DesktopProcessEvent {
@@ -533,6 +545,9 @@ async function executeStrictPolicyActions(
         throttleKey: action.throttleKey,
         throttleMs: action.throttleMs,
       });
+      if (action.kind === 'ide_session_required') {
+        void showSessionWidget();
+      }
       continue;
     }
 
@@ -1130,6 +1145,70 @@ async function showSessionWidget(): Promise<void> {
   broadcastDesktopSessionState();
 }
 
+function tryRegisterCompanionShortcut(shortcut: string): boolean {
+  try {
+    return globalShortcut.register(shortcut, () => {
+      void showSessionWidget();
+    });
+  } catch (error) {
+    console.warn('[desktop] Companion shortcut registration failed.', {
+      shortcut,
+      error,
+    });
+    return false;
+  }
+}
+
+function applyCompanionShortcutRegistration(shortcut: string): boolean {
+  const previousShortcut = registeredCompanionShortcut;
+
+  if (previousShortcut) {
+    globalShortcut.unregister(previousShortcut);
+    registeredCompanionShortcut = null;
+  }
+
+  if (tryRegisterCompanionShortcut(shortcut)) {
+    registeredCompanionShortcut = shortcut;
+    companionShortcut = shortcut;
+    return true;
+  }
+
+  if (previousShortcut && tryRegisterCompanionShortcut(previousShortcut)) {
+    registeredCompanionShortcut = previousShortcut;
+    companionShortcut = previousShortcut;
+  }
+
+  return false;
+}
+
+async function initializeCompanionShortcut(): Promise<void> {
+  const persistedShortcut = await loadCompanionShortcut();
+  if (applyCompanionShortcutRegistration(persistedShortcut)) {
+    return;
+  }
+
+  if (persistedShortcut !== DEFAULT_COMPANION_SHORTCUT) {
+    if (applyCompanionShortcutRegistration(DEFAULT_COMPANION_SHORTCUT)) {
+      await saveCompanionShortcut(DEFAULT_COMPANION_SHORTCUT);
+      return;
+    }
+  }
+
+  console.warn('[desktop] Unable to register any companion shortcut.');
+}
+
+async function updateCompanionShortcut(nextShortcut: unknown): Promise<string> {
+  const parsedShortcut = parseCompanionShortcut(nextShortcut);
+  if (!applyCompanionShortcutRegistration(parsedShortcut)) {
+    throw new Error(
+      `Unable to register shortcut "${parsedShortcut}". Check accelerator format and OS shortcut conflicts.`
+    );
+  }
+
+  await saveCompanionShortcut(parsedShortcut);
+  return parsedShortcut;
+}
+
 function registerWebsiteSignalHandlers(browserWindow: BrowserWindowType): void {
   const sourceId = `${WEBSITE_SOURCE_PREFIX}:${browserWindow.webContents.id}`;
   const handleNavigation = (_event: unknown, rawUrl: string) => {
@@ -1449,6 +1528,18 @@ function registerIpcHandlers(): void {
       await dispatchDesktopSessionAction(parsedAction);
     }
   );
+  ipcMain.handle('desktop-session:show-companion', async () => {
+    await showSessionWidget();
+  });
+  ipcMain.handle('desktop-companion:get-shortcut', async () => {
+    return companionShortcut;
+  });
+  ipcMain.handle(
+    'desktop-companion:set-shortcut',
+    async (_event, shortcut: unknown) => {
+      return updateCompanionShortcut(shortcut);
+    }
+  );
   ipcMain.handle(
     'desktop-process-monitor:get-events',
     async (_event, scope: unknown) => {
@@ -1596,26 +1687,72 @@ async function ensureMainWindow(options?: {
   return mainWindowRef;
 }
 
-app.whenReady().then(async () => {
-  app.setAppUserModelId('com.devsuite.desktop');
-  await registerRendererProtocol();
-  registerIpcHandlers();
-  setDesktopScope(await loadDesktopSessionScope());
-  applyDesktopPermissionPolicy();
-  ensureTray();
-  if (!policyTickTimer) {
-    policyTickTimer = setInterval(() => {
-      void evaluateAndRunStrictPolicy();
-    }, POLICY_TICK_INTERVAL_MS);
+function configureCompanionTaskbarTask(): void {
+  if (process.platform !== 'win32') {
+    return;
   }
-  await ensureMainWindow({ show: true });
 
-  app.on('activate', async () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      await ensureMainWindow({ show: true });
+  try {
+    app.setUserTasks([
+      {
+        program: process.execPath,
+        arguments: SHOW_COMPANION_ARG,
+        iconPath: process.execPath,
+        iconIndex: 0,
+        title: 'Open companion window',
+        description: 'Show the DevSuite session companion widget',
+      },
+    ]);
+  } catch (error) {
+    console.warn('[desktop] Failed to configure companion jump list task.', {
+      error,
+    });
+  }
+}
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, argv) => {
+    if (hasShowCompanionArg(argv)) {
+      void app.whenReady().then(() => showSessionWidget());
+      return;
     }
+
+    void app.whenReady().then(() => showMainWindow());
   });
-});
+
+  app.whenReady().then(async () => {
+    app.setAppUserModelId('com.devsuite.desktop');
+    await registerRendererProtocol();
+    registerIpcHandlers();
+    setDesktopScope(await loadDesktopSessionScope());
+    applyDesktopPermissionPolicy();
+    ensureTray();
+    if (!policyTickTimer) {
+      policyTickTimer = setInterval(() => {
+        void evaluateAndRunStrictPolicy();
+      }, POLICY_TICK_INTERVAL_MS);
+    }
+    await ensureMainWindow({ show: true });
+    configureCompanionTaskbarTask();
+    await initializeCompanionShortcut();
+    if (hasShowCompanionArg(process.argv)) {
+      await showSessionWidget();
+    }
+
+    app.on('activate', async () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        await ensureMainWindow({ show: true });
+      }
+    });
+  });
+
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
+  });
+}
 
 app.on('before-quit', () => {
   processMonitor.stop();
