@@ -1641,12 +1641,17 @@ async function createMainWindow(options?: {
   const mainWindow = new BrowserWindow({
     width: 1320,
     height: 860,
-    minWidth: 980,
+    minWidth: 680,
     minHeight: 640,
     autoHideMenuBar: true,
     backgroundColor: '#f8fafc',
     show,
     icon: APP_ICON_PATH,
+    titleBarOverlay: {
+      color: '#0f172a',
+      symbolColor: '#e2e8f0',
+      height: 36,
+    },
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       partition: DESKTOP_PARTITION,

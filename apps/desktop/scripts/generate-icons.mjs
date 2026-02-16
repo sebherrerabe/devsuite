@@ -1,10 +1,12 @@
+import { createRequire } from 'node:module';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import bmp from 'bmp-js';
-import pngToIco from 'png-to-ico';
-import sharp from 'sharp';
+const require = createRequire(import.meta.url);
+const bmp = require('bmp-js');
+const pngToIco = require('png-to-ico');
+const sharp = require('sharp');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const assetsDir = join(__dirname, '..', 'assets');
