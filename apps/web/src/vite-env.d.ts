@@ -108,6 +108,11 @@ interface DesktopStrictPolicyAuditEvent {
   metadata: Record<string, string | number | boolean | null>;
 }
 
+interface DesktopRuntimePreferences {
+  openAtLogin: boolean;
+  runInBackgroundOnClose: boolean;
+}
+
 interface Window {
   desktopAuth?: {
     getScope: () => Promise<DesktopSettingsScope | null>;
@@ -143,6 +148,12 @@ interface Window {
   desktopCompanion?: {
     getShortcut: () => Promise<string>;
     setShortcut: (shortcut: string) => Promise<string>;
+  };
+  desktopRuntimePreferences?: {
+    get: () => Promise<DesktopRuntimePreferences>;
+    set: (
+      nextPreferences: DesktopRuntimePreferences
+    ) => Promise<DesktopRuntimePreferences>;
   };
   desktopNotification?: {
     emit: (payload: {

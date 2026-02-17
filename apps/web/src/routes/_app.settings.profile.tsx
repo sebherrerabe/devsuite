@@ -267,16 +267,26 @@ function ProcessPicker({
               <CommandItem
                 key={process.executable}
                 value={`${process.executable} ${process.windowTitle}`}
+                className="cursor-pointer"
                 onSelect={() => {
+                  setSelectedExecutable(process.executable);
+                }}
+                onMouseDown={event => {
+                  event.preventDefault();
+                  setSelectedExecutable(process.executable);
+                }}
+                onClick={() => {
                   setSelectedExecutable(process.executable);
                 }}
               >
                 <div className="flex w-full items-center justify-between gap-2">
                   <span className="truncate text-xs">
-                    {process.windowTitle || '(No window title)'}
+                    {process.windowTitle || process.executable}
                   </span>
                   <span className="truncate text-[11px] text-muted-foreground">
-                    {process.executable}
+                    {process.windowTitle
+                      ? process.executable
+                      : '(No window title)'}
                   </span>
                 </div>
               </CommandItem>
@@ -381,6 +391,9 @@ function ProfileSettingsPage() {
   const [desktopCompanionShortcut, setDesktopCompanionShortcut] = useState(
     DEFAULT_COMPANION_SHORTCUT
   );
+  const [desktopOpenAtLogin, setDesktopOpenAtLogin] = useState(true);
+  const [desktopRunInBackgroundOnClose, setDesktopRunInBackgroundOnClose] =
+    useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const isDesktopRuntime =
     typeof window !== 'undefined' && typeof window.desktopFocus !== 'undefined';
@@ -390,6 +403,9 @@ function ProfileSettingsPage() {
   const hasDesktopCompanionApi =
     typeof window !== 'undefined' &&
     typeof window.desktopCompanion !== 'undefined';
+  const hasDesktopRuntimePreferencesApi =
+    typeof window !== 'undefined' &&
+    typeof window.desktopRuntimePreferences !== 'undefined';
 
   useEffect(() => {
     if (settings?.timezone) {
@@ -445,6 +461,37 @@ function ProfileSettingsPage() {
       active = false;
     };
   }, [hasDesktopCompanionApi]);
+
+  useEffect(() => {
+    if (!hasDesktopRuntimePreferencesApi) {
+      setDesktopOpenAtLogin(true);
+      setDesktopRunInBackgroundOnClose(false);
+      return;
+    }
+
+    let active = true;
+    void window.desktopRuntimePreferences
+      ?.get()
+      .then(preferences => {
+        if (!active || !preferences) {
+          return;
+        }
+
+        setDesktopOpenAtLogin(preferences.openAtLogin);
+        setDesktopRunInBackgroundOnClose(preferences.runInBackgroundOnClose);
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setDesktopOpenAtLogin(true);
+        setDesktopRunInBackgroundOnClose(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [hasDesktopRuntimePreferencesApi]);
 
   const toggleModule = (module: AppModule, enabled: boolean) => {
     setModuleFlags(prev => {
@@ -533,6 +580,18 @@ function ProfileSettingsPage() {
         );
         if (savedShortcut) {
           setDesktopCompanionShortcut(savedShortcut);
+        }
+      }
+      if (hasDesktopRuntimePreferencesApi) {
+        const savedPreferences = await window.desktopRuntimePreferences?.set({
+          openAtLogin: desktopOpenAtLogin,
+          runInBackgroundOnClose: desktopRunInBackgroundOnClose,
+        });
+        if (savedPreferences) {
+          setDesktopOpenAtLogin(savedPreferences.openAtLogin);
+          setDesktopRunInBackgroundOnClose(
+            savedPreferences.runInBackgroundOnClose
+          );
         }
       }
 
@@ -814,6 +873,35 @@ function ProfileSettingsPage() {
             />
             <p className="text-xs text-muted-foreground">
               Electron accelerator used to open the companion window.
+            </p>
+          </div>
+          <div className="space-y-2 rounded-md border p-3">
+            <p className="text-xs font-medium">Desktop Runtime</p>
+            <div className="flex items-center justify-between">
+              <span className="text-xs">Start DevSuite with Windows</span>
+              <Checkbox
+                checked={desktopOpenAtLogin}
+                disabled={!hasDesktopRuntimePreferencesApi}
+                onCheckedChange={checked =>
+                  setDesktopOpenAtLogin(Boolean(checked))
+                }
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs">
+                Keep running in background when app is closed
+              </span>
+              <Checkbox
+                checked={desktopRunInBackgroundOnClose}
+                disabled={!hasDesktopRuntimePreferencesApi}
+                onCheckedChange={checked =>
+                  setDesktopRunInBackgroundOnClose(Boolean(checked))
+                }
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Changes apply after saving. When enabled, closing the main window
+              hides it to tray.
             </p>
           </div>
         </div>

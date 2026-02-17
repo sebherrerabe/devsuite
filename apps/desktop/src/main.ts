@@ -13,10 +13,13 @@ import type {
 import {
   DEFAULT_COMPANION_SHORTCUT,
   loadCompanionShortcut,
+  loadDesktopRuntimePreferences,
   loadDesktopFocusSettings,
   parseCompanionShortcut,
   saveCompanionShortcut,
+  saveDesktopRuntimePreferences,
   saveDesktopFocusSettings,
+  type DesktopRuntimePreferences,
 } from './settings-store.js';
 import {
   clearDesktopSessionScope,
@@ -227,6 +230,11 @@ let policyTickTimer: ReturnType<typeof setInterval> | null = null;
 let rendererProtocolRegistered = false;
 let companionShortcut = DEFAULT_COMPANION_SHORTCUT;
 let registeredCompanionShortcut: string | null = null;
+let desktopRuntimePreferences: DesktopRuntimePreferences = {
+  openAtLogin: true,
+  runInBackgroundOnClose: false,
+};
+let isAppQuitting = false;
 const allowedDesktopNavigationOrigins = resolveAllowedDesktopNavigationOrigins({
   webUrl: process.env.DEVSUITE_WEB_URL,
   nodeEnv: process.env.NODE_ENV,
@@ -915,6 +923,35 @@ function ensureTray(): void {
   }
 }
 
+function applyLoginItemPreferences(
+  preferences: DesktopRuntimePreferences
+): void {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: preferences.openAtLogin,
+      openAsHidden: true,
+      path: process.execPath,
+    });
+  } catch (error) {
+    console.warn('[desktop] Failed to apply login item preferences.', error);
+  }
+}
+
+async function initializeRuntimePreferences(): Promise<void> {
+  const loaded = await loadDesktopRuntimePreferences();
+  desktopRuntimePreferences = loaded;
+  applyLoginItemPreferences(loaded);
+}
+
+async function updateRuntimePreferences(
+  nextPreferences: unknown
+): Promise<DesktopRuntimePreferences> {
+  const saved = await saveDesktopRuntimePreferences(nextPreferences);
+  desktopRuntimePreferences = saved;
+  applyLoginItemPreferences(saved);
+  return saved;
+}
+
 function setDesktopScope(nextScope: DesktopSettingsScope | null): void {
   const hasChanged =
     !nextScope ||
@@ -1473,6 +1510,15 @@ function registerIpcHandlers(): void {
       return updateCompanionShortcut(shortcut);
     }
   );
+  ipcMain.handle('desktop-runtime-preferences:get', async () => {
+    return desktopRuntimePreferences;
+  });
+  ipcMain.handle(
+    'desktop-runtime-preferences:set',
+    async (_event, nextPreferences: unknown) => {
+      return updateRuntimePreferences(nextPreferences);
+    }
+  );
   ipcMain.handle(
     'desktop-process-monitor:get-events',
     async (_event, scope: unknown) => {
@@ -1600,6 +1646,14 @@ async function createMainWindow(options?: {
   });
   registerWebsiteSignalHandlers(mainWindow);
   await loadWindowContent(mainWindow);
+  mainWindow.on('close', event => {
+    if (!desktopRuntimePreferences.runInBackgroundOnClose || isAppQuitting) {
+      return;
+    }
+
+    event.preventDefault();
+    mainWindow.hide();
+  });
 
   mainWindow.on('closed', () => {
     if (mainWindowRef === mainWindow) {
@@ -1671,6 +1725,7 @@ if (!hasSingleInstanceLock) {
       );
     }
     await registerRendererProtocol();
+    await initializeRuntimePreferences();
     registerIpcHandlers();
     setDesktopScope(await loadDesktopSessionScope());
     applyDesktopPermissionPolicy();
@@ -1700,6 +1755,7 @@ if (!hasSingleInstanceLock) {
 }
 
 app.on('before-quit', () => {
+  isAppQuitting = true;
   processMonitor.stop();
   if (policyTickTimer) {
     clearInterval(policyTickTimer);

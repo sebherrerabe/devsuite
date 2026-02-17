@@ -63,6 +63,18 @@ type DesktopCompanionApi = {
   setShortcut: (shortcut: string) => Promise<string>;
 };
 
+type DesktopRuntimePreferences = {
+  openAtLogin: boolean;
+  runInBackgroundOnClose: boolean;
+};
+
+type DesktopRuntimePreferencesApi = {
+  get: () => Promise<DesktopRuntimePreferences>;
+  set: (
+    nextPreferences: DesktopRuntimePreferences
+  ) => Promise<DesktopRuntimePreferences>;
+};
+
 type DesktopNotificationPayload = {
   scope: DesktopSettingsScope;
   kind: DesktopNotificationKind;
@@ -227,6 +239,18 @@ const desktopCompanionApi: DesktopCompanionApi = {
     ) as Promise<string>,
 };
 
+const desktopRuntimePreferencesApi: DesktopRuntimePreferencesApi = {
+  get: async () =>
+    ipcRenderer.invoke(
+      'desktop-runtime-preferences:get'
+    ) as Promise<DesktopRuntimePreferences>,
+  set: async nextPreferences =>
+    ipcRenderer.invoke(
+      'desktop-runtime-preferences:set',
+      nextPreferences
+    ) as Promise<DesktopRuntimePreferences>,
+};
+
 const desktopNotificationApi: DesktopNotificationApi = {
   emit: async payload =>
     ipcRenderer.invoke('desktop-notification:emit', payload) as Promise<{
@@ -366,6 +390,10 @@ if (shouldExposeApis) {
   contextBridge.exposeInMainWorld('desktopSession', desktopSessionApi);
   contextBridge.exposeInMainWorld('desktopCompanion', desktopCompanionApi);
   contextBridge.exposeInMainWorld(
+    'desktopRuntimePreferences',
+    desktopRuntimePreferencesApi
+  );
+  contextBridge.exposeInMainWorld(
     'desktopNotification',
     desktopNotificationApi
   );
@@ -386,6 +414,7 @@ declare global {
     desktopAuth?: DesktopAuthApi;
     desktopSession?: DesktopSessionApi;
     desktopCompanion?: DesktopCompanionApi;
+    desktopRuntimePreferences?: DesktopRuntimePreferencesApi;
     desktopNotification?: DesktopNotificationApi;
     desktopProcessMonitor?: DesktopProcessMonitorApi;
     desktopPolicy?: DesktopPolicyApi;

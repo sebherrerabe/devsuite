@@ -177,17 +177,30 @@ async function writeHostsFile(params: {
     }
 
     try {
+      const encodedContents = Buffer.from(params.contents, 'utf8').toString(
+        'base64'
+      );
+      const writeCommand = [
+        `$decodedBytes = [Convert]::FromBase64String('${encodedContents}')`,
+        `[IO.File]::WriteAllBytes('${params.hostsPath.replace(/'/g, "''")}', $decodedBytes)`,
+      ].join('; ');
+      const quotedWriteCommand = writeCommand.replace(/"/g, '""');
+      const elevateCommand = [
+        '$process = Start-Process -FilePath "powershell" -Verb RunAs -PassThru -Wait -WindowStyle Hidden -ArgumentList @(',
+        '"-NoProfile",',
+        '"-NonInteractive",',
+        '"-Command",',
+        `"${quotedWriteCommand}"`,
+        ')',
+        'exit $process.ExitCode',
+      ].join(' ');
+
       await params.execFile(
         'powershell',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `[IO.File]::WriteAllText('${params.hostsPath.replace(/'/g, "''")}', @'${params.contents.replace(/\r/g, '')}'@)`,
-        ],
+        ['-NoProfile', '-NonInteractive', '-Command', elevateCommand],
         {
           windowsHide: true,
-          timeout: 15_000,
+          timeout: 45_000,
           maxBuffer: 2 * 1024 * 1024,
         }
       );

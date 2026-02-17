@@ -13,6 +13,10 @@ import {
 const SETTINGS_FILE_NAME = 'desktop-focus-settings.json';
 const MAX_COMPANION_SHORTCUT_LENGTH = 120;
 export const DEFAULT_COMPANION_SHORTCUT = 'Ctrl+Alt+D';
+export const DEFAULT_RUNTIME_PREFERENCES = {
+  openAtLogin: true,
+  runInBackgroundOnClose: false,
+} as const;
 const require = createRequire(import.meta.url);
 const { app } = require('electron') as typeof import('electron');
 const USER_DATA_PATH_ENV = 'DEVSUITE_DESKTOP_USER_DATA_PATH';
@@ -30,6 +34,12 @@ interface StoredDesktopFocusSettings {
   version: 1;
   byScope: Record<string, DesktopFocusSettings>;
   companionShortcut: string;
+  runtimePreferences: DesktopRuntimePreferences;
+}
+
+export interface DesktopRuntimePreferences {
+  openAtLogin: boolean;
+  runInBackgroundOnClose: boolean;
 }
 
 function getSettingsFilePath(): string {
@@ -41,6 +51,9 @@ function createEmptyStorage(): StoredDesktopFocusSettings {
     version: 1,
     byScope: {},
     companionShortcut: DEFAULT_COMPANION_SHORTCUT,
+    runtimePreferences: {
+      ...DEFAULT_RUNTIME_PREFERENCES,
+    },
   };
 }
 
@@ -71,16 +84,24 @@ function parseStoredData(input: unknown): StoredDesktopFocusSettings {
     return createEmptyStorage();
   }
 
-  const raw = input as { byScope?: unknown; companionShortcut?: unknown };
+  const raw = input as {
+    byScope?: unknown;
+    companionShortcut?: unknown;
+    runtimePreferences?: unknown;
+  };
   if (!raw.byScope || typeof raw.byScope !== 'object') {
     const emptyStorage = createEmptyStorage();
     if (raw.companionShortcut === undefined) {
-      return emptyStorage;
+      return {
+        ...emptyStorage,
+        runtimePreferences: parseRuntimePreferences(raw.runtimePreferences),
+      };
     }
     try {
       return {
         ...emptyStorage,
         companionShortcut: parseCompanionShortcut(raw.companionShortcut),
+        runtimePreferences: parseRuntimePreferences(raw.runtimePreferences),
       };
     } catch {
       return emptyStorage;
@@ -109,6 +130,27 @@ function parseStoredData(input: unknown): StoredDesktopFocusSettings {
     version: 1,
     byScope: parsedByScope,
     companionShortcut,
+    runtimePreferences: parseRuntimePreferences(raw.runtimePreferences),
+  };
+}
+
+function parseRuntimePreferences(value: unknown): DesktopRuntimePreferences {
+  if (!value || typeof value !== 'object') {
+    return {
+      ...DEFAULT_RUNTIME_PREFERENCES,
+    };
+  }
+
+  const raw = value as Record<string, unknown>;
+  return {
+    openAtLogin:
+      typeof raw.openAtLogin === 'boolean'
+        ? raw.openAtLogin
+        : DEFAULT_RUNTIME_PREFERENCES.openAtLogin,
+    runInBackgroundOnClose:
+      typeof raw.runInBackgroundOnClose === 'boolean'
+        ? raw.runInBackgroundOnClose
+        : DEFAULT_RUNTIME_PREFERENCES.runInBackgroundOnClose,
   };
 }
 
@@ -196,4 +238,38 @@ export async function saveCompanionShortcut(
   await writeStorage(settingsFilePath, storage);
 
   return normalizedShortcut;
+}
+
+export async function loadDesktopRuntimePreferences(): Promise<DesktopRuntimePreferences> {
+  const settingsFilePath = getSettingsFilePath();
+
+  try {
+    const fileContents = await readFile(settingsFilePath, 'utf-8');
+    const parsedJson = JSON.parse(fileContents) as unknown;
+    const storage = parseStoredData(parsedJson);
+    return storage.runtimePreferences;
+  } catch {
+    return {
+      ...DEFAULT_RUNTIME_PREFERENCES,
+    };
+  }
+}
+
+export async function saveDesktopRuntimePreferences(
+  requestedPreferences: unknown
+): Promise<DesktopRuntimePreferences> {
+  const normalizedPreferences = parseRuntimePreferences(requestedPreferences);
+  const settingsFilePath = getSettingsFilePath();
+  let storage = createEmptyStorage();
+
+  try {
+    const fileContents = await readFile(settingsFilePath, 'utf-8');
+    storage = parseStoredData(JSON.parse(fileContents));
+  } catch {
+    // Start with empty storage when no file exists.
+  }
+
+  storage.runtimePreferences = normalizedPreferences;
+  await writeStorage(settingsFilePath, storage);
+  return normalizedPreferences;
 }
