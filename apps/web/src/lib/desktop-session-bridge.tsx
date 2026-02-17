@@ -19,6 +19,13 @@ interface DesktopScope {
   companyId: string;
 }
 type DesktopBridgeConnectionState = 'connected' | 'syncing' | 'error';
+type DesktopNotificationActionPayload = {
+  scope: DesktopScope;
+  action: 'open_app' | 'open_sessions' | 'start_session';
+  route: string | null;
+  requestedAt: number;
+};
+const BRIDGE_DURATION_REGRESSION_TOLERANCE_MS = 1_500;
 
 function getSessionUserId(sessionData: unknown): string | null {
   if (!sessionData || typeof sessionData !== 'object') {
@@ -200,6 +207,55 @@ export function DesktopSessionBridge() {
           ? { durationSummary: sessionDetail.durationSummary }
           : null,
   });
+  const stableDurationRef = useRef<{
+    sessionId: Id<'sessions'> | null;
+    valueMs: number;
+  }>({
+    sessionId: null,
+    valueMs: 0,
+  });
+  let stableEffectiveDurationMs = effectiveDurationMs;
+  if (activeSessionStatus === 'RUNNING' && activeSessionId) {
+    if (stableDurationRef.current.sessionId !== activeSessionId) {
+      stableDurationRef.current = {
+        sessionId: activeSessionId,
+        valueMs: Math.max(0, effectiveDurationMs),
+      };
+    } else if (
+      effectiveDurationMs <
+      stableDurationRef.current.valueMs -
+        BRIDGE_DURATION_REGRESSION_TOLERANCE_MS
+    ) {
+      console.warn('[desktop] duration regression detected in bridge publish', {
+        sessionId: activeSessionId,
+        previousMs: stableDurationRef.current.valueMs,
+        incomingMs: effectiveDurationMs,
+      });
+    } else {
+      stableDurationRef.current.valueMs = Math.max(0, effectiveDurationMs);
+    }
+
+    stableEffectiveDurationMs = stableDurationRef.current.valueMs;
+  } else if (activeSessionStatus === 'PAUSED' && activeSessionId) {
+    if (stableDurationRef.current.sessionId !== activeSessionId) {
+      stableDurationRef.current = {
+        sessionId: activeSessionId,
+        valueMs: Math.max(0, effectiveDurationMs),
+      };
+    } else {
+      stableDurationRef.current.valueMs = Math.max(
+        stableDurationRef.current.valueMs,
+        Math.max(0, effectiveDurationMs)
+      );
+    }
+    stableEffectiveDurationMs = stableDurationRef.current.valueMs;
+  } else {
+    stableDurationRef.current = {
+      sessionId: activeSessionId,
+      valueMs: Math.max(0, effectiveDurationMs),
+    };
+    stableEffectiveDurationMs = Math.max(0, effectiveDurationMs);
+  }
   const remainingTaskCount = useMemo(() => {
     if (tasks === undefined) {
       return null;
@@ -256,7 +312,7 @@ export function DesktopSessionBridge() {
     const payload = {
       status: activeSessionStatus,
       sessionId: activeSessionId,
-      effectiveDurationMs,
+      effectiveDurationMs: stableEffectiveDurationMs,
       remainingTaskCount,
       connectionState: nextConnectionState,
       lastError: commandError,
@@ -265,9 +321,11 @@ export function DesktopSessionBridge() {
     };
     logDesktopBridgePublish({
       status: payload.status,
+      sessionId: payload.sessionId,
       effectiveDurationMs: payload.effectiveDurationMs,
       connectionState: payload.connectionState,
       updatedAt: payload.updatedAt,
+      publishedAt: payload.publishedAt,
     });
 
     void window.desktopSession.publishState(scope, payload).catch(error => {
@@ -278,7 +336,7 @@ export function DesktopSessionBridge() {
     activeSessionStatus,
     commandError,
     connectionState,
-    effectiveDurationMs,
+    stableEffectiveDurationMs,
     remainingTaskCount,
     isSessionsEnabled,
     scope,
@@ -487,14 +545,15 @@ export function DesktopSessionBridge() {
     return unsubscribe;
   }, [finishSession, pauseSession, resumeSession, startSession]);
 
-  useEffect(() => {
-    if (!window.desktopNotification) {
-      return;
-    }
+  const handledNotificationActionKeysRef = useRef<string[]>([]);
 
-    const unsubscribe = window.desktopNotification.onAction(actionPayload => {
+  const handleDesktopNotificationAction = useCallback(
+    (actionPayload: DesktopNotificationActionPayload) => {
       const snapshot = actionRef.current;
       if (!snapshot.scope) {
+        console.debug(
+          '[desktop-bridge] notification action ignored: scope not ready'
+        );
         return;
       }
 
@@ -502,7 +561,34 @@ export function DesktopSessionBridge() {
         actionPayload.scope.userId !== snapshot.scope.userId ||
         actionPayload.scope.companyId !== snapshot.scope.companyId
       ) {
+        console.debug(
+          '[desktop-bridge] notification action ignored: scope mismatch',
+          actionPayload
+        );
         return;
+      }
+
+      const actionKey = [
+        actionPayload.scope.userId,
+        actionPayload.scope.companyId,
+        actionPayload.action,
+        actionPayload.route ?? 'none',
+        actionPayload.requestedAt,
+      ].join(':');
+      if (handledNotificationActionKeysRef.current.includes(actionKey)) {
+        console.debug(
+          '[desktop-bridge] notification action skipped: already handled',
+          actionPayload
+        );
+        return;
+      }
+
+      handledNotificationActionKeysRef.current.push(actionKey);
+      if (handledNotificationActionKeysRef.current.length > 64) {
+        handledNotificationActionKeysRef.current.splice(
+          0,
+          handledNotificationActionKeysRef.current.length - 64
+        );
       }
 
       if (actionPayload.action === 'start_session' && window.desktopSession) {
@@ -522,16 +608,70 @@ export function DesktopSessionBridge() {
         actionPayload.action === 'start_session'
           ? '/sessions'
           : '/');
+      const currentRoute = `${window.location.pathname}${window.location.search}`;
+      console.debug('[desktop-bridge] handling notification action', {
+        action: actionPayload.action,
+        route: actionPayload.route,
+        requestedAt: actionPayload.requestedAt,
+        targetRoute,
+        currentRoute,
+      });
 
-      if (window.location.pathname !== targetRoute) {
+      if (currentRoute !== targetRoute) {
         window.location.assign(targetRoute);
       } else {
         window.focus();
       }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!window.desktopNotification) {
+      return;
+    }
+
+    const unsubscribe = window.desktopNotification.onAction(actionPayload => {
+      handleDesktopNotificationAction(actionPayload);
     });
 
     return unsubscribe;
-  }, []);
+  }, [handleDesktopNotificationAction]);
+
+  useEffect(() => {
+    if (!window.desktopNotification || !scope || !isSessionsEnabled) {
+      return;
+    }
+
+    let cancelled = false;
+    void window.desktopNotification
+      .consumePendingActions(scope)
+      .then(pendingActions => {
+        if (cancelled || pendingActions.length === 0) {
+          return;
+        }
+
+        console.debug(
+          '[desktop-bridge] consumed pending notification actions',
+          {
+            count: pendingActions.length,
+          }
+        );
+        for (const actionPayload of pendingActions) {
+          handleDesktopNotificationAction(actionPayload);
+        }
+      })
+      .catch(error => {
+        console.warn(
+          '[desktop] Failed to consume pending desktop notification actions.',
+          error
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [handleDesktopNotificationAction, isSessionsEnabled, scope]);
 
   return null;
 }

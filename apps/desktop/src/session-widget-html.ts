@@ -223,6 +223,10 @@ export function createSessionWidgetHtml() {
       let displayedMs = 0;
       let lastTickAt = 0;
       let previousStatus = 'IDLE';
+      let previousSessionId = null;
+      let lastIncomingSessionId = null;
+      let lastIncomingDurationMs = 0;
+      const SESSION_DURATION_REGRESSION_TOLERANCE_MS = 1500;
 
       function formatDuration(totalMs) {
         const seconds = Math.floor(Math.max(0, totalMs) / 1000);
@@ -233,19 +237,54 @@ export function createSessionWidgetHtml() {
       }
 
       function calculateEffectiveDuration(state) {
-        const base = Number.isFinite(state.effectiveDurationMs)
-          ? state.effectiveDurationMs
-          : 0;
-        if (state.status !== 'RUNNING') {
-          return base;
+        if (!Number.isFinite(state.effectiveDurationMs)) {
+          return 0;
         }
-        if (state.connectionState !== 'connected') {
-          return base;
+
+        return Math.max(0, Math.trunc(state.effectiveDurationMs));
+      }
+
+      function normalizeIncomingState(state) {
+        const normalizedSessionId =
+          typeof state.sessionId === 'string' && state.sessionId.trim()
+            ? state.sessionId.trim()
+            : null;
+        let normalizedDuration = calculateEffectiveDuration(state);
+
+        if (
+          normalizedSessionId &&
+          (state.status === 'RUNNING' || state.status === 'PAUSED')
+        ) {
+          if (lastIncomingSessionId !== normalizedSessionId) {
+            lastIncomingSessionId = normalizedSessionId;
+            lastIncomingDurationMs = normalizedDuration;
+          } else if (
+            normalizedDuration <
+            lastIncomingDurationMs - SESSION_DURATION_REGRESSION_TOLERANCE_MS
+          ) {
+            console.warn('[widget] incoming duration regression clamped', {
+              sessionId: normalizedSessionId,
+              previousMs: lastIncomingDurationMs,
+              incomingMs: normalizedDuration,
+            });
+            normalizedDuration = lastIncomingDurationMs;
+          } else {
+            lastIncomingDurationMs = Math.max(
+              lastIncomingDurationMs,
+              normalizedDuration
+            );
+            normalizedDuration = lastIncomingDurationMs;
+          }
+        } else if (state.status === 'IDLE') {
+          lastIncomingSessionId = null;
+          lastIncomingDurationMs = 0;
         }
-        const publishedAt = Number.isFinite(state.publishedAt)
-          ? state.publishedAt
-          : state.updatedAt;
-        return base + Math.max(0, Date.now() - publishedAt);
+
+        return {
+          ...state,
+          sessionId: normalizedSessionId,
+          effectiveDurationMs: normalizedDuration,
+        };
       }
 
       function updateTimer() {
@@ -254,34 +293,38 @@ export function createSessionWidgetHtml() {
           displayedMs = 0;
           lastTickAt = 0;
           previousStatus = 'IDLE';
+          previousSessionId = null;
           return 0;
         }
 
         const raw = calculateEffectiveDuration(currentState);
         const now = Date.now();
+        const sessionId = currentState.sessionId;
         const isLiveTimer =
           currentState.status === 'RUNNING' &&
           currentState.connectionState === 'connected';
 
         if (!isLiveTimer) {
-          displayedMs = raw;
+          displayedMs = currentState.status === 'IDLE' ? raw : Math.max(raw, displayedMs);
           lastTickAt = now;
         } else {
-          if (lastTickAt <= 0 || previousStatus !== 'RUNNING') {
-            displayedMs = raw;
+          if (
+            lastTickAt <= 0 ||
+            previousStatus !== 'RUNNING' ||
+            previousSessionId !== sessionId
+          ) {
+            displayedMs = Math.max(raw, displayedMs);
             lastTickAt = now;
           } else {
+            displayedMs = Math.max(displayedMs, raw);
             displayedMs += Math.max(0, now - lastTickAt);
             lastTickAt = now;
-            if (Math.abs(raw - displayedMs) > 3000) {
-              displayedMs = raw;
-            } else if (raw > displayedMs) {
-              displayedMs = raw;
-            }
+            displayedMs = Math.max(displayedMs, raw);
           }
         }
 
         previousStatus = currentState.status;
+        previousSessionId = sessionId;
         timerElement.textContent = formatDuration(displayedMs);
         return displayedMs;
       }
@@ -351,23 +394,25 @@ export function createSessionWidgetHtml() {
       }
 
       function renderState(state) {
-        currentState = state;
+        const normalizedState = normalizeIncomingState(state);
+        currentState = normalizedState;
         lastBridgeSignalAt = Date.now();
         const computedDuration = updateTimer();
 
         console.debug('[widget] state received', {
-          status: state.status,
-          effectiveDurationMs: state.effectiveDurationMs,
-          updatedAt: state.updatedAt,
-          publishedAt: state.publishedAt,
+          status: normalizedState.status,
+          sessionId: normalizedState.sessionId,
+          effectiveDurationMs: normalizedState.effectiveDurationMs,
+          updatedAt: normalizedState.updatedAt,
+          publishedAt: normalizedState.publishedAt,
           computedDuration,
         });
 
-        statusElement.textContent = 'Status: ' + state.status;
-        renderBadge(state.status);
-        metaElement.textContent = formatMeta(state);
-        errorElement.textContent = state.lastError || '';
-        renderButtons(state);
+        statusElement.textContent = 'Status: ' + normalizedState.status;
+        renderBadge(normalizedState.status);
+        metaElement.textContent = formatMeta(normalizedState);
+        errorElement.textContent = normalizedState.lastError || '';
+        renderButtons(normalizedState);
       }
 
       async function resolveScope() {

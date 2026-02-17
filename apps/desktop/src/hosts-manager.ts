@@ -49,6 +49,10 @@ function ensureTrailingNewline(input: string): string {
   return input.endsWith('\n') ? input : `${input}\n`;
 }
 
+function normalizeHostsText(input: string): string {
+  return input.replace(/\r\n/g, '\n').trim();
+}
+
 export function normalizeHostsDomain(domain: string): string {
   const value = domain.trim().toLowerCase();
   if (!value) {
@@ -185,6 +189,10 @@ async function writeHostsFile(params: {
 
     let tempScriptPath: string | null = null;
     try {
+      params.logger.warn(
+        'hosts-manager',
+        'requesting Windows elevation for hosts update (UAC prompt expected)'
+      );
       const encodedContents = Buffer.from(params.contents, 'utf8').toString(
         'base64'
       );
@@ -304,6 +312,17 @@ export async function blockDomains(
     ? ensureTrailingNewline(stripped.trim()) + '\n' + block
     : block;
 
+  if (normalizeHostsText(nextContents) === normalizeHostsText(existing)) {
+    resolved.logger.info(
+      'hosts-manager',
+      `blockDomains no-op: hosts block already matches requested domains (${normalizedDomains.join(',')})`
+    );
+    return {
+      applied: false,
+      normalizedDomains,
+    };
+  }
+
   resolved.logger.info(
     'hosts-manager',
     `blocking domains via hosts file: ${normalizedDomains.join(',')}`
@@ -398,6 +417,14 @@ export async function reconcileDomains(params: {
   ) {
     return {
       applied: false,
+      normalizedDomains: next,
+    };
+  }
+
+  if (next.length === 0) {
+    const unblocked = await unblockAll(params.options);
+    return {
+      applied: unblocked.applied,
       normalizedDomains: next,
     };
   }

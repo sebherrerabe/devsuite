@@ -24,9 +24,11 @@ test('desktop session bridge logger helpers emit expected console output', () =>
   try {
     logDesktopBridgePublish({
       status: 'RUNNING',
+      sessionId: 'session-1',
       effectiveDurationMs: 5000,
       connectionState: 'connected',
       updatedAt: 123,
+      publishedAt: 123,
     });
     logDesktopBridgeCommandReceived({
       action: 'pause',

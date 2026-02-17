@@ -114,6 +114,9 @@ const POLICY_AUDIT_CHANNEL = 'desktop-policy:audit-events';
 const MAX_PROCESS_EVENT_LOG = 500;
 const MAX_POLICY_AUDIT_LOG = 1000;
 const POLICY_TICK_INTERVAL_MS = 5_000;
+const SESSION_DURATION_REGRESSION_TOLERANCE_MS = 1_500;
+const MAX_PENDING_NOTIFICATION_ACTIONS = 32;
+const TRAY_ICON_SIZE_PX = 16;
 const WEBSITE_SOURCE_PREFIX = 'webcontents';
 const ENABLE_TEST_IPC = process.env.DEVSUITE_DESKTOP_ENABLE_TEST_IPC === '1';
 const TEST_IPC_RENDERER_SWITCH = '--devsuite-enable-test-ipc=1';
@@ -129,9 +132,13 @@ const APP_ICON_PRIMARY_PATH = join(
   'assets',
   process.platform === 'win32' ? 'icon.ico' : 'icon.png'
 );
+const APP_ICON_PNG_PATH = join(__dirname, '..', 'assets', 'icon.png');
 const APP_ICON_PATH = existsSync(APP_ICON_PRIMARY_PATH)
   ? APP_ICON_PRIMARY_PATH
-  : join(__dirname, '..', 'assets', 'icon.png');
+  : APP_ICON_PNG_PATH;
+const TRAY_ICON_PATH = existsSync(APP_ICON_PNG_PATH)
+  ? APP_ICON_PNG_PATH
+  : APP_ICON_PATH;
 
 if (
   process.env.CI === 'true' ||
@@ -232,6 +239,7 @@ let desktopFocusSettings: DesktopFocusSettings =
   createDefaultDesktopFocusSettings();
 let strictPolicyState: StrictPolicyState = createDefaultStrictPolicyState();
 const notificationSentAtByKey = new Map<string, number>();
+const pendingNotificationActions: DesktopNotificationActionEvent[] = [];
 let processEventLog: DesktopProcessEvent[] = [];
 let policyAuditLog: StrictPolicyAuditEvent[] = [];
 const blockedWebsiteBySourceId = new Map<string, string>();
@@ -244,6 +252,9 @@ let desktopRuntimePreferences: DesktopRuntimePreferences = {
   runInBackgroundOnClose: false,
 };
 let isAppQuitting = false;
+let isClosingSessionWidgetProgrammatically = false;
+let sessionWidgetDismissedByUser = false;
+const lastEffectiveDurationBySessionId = new Map<string, number>();
 const allowedDesktopNavigationOrigins = resolveAllowedDesktopNavigationOrigins({
   webUrl: process.env.DEVSUITE_WEB_URL,
   nodeEnv: process.env.NODE_ENV,
@@ -387,7 +398,11 @@ async function syncHostsBlockingForSessionTransition(params: {
   domains: string[];
 }): Promise<void> {
   if (params.previousStatus === 'IDLE' && params.nextStatus === 'RUNNING') {
-    await blockDomains(params.domains);
+    const result = await blockDomains(params.domains);
+    runtimeLog.info(
+      'hosts-manager',
+      `session transition to RUNNING: hosts block ${result.applied ? 'applied' : 'skipped'} for domains=${result.normalizedDomains.join(',') || 'none'}`
+    );
     return;
   }
 
@@ -395,7 +410,11 @@ async function syncHostsBlockingForSessionTransition(params: {
     isRunningOrPaused(params.previousStatus) &&
     params.nextStatus === 'IDLE'
   ) {
-    await unblockAll();
+    const result = await unblockAll();
+    runtimeLog.info(
+      'hosts-manager',
+      `session transition to IDLE: hosts unblock ${result.applied ? 'applied' : 'skipped'}`
+    );
   }
 }
 
@@ -701,11 +720,83 @@ async function showMainWindow(): Promise<void> {
   window.focus();
 }
 
+function buildNotificationActionKey(
+  action: DesktopNotificationActionEvent
+): string {
+  return [
+    action.scope.userId,
+    action.scope.companyId,
+    action.action,
+    action.route ?? 'none',
+    `${action.requestedAt}`,
+  ].join(':');
+}
+
+function enqueuePendingNotificationAction(
+  action: DesktopNotificationActionEvent
+): void {
+  const key = buildNotificationActionKey(action);
+  const alreadyQueued = pendingNotificationActions.some(
+    entry => buildNotificationActionKey(entry) === key
+  );
+
+  if (alreadyQueued) {
+    return;
+  }
+
+  pendingNotificationActions.push(action);
+  if (pendingNotificationActions.length > MAX_PENDING_NOTIFICATION_ACTIONS) {
+    pendingNotificationActions.splice(
+      0,
+      pendingNotificationActions.length - MAX_PENDING_NOTIFICATION_ACTIONS
+    );
+  }
+
+  runtimeLog.debug(
+    'session-sync',
+    `queued notification action: action=${action.action}, route=${action.route ?? 'none'}, queueSize=${pendingNotificationActions.length}`
+  );
+}
+
+function consumePendingNotificationActions(
+  scope: DesktopSettingsScope
+): DesktopNotificationActionEvent[] {
+  if (pendingNotificationActions.length === 0) {
+    return [];
+  }
+
+  const remaining: DesktopNotificationActionEvent[] = [];
+  const consumed: DesktopNotificationActionEvent[] = [];
+  for (const action of pendingNotificationActions) {
+    if (areScopesEqual(action.scope, scope)) {
+      consumed.push(action);
+    } else {
+      remaining.push(action);
+    }
+  }
+
+  pendingNotificationActions.length = 0;
+  pendingNotificationActions.push(...remaining);
+
+  if (consumed.length > 0) {
+    runtimeLog.info(
+      'session-sync',
+      `consumed pending notification actions: count=${consumed.length}, queueSize=${pendingNotificationActions.length}`
+    );
+  }
+
+  return consumed;
+}
+
 async function routeDesktopNotificationAction(
   requestedAction: DesktopNotificationActionEvent
 ): Promise<void> {
-  const activeScope = getAuthenticatedDesktopScope();
+  const activeScope = desktopSessionScope;
   if (!activeScope || !areScopesEqual(activeScope, requestedAction.scope)) {
+    runtimeLog.warn(
+      'session-sync',
+      `notification route dropped: scope mismatch, action=${requestedAction.action}, route=${requestedAction.route ?? 'none'}`
+    );
     return;
   }
 
@@ -716,11 +807,37 @@ async function routeDesktopNotificationAction(
     requestedAt: requestedAction.requestedAt,
   };
 
+  runtimeLog.info(
+    'session-sync',
+    `routing notification action: action=${actionEvent.action}, route=${actionEvent.route ?? 'none'}, requestedAt=${actionEvent.requestedAt}`
+  );
+  enqueuePendingNotificationAction(actionEvent);
+
   await showMainWindow();
 
   for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) {
-      window.webContents.send(NOTIFICATION_ACTION_CHANNEL, actionEvent);
+    if (window.isDestroyed()) {
+      continue;
+    }
+
+    const sendActionEvent = () => {
+      if (!window.isDestroyed()) {
+        runtimeLog.debug(
+          'session-sync',
+          `dispatching notification action to renderer: action=${actionEvent.action}, route=${actionEvent.route ?? 'none'}`
+        );
+        window.webContents.send(NOTIFICATION_ACTION_CHANNEL, actionEvent);
+      }
+    };
+
+    if (window.webContents.isLoading()) {
+      runtimeLog.debug(
+        'session-sync',
+        `notification action queued until renderer finishes load: action=${actionEvent.action}`
+      );
+      window.webContents.once('did-finish-load', sendActionEvent);
+    } else {
+      sendActionEvent();
     }
   }
 }
@@ -781,6 +898,10 @@ async function emitDesktopNotification(payload: unknown): Promise<{
   );
 
   if (isThrottled) {
+    runtimeLog.debug(
+      'session-sync',
+      `notification throttled: kind=${request.kind}, throttleKey=${request.throttleKey}, throttleMs=${request.throttleMs}`
+    );
     return {
       delivered: false,
       throttled: true,
@@ -789,6 +910,10 @@ async function emitDesktopNotification(payload: unknown): Promise<{
 
   notificationSentAtByKey.set(request.throttleKey, now);
   const route = resolveDesktopNotificationRoute(request);
+  runtimeLog.info(
+    'session-sync',
+    `notification emit accepted: kind=${request.kind}, action=${request.action}, route=${route ?? 'none'}, throttleKey=${request.throttleKey}`
+  );
 
   const actionEvent: DesktopNotificationActionEvent = {
     scope: activeScope,
@@ -809,9 +934,14 @@ async function emitDesktopNotification(payload: unknown): Promise<{
     title: request.title,
     body: request.body,
     silent: false,
+    icon: APP_ICON_PATH,
   });
 
   toast.on('click', () => {
+    runtimeLog.info(
+      'session-sync',
+      `notification clicked: kind=${request.kind}, action=${actionEvent.action}, route=${actionEvent.route ?? 'none'}`
+    );
     void routeDesktopNotificationAction(actionEvent);
   });
   toast.show();
@@ -929,7 +1059,10 @@ function rebuildTrayMenu(): void {
       label: 'Show Session Widget',
       enabled: hasScope && isConnected,
       click: () => {
-        void showSessionWidget();
+        void showSessionWidget({
+          force: true,
+          origin: 'tray_menu',
+        });
       },
     },
     {
@@ -951,18 +1084,49 @@ function rebuildTrayMenu(): void {
   trayRef.setContextMenu(menu);
 }
 
+function createTrayIcon(): ReturnType<typeof nativeImage.createFromPath> {
+  const primaryImage = nativeImage.createFromPath(TRAY_ICON_PATH);
+  const image = primaryImage.isEmpty()
+    ? nativeImage.createFromPath(APP_ICON_PATH)
+    : primaryImage;
+
+  if (process.platform === 'win32' && !image.isEmpty()) {
+    return image.resize({
+      width: TRAY_ICON_SIZE_PX,
+      height: TRAY_ICON_SIZE_PX,
+    });
+  }
+
+  return image;
+}
+
 function ensureTray(): void {
   if (trayRef) {
     return;
   }
 
   try {
-    trayRef = new Tray(nativeImage.createFromPath(APP_ICON_PATH));
+    const trayIcon = createTrayIcon();
+    if (trayIcon.isEmpty()) {
+      throw new Error(
+        `tray icon image is empty (trayPath=${TRAY_ICON_PATH}, appPath=${APP_ICON_PATH})`
+      );
+    }
+
+    trayRef = new Tray(trayIcon);
     trayRef.on('click', () => {
       void showMainWindow();
     });
     rebuildTrayMenu();
+    runtimeLog.info(
+      'widget',
+      `tray initialized (trayIconPath=${TRAY_ICON_PATH}, appIconPath=${APP_ICON_PATH})`
+    );
   } catch (error) {
+    runtimeLog.error(
+      'widget',
+      `failed to initialize tray: ${error instanceof Error ? error.message : String(error)}`
+    );
     console.warn('[desktop] Failed to initialize tray menu.', error);
   }
 }
@@ -1006,8 +1170,11 @@ function setDesktopScope(nextScope: DesktopSettingsScope | null): void {
 
   if (hasChanged) {
     closeSessionWidgetIfOpen();
+    sessionWidgetDismissedByUser = false;
     desktopSessionState = createDefaultDesktopSessionState();
     strictPolicyState = createDefaultStrictPolicyState();
+    lastEffectiveDurationBySessionId.clear();
+    pendingNotificationActions.length = 0;
     processEventLog = [];
     policyAuditLog = [];
     blockedWebsiteBySourceId.clear();
@@ -1033,15 +1200,42 @@ function closeSessionWidgetIfOpen(): void {
     return;
   }
 
+  isClosingSessionWidgetProgrammatically = true;
   sessionWidgetWindowRef.close();
 }
 
-async function showSessionWidget(): Promise<void> {
+async function showSessionWidget(options?: {
+  force?: boolean;
+  origin?: string;
+}): Promise<void> {
+  const force = options?.force ?? false;
+  const origin = options?.origin ?? 'unknown';
+
   if (!getAuthenticatedDesktopScope()) {
     return;
   }
 
+  if (sessionWidgetDismissedByUser && !force) {
+    runtimeLog.info(
+      'widget',
+      `widget show suppressed after user close: origin=${origin}`
+    );
+    return;
+  }
+
+  if (force && sessionWidgetDismissedByUser) {
+    sessionWidgetDismissedByUser = false;
+    runtimeLog.info(
+      'widget',
+      `widget dismissal cleared by explicit user action: origin=${origin}`
+    );
+  }
+
   if (sessionWidgetWindowRef && !sessionWidgetWindowRef.isDestroyed()) {
+    runtimeLog.debug(
+      'widget',
+      `widget already open; focusing, origin=${origin}`
+    );
     sessionWidgetWindowRef.show();
     sessionWidgetWindowRef.focus();
     return;
@@ -1073,6 +1267,17 @@ async function showSessionWidget(): Promise<void> {
   applyWindowNavigationSecurity(sessionWidgetWindowRef);
 
   sessionWidgetWindowRef.on('closed', () => {
+    const closedProgrammatically = isClosingSessionWidgetProgrammatically;
+    isClosingSessionWidgetProgrammatically = false;
+    if (closedProgrammatically) {
+      runtimeLog.debug('widget', 'widget closed programmatically');
+    } else {
+      sessionWidgetDismissedByUser = true;
+      runtimeLog.info(
+        'widget',
+        'widget closed by user; auto-reopen suppressed'
+      );
+    }
     screen.removeListener('display-metrics-changed', applyBottomRightPosition);
     sessionWidgetWindowRef = null;
   });
@@ -1080,13 +1285,17 @@ async function showSessionWidget(): Promise<void> {
   await sessionWidgetWindowRef.loadURL(
     `data:text/html;charset=utf-8,${encodeURIComponent(createSessionWidgetHtml())}#devsuite-widget`
   );
+  runtimeLog.info('widget', `widget opened: origin=${origin}, force=${force}`);
   broadcastDesktopSessionState();
 }
 
 function tryRegisterCompanionShortcut(shortcut: string): boolean {
   try {
     return globalShortcut.register(shortcut, () => {
-      void showSessionWidget();
+      void showSessionWidget({
+        force: true,
+        origin: 'shortcut',
+      });
     });
   } catch (error) {
     console.warn('[desktop] Companion shortcut registration failed.', {
@@ -1512,7 +1721,44 @@ function registerIpcHandlers(): void {
       }
 
       const previousStatus = desktopSessionState.status;
-      desktopSessionState = parseDesktopSessionState(payload);
+      const incomingState = parseDesktopSessionState(payload);
+      let normalizedState = incomingState;
+
+      runtimeLog.debug(
+        'session-sync',
+        `publish-state received: status=${incomingState.status}, sessionId=${incomingState.sessionId ?? 'none'}, effectiveDurationMs=${incomingState.effectiveDurationMs}, connectionState=${incomingState.connectionState}, updatedAt=${incomingState.updatedAt}, publishedAt=${incomingState.publishedAt}`
+      );
+
+      if (incomingState.sessionId) {
+        const previousKnownDuration =
+          lastEffectiveDurationBySessionId.get(incomingState.sessionId) ?? null;
+        if (
+          previousKnownDuration !== null &&
+          incomingState.status === 'RUNNING' &&
+          incomingState.effectiveDurationMs <
+            previousKnownDuration - SESSION_DURATION_REGRESSION_TOLERANCE_MS
+        ) {
+          runtimeLog.warn(
+            'session-sync',
+            `effectiveDuration regression detected; clamping: sessionId=${incomingState.sessionId}, previousMs=${previousKnownDuration}, incomingMs=${incomingState.effectiveDurationMs}`
+          );
+          normalizedState = {
+            ...incomingState,
+            effectiveDurationMs: previousKnownDuration,
+          };
+        }
+        lastEffectiveDurationBySessionId.set(
+          incomingState.sessionId,
+          Math.max(
+            previousKnownDuration ?? 0,
+            normalizedState.effectiveDurationMs
+          )
+        );
+      } else if (incomingState.status === 'IDLE') {
+        lastEffectiveDurationBySessionId.clear();
+      }
+
+      desktopSessionState = normalizedState;
       await syncHostsBlockingForSessionTransition({
         previousStatus,
         nextStatus: desktopSessionState.status,
@@ -1557,7 +1803,10 @@ function registerIpcHandlers(): void {
     }
   );
   ipcMain.handle('desktop-session:show-companion', async () => {
-    await showSessionWidget();
+    await showSessionWidget({
+      force: true,
+      origin: 'ipc_show_companion',
+    });
   });
   ipcMain.handle('desktop-companion:get-shortcut', async () => {
     return companionShortcut;
@@ -1623,6 +1872,13 @@ function registerIpcHandlers(): void {
     'desktop-notification:emit',
     async (_event, payload: unknown) => {
       return emitDesktopNotification(payload);
+    }
+  );
+  ipcMain.handle(
+    'desktop-notification:consume-pending-actions',
+    async (_event, scope: unknown) => {
+      const resolvedScope = await resolveScopedDesktopContext(scope);
+      return consumePendingNotificationActions(resolvedScope);
     }
   );
   ipcMain.handle(
@@ -1765,7 +2021,12 @@ if (!hasSingleInstanceLock) {
 } else {
   app.on('second-instance', (_event, argv) => {
     if (hasShowCompanionArg(argv)) {
-      void app.whenReady().then(() => showSessionWidget());
+      void app.whenReady().then(() =>
+        showSessionWidget({
+          force: true,
+          origin: 'second_instance_arg',
+        })
+      );
       return;
     }
 
@@ -1774,6 +2035,10 @@ if (!hasSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.devsuite.desktop');
+    runtimeLog.info(
+      'widget',
+      `desktop icon paths resolved (appIcon=${APP_ICON_PATH}, trayIcon=${TRAY_ICON_PATH})`
+    );
     try {
       await cleanupStaleBlocks();
     } catch (error) {
@@ -1797,7 +2062,10 @@ if (!hasSingleInstanceLock) {
     configureCompanionTaskbarTask();
     await initializeCompanionShortcut();
     if (hasShowCompanionArg(process.argv)) {
-      await showSessionWidget();
+      await showSessionWidget({
+        force: true,
+        origin: 'startup_arg',
+      });
     }
 
     app.on('activate', async () => {

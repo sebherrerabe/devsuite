@@ -166,6 +166,9 @@ interface Window {
       throttleKey?: string;
       throttleMs?: number;
     }) => Promise<{ delivered: boolean; throttled: boolean }>;
+    consumePendingActions: (
+      scope: DesktopSettingsScope
+    ) => Promise<DesktopNotificationActionEvent[]>;
     routeAction: (
       actionPayload: DesktopNotificationActionEvent
     ) => Promise<void>;

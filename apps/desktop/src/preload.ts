@@ -90,6 +90,9 @@ type DesktopNotificationApi = {
   emit: (
     payload: DesktopNotificationPayload
   ) => Promise<{ delivered: boolean; throttled: boolean }>;
+  consumePendingActions: (
+    scope: DesktopSettingsScope
+  ) => Promise<DesktopNotificationActionEvent[]>;
   routeAction: (actionPayload: DesktopNotificationActionEvent) => Promise<void>;
   onAction: (
     listener: (
@@ -257,6 +260,11 @@ const desktopNotificationApi: DesktopNotificationApi = {
       delivered: boolean;
       throttled: boolean;
     }>,
+  consumePendingActions: async scope =>
+    ipcRenderer.invoke(
+      'desktop-notification:consume-pending-actions',
+      scope
+    ) as Promise<DesktopNotificationActionEvent[]>,
   routeAction: async actionPayload => {
     await ipcRenderer.invoke(
       'desktop-notification:route-action',
