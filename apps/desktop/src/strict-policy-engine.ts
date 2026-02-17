@@ -591,29 +591,6 @@ export function evaluateStrictPolicy(
             })
           );
         }
-
-        const closeEligible =
-          input.settings.strictMode === 'prompt_then_close' &&
-          !entry.closeIssued &&
-          input.nowMs - entry.firstDetectedAt >= graceWindowMs;
-        if (closeEligible) {
-          actions.push({
-            type: 'close_process',
-            executable: entry.executable,
-            pid: entry.pid,
-            reason: 'ide_no_session',
-          });
-          ideEntries[key] = {
-            ...entry,
-            closeIssued: true,
-          };
-          auditEvents.push(
-            toAuditEvent('ide_close_requested', input.nowMs, {
-              executable: entry.executable,
-              pid: entry.pid,
-            })
-          );
-        }
       }
     }
 

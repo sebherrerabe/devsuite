@@ -1,12 +1,8 @@
 import { execFile as nodeExecFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import {
   readFile as nodeReadFile,
-  unlink as nodeUnlink,
   writeFile as nodeWriteFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { runtimeLog, type RuntimeLogWriter } from './runtime-logger.js';
@@ -16,10 +12,12 @@ const execFileAsync = promisify(nodeExecFile);
 export const HOSTS_PATH = 'C:\\Windows\\System32\\drivers\\etc\\hosts';
 export const BEGIN_MARKER = '# BEGIN DEVSUITE BLOCK';
 export const END_MARKER = '# END DEVSUITE BLOCK';
+export const HOSTS_WRITE_HELPER_FLAG = '--devsuite-hosts-write';
+export const HOSTS_WRITE_HELPER_PATH_ARG = '--hosts-path';
+export const HOSTS_WRITE_HELPER_BASE64_ARG = '--hosts-base64';
 
 type ReadFileLike = typeof nodeReadFile;
 type WriteFileLike = typeof nodeWriteFile;
-type UnlinkLike = typeof nodeUnlink;
 type ExecFileLike = typeof execFileAsync;
 
 interface FsErrorLike {
@@ -31,7 +29,6 @@ export interface HostsManagerOptions {
   logger?: RuntimeLogWriter;
   readFile?: ReadFileLike;
   writeFile?: WriteFileLike;
-  unlink?: UnlinkLike;
   execFile?: ExecFileLike;
   platform?: string;
 }
@@ -157,7 +154,6 @@ async function writeHostsFile(params: {
   hostsPath: string;
   contents: string;
   writeFile: WriteFileLike;
-  unlink: UnlinkLike;
   execFile: ExecFileLike;
   logger: RuntimeLogWriter;
   platform: string;
@@ -187,7 +183,6 @@ async function writeHostsFile(params: {
       return false;
     }
 
-    let tempScriptPath: string | null = null;
     try {
       params.logger.warn(
         'hosts-manager',
@@ -196,23 +191,26 @@ async function writeHostsFile(params: {
       const encodedContents = Buffer.from(params.contents, 'utf8').toString(
         'base64'
       );
-      const escapedHostsPath = params.hostsPath.replace(/'/g, "''");
-      tempScriptPath = join(
-        tmpdir(),
-        `devsuite-hosts-write-${randomUUID()}.ps1`
+      const escapedExecPath = process.execPath.replace(/'/g, "''");
+      const helperArgs = [
+        ...(process.defaultApp && process.argv[1] ? [process.argv[1]] : []),
+        HOSTS_WRITE_HELPER_FLAG,
+        HOSTS_WRITE_HELPER_PATH_ARG,
+        params.hostsPath,
+        HOSTS_WRITE_HELPER_BASE64_ARG,
+        encodedContents,
+      ];
+      const escapedArgumentList = helperArgs
+        .map(value => `'${value.replace(/'/g, "''")}'`)
+        .join(',');
+      params.logger.info(
+        'hosts-manager',
+        `launching elevated helper via app executable: ${process.execPath}`
       );
-      const escapedTempScriptPath = tempScriptPath.replace(/'/g, "''");
-      const childScript = [
-        `$decodedBytes = [Convert]::FromBase64String('${encodedContents}')`,
-        `[IO.File]::WriteAllBytes('${escapedHostsPath}', $decodedBytes)`,
-      ].join('; ');
-      await params.writeFile(tempScriptPath, `${childScript}\n`, 'utf8');
 
       const elevateCommand = [
-        `$scriptPath = '${escapedTempScriptPath}'`,
-        '$process = Start-Process -FilePath "powershell.exe" -Verb RunAs -PassThru -Wait -WindowStyle Hidden -ArgumentList @("-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",$scriptPath)',
+        `$process = Start-Process -FilePath '${escapedExecPath}' -Verb RunAs -PassThru -Wait -WindowStyle Hidden -ArgumentList @(${escapedArgumentList})`,
         '$exitCode = $process.ExitCode',
-        'Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue',
         'exit $exitCode',
       ].join('; ');
 
@@ -236,10 +234,6 @@ async function writeHostsFile(params: {
         `elevated hosts write failed; falling back to notification-only mode: ${elevatedError instanceof Error ? elevatedError.message : String(elevatedError)}`
       );
       return false;
-    } finally {
-      if (tempScriptPath) {
-        void params.unlink(tempScriptPath).catch(() => undefined);
-      }
     }
   }
 }
@@ -277,7 +271,6 @@ function resolveOptions(options: HostsManagerOptions = {}) {
     logger: options.logger ?? runtimeLog,
     readFile: options.readFile ?? nodeReadFile,
     writeFile: options.writeFile ?? nodeWriteFile,
-    unlink: options.unlink ?? nodeUnlink,
     execFile: options.execFile ?? execFileAsync,
     platform: options.platform ?? process.platform,
   };
@@ -332,7 +325,6 @@ export async function blockDomains(
     hostsPath: resolved.hostsPath,
     contents: nextContents,
     writeFile: resolved.writeFile,
-    unlink: resolved.unlink,
     execFile: resolved.execFile,
     logger: resolved.logger,
     platform: resolved.platform,
@@ -378,7 +370,6 @@ export async function unblockAll(
     hostsPath: resolved.hostsPath,
     contents: stripped,
     writeFile: resolved.writeFile,
-    unlink: resolved.unlink,
     execFile: resolved.execFile,
     logger: resolved.logger,
     platform: resolved.platform,

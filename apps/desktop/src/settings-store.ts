@@ -30,6 +30,19 @@ function resolveDesktopUserDataPath(): string {
   return app.getPath('userData');
 }
 
+function resolveOpenAtLoginFallback(): boolean {
+  try {
+    const loginItemSettings = app.getLoginItemSettings({
+      path: process.execPath,
+    });
+    return typeof loginItemSettings.openAtLogin === 'boolean'
+      ? loginItemSettings.openAtLogin
+      : DEFAULT_RUNTIME_PREFERENCES.openAtLogin;
+  } catch {
+    return DEFAULT_RUNTIME_PREFERENCES.openAtLogin;
+  }
+}
+
 interface StoredDesktopFocusSettings {
   version: 1;
   byScope: Record<string, DesktopFocusSettings>;
@@ -53,6 +66,7 @@ function createEmptyStorage(): StoredDesktopFocusSettings {
     companionShortcut: DEFAULT_COMPANION_SHORTCUT,
     runtimePreferences: {
       ...DEFAULT_RUNTIME_PREFERENCES,
+      openAtLogin: resolveOpenAtLoginFallback(),
     },
   };
 }
@@ -135,9 +149,12 @@ function parseStoredData(input: unknown): StoredDesktopFocusSettings {
 }
 
 function parseRuntimePreferences(value: unknown): DesktopRuntimePreferences {
+  const openAtLoginFallback = resolveOpenAtLoginFallback();
+
   if (!value || typeof value !== 'object') {
     return {
       ...DEFAULT_RUNTIME_PREFERENCES,
+      openAtLogin: openAtLoginFallback,
     };
   }
 
@@ -146,7 +163,7 @@ function parseRuntimePreferences(value: unknown): DesktopRuntimePreferences {
     openAtLogin:
       typeof raw.openAtLogin === 'boolean'
         ? raw.openAtLogin
-        : DEFAULT_RUNTIME_PREFERENCES.openAtLogin,
+        : openAtLoginFallback,
     runInBackgroundOnClose:
       typeof raw.runInBackgroundOnClose === 'boolean'
         ? raw.runInBackgroundOnClose
@@ -251,6 +268,7 @@ export async function loadDesktopRuntimePreferences(): Promise<DesktopRuntimePre
   } catch {
     return {
       ...DEFAULT_RUNTIME_PREFERENCES,
+      openAtLogin: resolveOpenAtLoginFallback(),
     };
   }
 }

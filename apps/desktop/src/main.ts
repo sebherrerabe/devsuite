@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { clearInterval, setInterval } from 'node:timers';
 import { URL, fileURLToPath } from 'node:url';
@@ -57,6 +57,9 @@ import {
 import {
   blockDomains,
   cleanupStaleBlocks,
+  HOSTS_WRITE_HELPER_BASE64_ARG,
+  HOSTS_WRITE_HELPER_FLAG,
+  HOSTS_WRITE_HELPER_PATH_ARG,
   reconcileDomains,
   unblockAll,
 } from './hosts-manager.js';
@@ -126,19 +129,38 @@ const TEST_IPC_RENDERER_ARGS = ENABLE_TEST_IPC
 const SHOW_COMPANION_ARG = '--show-companion';
 const DESKTOP_ADDITIONAL_NAV_ORIGINS =
   process.env.DEVSUITE_DESKTOP_NAV_ALLOW_ORIGINS;
-const APP_ICON_PRIMARY_PATH = join(
-  __dirname,
-  '..',
-  'assets',
-  process.platform === 'win32' ? 'icon.ico' : 'icon.png'
-);
-const APP_ICON_PNG_PATH = join(__dirname, '..', 'assets', 'icon.png');
-const APP_ICON_PATH = existsSync(APP_ICON_PRIMARY_PATH)
-  ? APP_ICON_PRIMARY_PATH
-  : APP_ICON_PNG_PATH;
-const TRAY_ICON_PATH = existsSync(APP_ICON_PNG_PATH)
-  ? APP_ICON_PNG_PATH
-  : APP_ICON_PATH;
+const ICON_FILENAME_PRIMARY =
+  process.platform === 'win32' ? 'icon.ico' : 'icon.png';
+const ICON_FILENAME_FALLBACK =
+  process.platform === 'win32' ? 'icon.png' : 'icon.ico';
+const RUNTIME_ASSETS_DIR = join(process.resourcesPath, 'assets');
+const BUNDLED_ASSETS_DIR = join(__dirname, '..', 'assets');
+const APP_ICON_CANDIDATE_PATHS = [
+  join(RUNTIME_ASSETS_DIR, ICON_FILENAME_PRIMARY),
+  join(RUNTIME_ASSETS_DIR, ICON_FILENAME_FALLBACK),
+  join(BUNDLED_ASSETS_DIR, ICON_FILENAME_PRIMARY),
+  join(BUNDLED_ASSETS_DIR, ICON_FILENAME_FALLBACK),
+  process.execPath,
+];
+const TRAY_ICON_CANDIDATE_PATHS = [
+  join(RUNTIME_ASSETS_DIR, 'icon.ico'),
+  join(RUNTIME_ASSETS_DIR, 'icon.png'),
+  join(BUNDLED_ASSETS_DIR, 'icon.ico'),
+  join(BUNDLED_ASSETS_DIR, 'icon.png'),
+  process.execPath,
+];
+
+function resolveExistingPath(candidates: readonly string[]): string {
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return process.execPath;
+}
+
+const APP_ICON_PATH = resolveExistingPath(APP_ICON_CANDIDATE_PATHS);
 
 if (
   process.env.CI === 'true' ||
@@ -287,6 +309,39 @@ function parseNonEmptyString(value: unknown, fieldName: string): string {
 
 function hasShowCompanionArg(argv: readonly string[]): boolean {
   return argv.includes(SHOW_COMPANION_ARG);
+}
+
+function hasHostsWriteHelperArg(argv: readonly string[]): boolean {
+  return argv.includes(HOSTS_WRITE_HELPER_FLAG);
+}
+
+function readCliArgValue(argv: readonly string[], flag: string): string | null {
+  const flagIndex = argv.indexOf(flag);
+  if (flagIndex === -1) {
+    return null;
+  }
+
+  const value = argv[flagIndex + 1];
+  return typeof value === 'string' ? value : null;
+}
+
+async function runHostsWriteHelperMode(argv: readonly string[]): Promise<void> {
+  try {
+    const hostsPath = parseNonEmptyString(
+      readCliArgValue(argv, HOSTS_WRITE_HELPER_PATH_ARG),
+      HOSTS_WRITE_HELPER_PATH_ARG
+    );
+    const encodedContents = parseNonEmptyString(
+      readCliArgValue(argv, HOSTS_WRITE_HELPER_BASE64_ARG),
+      HOSTS_WRITE_HELPER_BASE64_ARG
+    );
+    const decodedBytes = Buffer.from(encodedContents, 'base64');
+    await writeFile(hostsPath, decodedBytes);
+    process.exit(0);
+  } catch (error) {
+    console.error('[desktop] Elevated hosts helper failed.', error);
+    process.exit(1);
+  }
 }
 
 function parseDesktopProcessEventForTest(input: unknown): DesktopProcessEvent {
@@ -1084,20 +1139,34 @@ function rebuildTrayMenu(): void {
   trayRef.setContextMenu(menu);
 }
 
-function createTrayIcon(): ReturnType<typeof nativeImage.createFromPath> {
-  const primaryImage = nativeImage.createFromPath(TRAY_ICON_PATH);
-  const image = primaryImage.isEmpty()
-    ? nativeImage.createFromPath(APP_ICON_PATH)
-    : primaryImage;
+function createTrayIcon(): {
+  image: ReturnType<typeof nativeImage.createFromPath>;
+  sourcePath: string | null;
+} {
+  for (const candidatePath of TRAY_ICON_CANDIDATE_PATHS) {
+    const candidateImage = nativeImage.createFromPath(candidatePath);
+    if (candidateImage.isEmpty()) {
+      continue;
+    }
 
-  if (process.platform === 'win32' && !image.isEmpty()) {
-    return image.resize({
-      width: TRAY_ICON_SIZE_PX,
-      height: TRAY_ICON_SIZE_PX,
-    });
+    const image =
+      process.platform === 'win32'
+        ? candidateImage.resize({
+            width: TRAY_ICON_SIZE_PX,
+            height: TRAY_ICON_SIZE_PX,
+          })
+        : candidateImage;
+
+    return {
+      image,
+      sourcePath: candidatePath,
+    };
   }
 
-  return image;
+  return {
+    image: nativeImage.createEmpty(),
+    sourcePath: null,
+  };
 }
 
 function ensureTray(): void {
@@ -1107,20 +1176,20 @@ function ensureTray(): void {
 
   try {
     const trayIcon = createTrayIcon();
-    if (trayIcon.isEmpty()) {
+    if (trayIcon.image.isEmpty()) {
       throw new Error(
-        `tray icon image is empty (trayPath=${TRAY_ICON_PATH}, appPath=${APP_ICON_PATH})`
+        `tray icon image is empty (candidates=${TRAY_ICON_CANDIDATE_PATHS.join(',')})`
       );
     }
 
-    trayRef = new Tray(trayIcon);
+    trayRef = new Tray(trayIcon.image);
     trayRef.on('click', () => {
       void showMainWindow();
     });
     rebuildTrayMenu();
     runtimeLog.info(
       'widget',
-      `tray initialized (trayIconPath=${TRAY_ICON_PATH}, appIconPath=${APP_ICON_PATH})`
+      `tray initialized (trayIconPath=${trayIcon.sourcePath ?? 'none'}, appIconPath=${APP_ICON_PATH})`
     );
   } catch (error) {
     runtimeLog.error(
@@ -2015,85 +2084,89 @@ function configureCompanionTaskbarTask(): void {
   }
 }
 
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
-if (!hasSingleInstanceLock) {
-  app.quit();
+if (hasHostsWriteHelperArg(process.argv)) {
+  void runHostsWriteHelperMode(process.argv);
 } else {
-  app.on('second-instance', (_event, argv) => {
-    if (hasShowCompanionArg(argv)) {
-      void app.whenReady().then(() =>
-        showSessionWidget({
-          force: true,
-          origin: 'second_instance_arg',
-        })
-      );
-      return;
-    }
-
-    void app.whenReady().then(() => showMainWindow());
-  });
-
-  app.whenReady().then(async () => {
-    app.setAppUserModelId('com.devsuite.desktop');
-    runtimeLog.info(
-      'widget',
-      `desktop icon paths resolved (appIcon=${APP_ICON_PATH}, trayIcon=${TRAY_ICON_PATH})`
-    );
-    try {
-      await cleanupStaleBlocks();
-    } catch (error) {
-      console.warn(
-        '[desktop] Failed to clean stale hosts block on startup.',
-        error
-      );
-    }
-    await registerRendererProtocol();
-    await initializeRuntimePreferences();
-    registerIpcHandlers();
-    setDesktopScope(await loadDesktopSessionScope());
-    applyDesktopPermissionPolicy();
-    ensureTray();
-    if (!policyTickTimer) {
-      policyTickTimer = setInterval(() => {
-        void evaluateAndRunStrictPolicy();
-      }, POLICY_TICK_INTERVAL_MS);
-    }
-    await ensureMainWindow({ show: true });
-    configureCompanionTaskbarTask();
-    await initializeCompanionShortcut();
-    if (hasShowCompanionArg(process.argv)) {
-      await showSessionWidget({
-        force: true,
-        origin: 'startup_arg',
-      });
-    }
-
-    app.on('activate', async () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        await ensureMainWindow({ show: true });
+  const hasSingleInstanceLock = app.requestSingleInstanceLock();
+  if (!hasSingleInstanceLock) {
+    app.quit();
+  } else {
+    app.on('second-instance', (_event, argv) => {
+      if (hasShowCompanionArg(argv)) {
+        void app.whenReady().then(() =>
+          showSessionWidget({
+            force: true,
+            origin: 'second_instance_arg',
+          })
+        );
+        return;
       }
+
+      void app.whenReady().then(() => showMainWindow());
+    });
+
+    app.whenReady().then(async () => {
+      app.setAppUserModelId('com.devsuite.desktop');
+      runtimeLog.info(
+        'widget',
+        `desktop icon paths resolved (appIcon=${APP_ICON_PATH}, trayCandidates=${TRAY_ICON_CANDIDATE_PATHS.join(',')})`
+      );
+      try {
+        await cleanupStaleBlocks();
+      } catch (error) {
+        console.warn(
+          '[desktop] Failed to clean stale hosts block on startup.',
+          error
+        );
+      }
+      await registerRendererProtocol();
+      await initializeRuntimePreferences();
+      registerIpcHandlers();
+      setDesktopScope(await loadDesktopSessionScope());
+      applyDesktopPermissionPolicy();
+      ensureTray();
+      if (!policyTickTimer) {
+        policyTickTimer = setInterval(() => {
+          void evaluateAndRunStrictPolicy();
+        }, POLICY_TICK_INTERVAL_MS);
+      }
+      await ensureMainWindow({ show: true });
+      configureCompanionTaskbarTask();
+      await initializeCompanionShortcut();
+      if (hasShowCompanionArg(process.argv)) {
+        await showSessionWidget({
+          force: true,
+          origin: 'startup_arg',
+        });
+      }
+
+      app.on('activate', async () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+          await ensureMainWindow({ show: true });
+        }
+      });
+    });
+
+    app.on('will-quit', () => {
+      globalShortcut.unregisterAll();
+    });
+  }
+
+  app.on('before-quit', () => {
+    isAppQuitting = true;
+    processMonitor.stop();
+    if (policyTickTimer) {
+      clearInterval(policyTickTimer);
+      policyTickTimer = null;
+    }
+    void unblockAll().catch(error => {
+      console.warn('[desktop] Failed to clear hosts block before quit.', error);
     });
   });
 
-  app.on('will-quit', () => {
-    globalShortcut.unregisterAll();
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
   });
 }
-
-app.on('before-quit', () => {
-  isAppQuitting = true;
-  processMonitor.stop();
-  if (policyTickTimer) {
-    clearInterval(policyTickTimer);
-    policyTickTimer = null;
-  }
-  void unblockAll().catch(error => {
-    console.warn('[desktop] Failed to clear hosts block before quit.', error);
-  });
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});

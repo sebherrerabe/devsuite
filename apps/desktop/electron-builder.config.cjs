@@ -4,6 +4,13 @@ module.exports = {
   executableName: 'DevSuite',
   directories: { output: 'out', buildResources: 'assets' },
   files: ['dist/**/*', 'renderer/**/*', 'package.json'],
+  extraResources: [
+    {
+      from: 'assets',
+      to: 'assets',
+      filter: ['icon.ico', 'icon.png'],
+    },
+  ],
   win: {
     target: [{ target: 'nsis', arch: ['x64'] }],
     icon: 'assets/icon.ico',
@@ -18,6 +25,7 @@ module.exports = {
     installerHeader: 'assets/installer-header.bmp',
     installerSidebar: 'assets/installer-sidebar.bmp',
     shortcutName: 'DevSuite',
+    include: 'assets/installer-custom.nsh',
   },
   asar: true,
 };

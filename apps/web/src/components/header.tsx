@@ -47,7 +47,7 @@ export function Header() {
       className={`fixed top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 [&_a]:[-webkit-app-region:no-drag] [&_button]:[-webkit-app-region:no-drag] ${hasDesktopWindowControls ? '[-webkit-app-region:drag]' : ''}`}
     >
       <div
-        className={`flex h-14 items-center px-4 md:px-6 ${hasDesktopWindowControls ? 'md:pr-[136px]' : ''}`}
+        className={`flex h-14 items-center px-4 md:px-6 ${hasDesktopWindowControls ? 'pr-[124px] md:pr-[136px]' : ''}`}
       >
         <div className="flex items-center gap-3 md:gap-6">
           <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>

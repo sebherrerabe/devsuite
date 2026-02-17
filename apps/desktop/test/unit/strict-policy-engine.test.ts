@@ -94,7 +94,7 @@ test('engine prompts immediately when IDE starts with no active session', () => 
   );
 });
 
-test('engine escalates reminders and close action after grace window', () => {
+test('engine escalates reminders after grace window without closing IDEs', () => {
   const settings = createSettings({
     strictMode: 'prompt_then_close',
     graceSeconds: 10,
@@ -135,15 +135,12 @@ test('engine escalates reminders and close action after grace window', () => {
     true
   );
   assert.equal(
-    later.actions.some(
-      action =>
-        action.type === 'close_process' && action.reason === 'ide_no_session'
-    ),
-    true
+    later.actions.some(action => action.type === 'close_process'),
+    false
   );
   assert.equal(
     later.auditEvents.some(event => event.type === 'ide_close_requested'),
-    true
+    false
   );
 });
 
@@ -517,43 +514,13 @@ test('fail-safe can recover after action volume drops', () => {
   );
 });
 
-test('close-process requests always emit matching audit events', () => {
+test('distractor close-process requests emit matching audit events', () => {
   const settings = createSettings({
     strictMode: 'prompt_then_close',
     appActionMode: 'warn_then_close',
     reminderIntervalSeconds: 1,
     graceSeconds: 0,
   });
-
-  const ideClose = evaluateStrictPolicy(
-    createDefaultStrictPolicyState(),
-    createInput({
-      nowMs: 5_000,
-      settings,
-      sessionStatus: 'IDLE',
-      processEvents: [
-        {
-          type: 'process_started',
-          executable: 'code.exe',
-          pid: 19,
-          category: 'ide',
-          timestamp: 1_000,
-        },
-      ],
-    })
-  );
-
-  assert.equal(
-    ideClose.actions.some(
-      action =>
-        action.type === 'close_process' && action.reason === 'ide_no_session'
-    ),
-    true
-  );
-  assert.equal(
-    ideClose.auditEvents.some(event => event.type === 'ide_close_requested'),
-    true
-  );
 
   const appClose = evaluateStrictPolicy(
     createDefaultStrictPolicyState(),
