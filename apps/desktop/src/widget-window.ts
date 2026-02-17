@@ -35,8 +35,8 @@ export function getSessionWidgetWindowOptions(params: {
   additionalArguments: string[];
 }): WidgetWindowOptions {
   return {
-    width: 290,
-    height: 180,
+    width: 320,
+    height: 220,
     frame: false,
     transparent: true,
     resizable: false,

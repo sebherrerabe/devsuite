@@ -583,6 +583,15 @@ export class WindowsProcessMonitor {
     return this.config;
   }
 
+  async triggerImmediatePoll(options?: {
+    resetPreviousEntries?: boolean;
+  }): Promise<void> {
+    if (options?.resetPreviousEntries) {
+      this.previousEntries.clear();
+    }
+    await this.pollOnce();
+  }
+
   stop(): void {
     if (this.timer) {
       clearInterval(this.timer);

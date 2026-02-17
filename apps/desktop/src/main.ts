@@ -45,6 +45,7 @@ import {
   parseDesktopNotificationRequest,
   shouldThrottleDesktopNotification,
   type DesktopNotificationActionEvent,
+  type DesktopNotificationRequest,
 } from './notifications.js';
 import {
   WindowsProcessMonitor,
@@ -122,7 +123,15 @@ const TEST_IPC_RENDERER_ARGS = ENABLE_TEST_IPC
 const SHOW_COMPANION_ARG = '--show-companion';
 const DESKTOP_ADDITIONAL_NAV_ORIGINS =
   process.env.DEVSUITE_DESKTOP_NAV_ALLOW_ORIGINS;
-const APP_ICON_PATH = join(__dirname, '..', 'assets', 'icon.png');
+const APP_ICON_PRIMARY_PATH = join(
+  __dirname,
+  '..',
+  'assets',
+  process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+);
+const APP_ICON_PATH = existsSync(APP_ICON_PRIMARY_PATH)
+  ? APP_ICON_PRIMARY_PATH
+  : join(__dirname, '..', 'assets', 'icon.png');
 
 if (
   process.env.CI === 'true' ||
@@ -716,6 +725,40 @@ async function routeDesktopNotificationAction(
   }
 }
 
+function resolveDesktopNotificationRoute(
+  request: DesktopNotificationRequest
+): string | null {
+  if (request.route) {
+    return request.route;
+  }
+
+  if (
+    request.kind === 'session_started' ||
+    request.kind === 'session_paused' ||
+    request.kind === 'session_resumed' ||
+    request.kind === 'session_ended' ||
+    request.kind === 'ide_session_required' ||
+    request.kind === 'distractor_app_detected' ||
+    request.kind === 'website_blocked_detected' ||
+    request.kind === 'tasks_remaining_reminder'
+  ) {
+    return '/sessions';
+  }
+
+  if (
+    request.action === 'open_sessions' ||
+    request.action === 'start_session'
+  ) {
+    return '/sessions';
+  }
+
+  if (request.action === 'open_app') {
+    return '/';
+  }
+
+  return null;
+}
+
 async function emitDesktopNotification(payload: unknown): Promise<{
   delivered: boolean;
   throttled: boolean;
@@ -745,11 +788,12 @@ async function emitDesktopNotification(payload: unknown): Promise<{
   }
 
   notificationSentAtByKey.set(request.throttleKey, now);
+  const route = resolveDesktopNotificationRoute(request);
 
   const actionEvent: DesktopNotificationActionEvent = {
     scope: activeScope,
     action: request.action,
-    route: request.route,
+    route,
     requestedAt: now,
   };
 
@@ -1469,14 +1513,28 @@ function registerIpcHandlers(): void {
 
       const previousStatus = desktopSessionState.status;
       desktopSessionState = parseDesktopSessionState(payload);
-      if (desktopSessionState.connectionState !== 'connected') {
-        closeSessionWidgetIfOpen();
-      }
       await syncHostsBlockingForSessionTransition({
         previousStatus,
         nextStatus: desktopSessionState.status,
         domains: desktopFocusSettings.websiteBlockList,
       });
+      if (
+        previousStatus !== 'RUNNING' &&
+        desktopSessionState.status === 'RUNNING'
+      ) {
+        try {
+          await processMonitor.triggerImmediatePoll({
+            resetPreviousEntries: true,
+          });
+        } catch (error) {
+          console.warn(
+            '[desktop] Failed to refresh process monitor on start.',
+            {
+              error,
+            }
+          );
+        }
+      }
       rebuildTrayMenu();
       broadcastDesktopSessionState();
       await evaluateAndRunStrictPolicy();

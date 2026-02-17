@@ -21,6 +21,7 @@ export * from './session';
 
 // Inbox entities
 export * from './inbox';
+export * from './notification-routing';
 
 // PR Review entities
 export * from './pr-review';

@@ -6,6 +6,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { v } from 'convex/values';
 import webpush from 'web-push';
 import type { FunctionReference } from 'convex/server';
+import { resolveInboxNotificationRoute } from '@devsuite/shared';
 
 const WEB_PUSH_VAPID_PUBLIC_KEY_ENV = 'DEVSUITE_WEB_PUSH_VAPID_PUBLIC_KEY';
 const WEB_PUSH_VAPID_PRIVATE_KEY_ENV = 'DEVSUITE_WEB_PUSH_VAPID_PRIVATE_KEY';
@@ -69,21 +70,33 @@ type InboxItemForPush = {
   content: {
     title: string;
     url?: string;
+    metadata?: unknown;
   };
   isRead: boolean;
   isArchived: boolean;
 };
 
 function buildPushPayload(item: InboxItemForPush) {
+  const url = resolveInboxNotificationRoute({
+    itemId: String(item._id),
+    source: item.source,
+    type: item.type,
+    content: {
+      ...(item.content.url ? { url: item.content.url } : {}),
+      ...(item.content.metadata === undefined
+        ? {}
+        : { metadata: item.content.metadata }),
+    },
+  });
+
   return JSON.stringify({
     title: item.content.title || 'New inbox notification',
-    body: `${getSourceLabel(item.source)} • ${getTypeLabel(item.type)}`,
+    body: `${getSourceLabel(item.source)} | ${getTypeLabel(item.type)}`,
     icon: '/logo.svg',
     tag: `devsuite-inbox-${item._id}`,
-    url: item.content.url?.trim() || '/inbox',
+    url,
   });
 }
-
 export const sendToCompanySubscribers = internalAction({
   args: {
     companyId: v.id('companies'),

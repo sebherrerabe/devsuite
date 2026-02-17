@@ -42,7 +42,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { format } from 'date-fns';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { showToast } from '@/lib/toast';
 import { authClient } from '@/lib/auth';
@@ -172,7 +172,6 @@ export function TaskDetail({
 
   return (
     <TaskDetailContent
-      key={task._id}
       task={task}
       companyId={companyId}
       externalLinks={externalLinks ?? []}
@@ -180,6 +179,17 @@ export function TaskDetail({
       variant={variant}
     />
   );
+}
+
+function buildTaskFormState(task: Doc<'tasks'>) {
+  return {
+    title: task.title,
+    notes: task.notesMarkdown || '',
+    status: task.status as TaskStatus,
+    complexity: task.complexityScore || 1,
+    dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
+    selectedTags: task.tagIds ?? [],
+  };
 }
 
 function TaskDetailContent({
@@ -223,14 +233,7 @@ function TaskDetailContent({
   const { data: authSession } = authClient.useSession();
   const userId = getSessionUserId(authSession);
 
-  const [formState, setFormState] = useState(() => ({
-    title: task.title,
-    notes: task.notesMarkdown || '',
-    status: task.status as TaskStatus,
-    complexity: task.complexityScore || 1,
-    dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
-    selectedTags: task.tagIds ?? [],
-  }));
+  const [formState, setFormState] = useState(() => buildTaskFormState(task));
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [isResolvingNotionLink, setIsResolvingNotionLink] = useState(false);
   const [isCreateReviewOpen, setIsCreateReviewOpen] = useState(false);
@@ -248,6 +251,43 @@ function TaskDetailContent({
 
   const defaultRepositoryId =
     project?.repositoryIds?.length === 1 ? project.repositoryIds[0] : '';
+  const taskId = task._id;
+  const taskTitle = task.title;
+  const taskNotesMarkdown = task.notesMarkdown || '';
+  const taskStatus = task.status as TaskStatus;
+  const taskComplexityScore = task.complexityScore || 1;
+  const taskDueDate = task.dueDate;
+  const taskTagIds = useMemo(() => task.tagIds ?? [], [task.tagIds]);
+
+  useEffect(() => {
+    setFormState({
+      title: taskTitle,
+      notes: taskNotesMarkdown,
+      status: taskStatus,
+      complexity: taskComplexityScore,
+      dueDate: taskDueDate ? new Date(taskDueDate) : undefined,
+      selectedTags: taskTagIds,
+    });
+    setIsSavingNotes(false);
+    setIsResolvingNotionLink(false);
+    setIsCreateReviewOpen(false);
+    setIsCreatingReview(false);
+    setReviewFormState({
+      repositoryId: '',
+      prUrl: '',
+      baseBranch: '',
+      headBranch: '',
+      title: '',
+    });
+  }, [
+    taskComplexityScore,
+    taskDueDate,
+    taskId,
+    taskNotesMarkdown,
+    taskStatus,
+    taskTagIds,
+    taskTitle,
+  ]);
 
   useEffect(() => {
     if (!isCreateReviewOpen) return;

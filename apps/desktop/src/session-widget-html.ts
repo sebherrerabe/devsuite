@@ -141,8 +141,8 @@ export function createSessionWidgetHtml() {
       }
 
       .actions {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        display: flex;
+        flex-direction: column;
         gap: 8px;
       }
 
@@ -153,6 +153,10 @@ export function createSessionWidgetHtml() {
         border-radius: 8px;
         cursor: pointer;
         -webkit-app-region: no-drag;
+        width: 100%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
       }
 
       .btn-primary {
@@ -179,7 +183,7 @@ export function createSessionWidgetHtml() {
       }
 
       .full-width {
-        grid-column: 1 / -1;
+        width: 100%;
       }
     </style>
   </head>
@@ -192,7 +196,7 @@ export function createSessionWidgetHtml() {
           <div class="badge badge--idle" id="statusBadge">IDLE</div>
         </div>
         <div class="timer" id="timer">00:00:00</div>
-        <div class="meta" id="meta">connection=syncing · session=none</div>
+        <div class="meta" id="meta">Waiting for desktop sync...</div>
         <div class="error" id="error"></div>
         <div class="actions">
           <button class="btn-primary full-width" id="start">Start</button>
@@ -217,8 +221,8 @@ export function createSessionWidgetHtml() {
       let currentState = null;
       let lastBridgeSignalAt = 0;
       let displayedMs = 0;
-      let targetMs = 0;
-      let smoothingUntil = 0;
+      let lastTickAt = 0;
+      let previousStatus = 'IDLE';
 
       function formatDuration(totalMs) {
         const seconds = Math.floor(Math.max(0, totalMs) / 1000);
@@ -248,37 +252,71 @@ export function createSessionWidgetHtml() {
         if (!currentState) {
           timerElement.textContent = '00:00:00';
           displayedMs = 0;
-          targetMs = 0;
-          smoothingUntil = 0;
+          lastTickAt = 0;
+          previousStatus = 'IDLE';
           return 0;
         }
 
         const raw = calculateEffectiveDuration(currentState);
-        const jump = Math.abs(raw - displayedMs);
-        if (jump > 2000 && smoothingUntil > 0 && Date.now() < smoothingUntil + 2000) {
-          targetMs = raw;
-        } else if (jump > 2000) {
-          targetMs = raw;
-          smoothingUntil = Date.now() + 1000;
-        } else {
+        const now = Date.now();
+        const isLiveTimer =
+          currentState.status === 'RUNNING' &&
+          currentState.connectionState === 'connected';
+
+        if (!isLiveTimer) {
           displayedMs = raw;
-          targetMs = raw;
-        }
-
-        if (Date.now() < smoothingUntil) {
-          displayedMs += (targetMs - displayedMs) * 0.15;
+          lastTickAt = now;
         } else {
-          displayedMs = targetMs;
+          if (lastTickAt <= 0 || previousStatus !== 'RUNNING') {
+            displayedMs = raw;
+            lastTickAt = now;
+          } else {
+            displayedMs += Math.max(0, now - lastTickAt);
+            lastTickAt = now;
+            if (Math.abs(raw - displayedMs) > 3000) {
+              displayedMs = raw;
+            } else if (raw > displayedMs) {
+              displayedMs = raw;
+            }
+          }
         }
 
+        previousStatus = currentState.status;
         timerElement.textContent = formatDuration(displayedMs);
         return displayedMs;
       }
 
+      function formatRemainingTaskCount(state) {
+        if (!Number.isInteger(state.remainingTaskCount)) {
+          return null;
+        }
+
+        const count = Math.max(0, state.remainingTaskCount);
+        const suffix = count === 1 ? 'task' : 'tasks';
+        return count + ' ' + suffix + ' remaining';
+      }
+
       function formatMeta(state) {
-        const suffix = state.sessionId ? 'session=' + state.sessionId : 'session=none';
-        const connection = 'connection=' + state.connectionState;
-        return connection + ' · ' + suffix;
+        const parts = [];
+        const taskSummary = formatRemainingTaskCount(state);
+
+        if (state.status === 'RUNNING') {
+          parts.push(taskSummary || 'Focus session active');
+        } else if (state.status === 'PAUSED') {
+          parts.push('Session paused');
+        } else {
+          parts.push('Ready to start focus');
+        }
+
+        if (state.connectionState === 'connected') {
+          parts.push('Desktop sync healthy');
+        } else if (state.connectionState === 'syncing') {
+          parts.push('Syncing desktop bridge');
+        } else {
+          parts.push('Desktop sync error');
+        }
+
+        return parts.join(' | ');
       }
 
       function renderBadge(status) {
@@ -321,6 +359,7 @@ export function createSessionWidgetHtml() {
           status: state.status,
           effectiveDurationMs: state.effectiveDurationMs,
           updatedAt: state.updatedAt,
+          publishedAt: state.publishedAt,
           computedDuration,
         });
 
@@ -383,7 +422,7 @@ export function createSessionWidgetHtml() {
             staleForMs,
             lastSignalAt: lastBridgeSignalAt,
           });
-          metaElement.textContent = 'connection=stale · waiting for sync';
+          metaElement.textContent = 'Sync delayed | reconnecting to desktop bridge';
           startButton.disabled = true;
           pauseButton.disabled = true;
           resumeButton.disabled = true;

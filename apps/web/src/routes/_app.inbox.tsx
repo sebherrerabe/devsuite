@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
@@ -53,6 +53,12 @@ import {
 } from 'lucide-react';
 
 export const Route = createFileRoute('/_app/inbox')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    itemId:
+      typeof search.itemId === 'string' && search.itemId.trim()
+        ? search.itemId.trim()
+        : undefined,
+  }),
   component: InboxPage,
 });
 
@@ -101,6 +107,7 @@ function TypeIcon({ type }: { type: InboxItemType }) {
 }
 
 function InboxPage() {
+  const search = Route.useSearch();
   const { currentCompany } = useCurrentCompany();
   const companyId = currentCompany?._id;
   const {
@@ -140,6 +147,7 @@ function InboxPage() {
   const upsertInboxItem = useMutation(api.inboxItems.upsertInboxItem);
 
   const [selected, setSelected] = useState<Set<Id<'inboxItems'>>>(new Set());
+  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   const selectedVisibleIds = useMemo(() => {
     if (!items) return [];
@@ -152,6 +160,22 @@ function InboxPage() {
 
   const someVisibleSelected =
     items && items.length > 0 && items.some(i => selected.has(i._id));
+
+  useEffect(() => {
+    if (!search.itemId || !items || items.length === 0) {
+      return;
+    }
+
+    const targetRow = rowRefs.current.get(search.itemId);
+    if (!targetRow) {
+      return;
+    }
+
+    targetRow.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  }, [items, search.itemId]);
 
   const toggleAllVisible = (checked: boolean) => {
     if (!items) return;
@@ -567,7 +591,17 @@ function InboxPage() {
               </TableRow>
             ) : (
               items.map(item => (
-                <TableRow key={item._id}>
+                <TableRow
+                  key={item._id}
+                  ref={node => {
+                    if (!node) {
+                      rowRefs.current.delete(item._id);
+                      return;
+                    }
+                    rowRefs.current.set(item._id, node);
+                  }}
+                  className={search.itemId === item._id ? 'bg-primary/5' : ''}
+                >
                   <TableCell>
                     <Checkbox
                       checked={selected.has(item._id)}

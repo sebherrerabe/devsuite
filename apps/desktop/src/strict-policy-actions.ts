@@ -74,7 +74,29 @@ export async function executeStrictPolicyActions(params: {
   const platform = params.dependencies.platform ?? process.platform;
   const taskkill = params.dependencies.taskkill ?? runTaskkill;
 
+  const dedupedActions: StrictPolicyAction[] = [];
+  const seenNotificationThrottleKeys = new Set<string>();
+  const seenCloseProcessKeys = new Set<string>();
+
   for (const action of params.actions) {
+    if (action.type === 'notify') {
+      if (seenNotificationThrottleKeys.has(action.throttleKey)) {
+        continue;
+      }
+      seenNotificationThrottleKeys.add(action.throttleKey);
+      dedupedActions.push(action);
+      continue;
+    }
+
+    const closeKey = `${action.executable}:${action.pid}:${action.reason}`;
+    if (seenCloseProcessKeys.has(closeKey)) {
+      continue;
+    }
+    seenCloseProcessKeys.add(closeKey);
+    dedupedActions.push(action);
+  }
+
+  for (const action of dedupedActions) {
     if (action.type === 'notify') {
       logger.debug(
         'strict-policy',

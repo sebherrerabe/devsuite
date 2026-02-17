@@ -1,18 +1,24 @@
 import { createFileRoute, Link, Outlet } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
-import { User, Building2, Settings2 } from 'lucide-react';
+import { User, Building2, Settings2, Monitor } from 'lucide-react';
 
 export const Route = createFileRoute('/_app/settings')({
   component: SettingsLayout,
 });
 
-const settingsNavItems = [
-  { label: 'Profile', icon: User, to: '/settings/profile' },
-  { label: 'Company', icon: Building2, to: '/settings/company' },
-  { label: 'Integrations', icon: Settings2, to: '/settings/integrations' },
-];
-
 function SettingsLayout() {
+  const isDesktopRuntime =
+    typeof window !== 'undefined' && typeof window.desktopFocus !== 'undefined';
+
+  const settingsNavItems = [
+    { label: 'Profile', icon: User, to: '/settings/profile' },
+    { label: 'Company', icon: Building2, to: '/settings/company' },
+    { label: 'Integrations', icon: Settings2, to: '/settings/integrations' },
+    ...(isDesktopRuntime
+      ? [{ label: 'Desktop', icon: Monitor, to: '/settings/desktop' }]
+      : []),
+  ];
+
   return (
     <div className="flex flex-col space-y-8 lg:flex-row lg:space-x-12 lg:space-y-0">
       <aside className="lg:w-1/5">

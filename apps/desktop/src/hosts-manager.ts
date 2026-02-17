@@ -1,8 +1,12 @@
 import { execFile as nodeExecFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
   readFile as nodeReadFile,
+  unlink as nodeUnlink,
   writeFile as nodeWriteFile,
 } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { runtimeLog, type RuntimeLogWriter } from './runtime-logger.js';
@@ -15,6 +19,7 @@ export const END_MARKER = '# END DEVSUITE BLOCK';
 
 type ReadFileLike = typeof nodeReadFile;
 type WriteFileLike = typeof nodeWriteFile;
+type UnlinkLike = typeof nodeUnlink;
 type ExecFileLike = typeof execFileAsync;
 
 interface FsErrorLike {
@@ -26,6 +31,7 @@ export interface HostsManagerOptions {
   logger?: RuntimeLogWriter;
   readFile?: ReadFileLike;
   writeFile?: WriteFileLike;
+  unlink?: UnlinkLike;
   execFile?: ExecFileLike;
   platform?: string;
 }
@@ -147,6 +153,7 @@ async function writeHostsFile(params: {
   hostsPath: string;
   contents: string;
   writeFile: WriteFileLike;
+  unlink: UnlinkLike;
   execFile: ExecFileLike;
   logger: RuntimeLogWriter;
   platform: string;
@@ -176,24 +183,30 @@ async function writeHostsFile(params: {
       return false;
     }
 
+    let tempScriptPath: string | null = null;
     try {
       const encodedContents = Buffer.from(params.contents, 'utf8').toString(
         'base64'
       );
-      const writeCommand = [
+      const escapedHostsPath = params.hostsPath.replace(/'/g, "''");
+      tempScriptPath = join(
+        tmpdir(),
+        `devsuite-hosts-write-${randomUUID()}.ps1`
+      );
+      const escapedTempScriptPath = tempScriptPath.replace(/'/g, "''");
+      const childScript = [
         `$decodedBytes = [Convert]::FromBase64String('${encodedContents}')`,
-        `[IO.File]::WriteAllBytes('${params.hostsPath.replace(/'/g, "''")}', $decodedBytes)`,
+        `[IO.File]::WriteAllBytes('${escapedHostsPath}', $decodedBytes)`,
       ].join('; ');
-      const quotedWriteCommand = writeCommand.replace(/"/g, '""');
+      await params.writeFile(tempScriptPath, `${childScript}\n`, 'utf8');
+
       const elevateCommand = [
-        '$process = Start-Process -FilePath "powershell" -Verb RunAs -PassThru -Wait -WindowStyle Hidden -ArgumentList @(',
-        '"-NoProfile",',
-        '"-NonInteractive",',
-        '"-Command",',
-        `"${quotedWriteCommand}"`,
-        ')',
-        'exit $process.ExitCode',
-      ].join(' ');
+        `$scriptPath = '${escapedTempScriptPath}'`,
+        '$process = Start-Process -FilePath "powershell.exe" -Verb RunAs -PassThru -Wait -WindowStyle Hidden -ArgumentList @("-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",$scriptPath)',
+        '$exitCode = $process.ExitCode',
+        'Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue',
+        'exit $exitCode',
+      ].join('; ');
 
       await params.execFile(
         'powershell',
@@ -215,6 +228,10 @@ async function writeHostsFile(params: {
         `elevated hosts write failed; falling back to notification-only mode: ${elevatedError instanceof Error ? elevatedError.message : String(elevatedError)}`
       );
       return false;
+    } finally {
+      if (tempScriptPath) {
+        void params.unlink(tempScriptPath).catch(() => undefined);
+      }
     }
   }
 }
@@ -252,6 +269,7 @@ function resolveOptions(options: HostsManagerOptions = {}) {
     logger: options.logger ?? runtimeLog,
     readFile: options.readFile ?? nodeReadFile,
     writeFile: options.writeFile ?? nodeWriteFile,
+    unlink: options.unlink ?? nodeUnlink,
     execFile: options.execFile ?? execFileAsync,
     platform: options.platform ?? process.platform,
   };
@@ -295,6 +313,7 @@ export async function blockDomains(
     hostsPath: resolved.hostsPath,
     contents: nextContents,
     writeFile: resolved.writeFile,
+    unlink: resolved.unlink,
     execFile: resolved.execFile,
     logger: resolved.logger,
     platform: resolved.platform,
@@ -340,6 +359,7 @@ export async function unblockAll(
     hostsPath: resolved.hostsPath,
     contents: stripped,
     writeFile: resolved.writeFile,
+    unlink: resolved.unlink,
     execFile: resolved.execFile,
     logger: resolved.logger,
     platform: resolved.platform,

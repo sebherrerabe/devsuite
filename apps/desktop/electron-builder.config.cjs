@@ -1,6 +1,7 @@
 module.exports = {
   appId: 'com.devsuite.desktop',
   productName: 'DevSuite',
+  executableName: 'DevSuite',
   directories: { output: 'out', buildResources: 'assets' },
   files: ['dist/**/*', 'renderer/**/*', 'package.json'],
   win: {

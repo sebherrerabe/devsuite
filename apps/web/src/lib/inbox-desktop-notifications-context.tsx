@@ -13,6 +13,7 @@ import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import type { FunctionReference } from 'convex/server';
 import { useCurrentCompany } from '@/lib/company-context';
+import { resolveInboxNotificationRoute } from '@devsuite/shared';
 
 type InboxItem = Doc<'inboxItems'>;
 type DesktopNotificationPermission =
@@ -214,7 +215,18 @@ function showInboxDesktopNotification(item: InboxItem) {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
 
   const title = item.content.title || 'New inbox notification';
-  const body = `${getSourceLabel(item.source)} • ${getTypeLabel(item.type)}`;
+  const body = `${getSourceLabel(item.source)} | ${getTypeLabel(item.type)}`;
+  const targetRoute = resolveInboxNotificationRoute({
+    itemId: item._id,
+    source: item.source,
+    type: item.type,
+    content: {
+      ...(item.content.url ? { url: item.content.url } : {}),
+      ...(item.content.metadata === undefined
+        ? {}
+        : { metadata: item.content.metadata }),
+    },
+  });
 
   try {
     const notification = new Notification(title, {
@@ -225,9 +237,8 @@ function showInboxDesktopNotification(item: InboxItem) {
 
     notification.onclick = () => {
       window.focus();
-      const url = item.content.url?.trim();
-      if (url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
+      if (window.location.pathname + window.location.search !== targetRoute) {
+        window.location.assign(targetRoute);
       }
       notification.close();
     };
@@ -235,7 +246,6 @@ function showInboxDesktopNotification(item: InboxItem) {
     // Some browsers throw if notifications are blocked after permission changes.
   }
 }
-
 function showOverflowDesktopNotification(count: number) {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (count <= 0) return;
@@ -248,13 +258,15 @@ function showOverflowDesktopNotification(count: number) {
     });
     notification.onclick = () => {
       window.focus();
+      if (window.location.pathname !== '/inbox') {
+        window.location.assign('/inbox');
+      }
       notification.close();
     };
   } catch {
     // Keep notification failures non-fatal.
   }
 }
-
 export function InboxDesktopNotificationsProvider({
   children,
 }: {
