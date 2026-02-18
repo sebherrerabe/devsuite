@@ -4,6 +4,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { useCurrentCompany } from '@/lib/company-context';
+import { authClient } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
@@ -33,10 +34,15 @@ import {
 import { showToast } from '@/lib/toast';
 import { formatShortDateTime } from '@/lib/time';
 import { useInboxDesktopNotifications } from '@/lib/inbox-desktop-notifications-context';
+import {
+  GhServiceRequestError,
+  syncGithubNotifications,
+} from '@/lib/gh-service-client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   MoreHorizontal,
   Loader2,
+  RefreshCw,
   Bell,
   Github,
   FileText,
@@ -65,6 +71,42 @@ export const Route = createFileRoute('/_app/inbox')({
 type InboxItem = Doc<'inboxItems'>;
 type InboxItemType = InboxItem['type'];
 type InboxItemSource = InboxItem['source'];
+
+function getSessionUserId(sessionData: unknown): string | null {
+  if (!sessionData || typeof sessionData !== 'object') {
+    return null;
+  }
+
+  const root = sessionData as {
+    session?: { userId?: unknown } | null;
+    user?: { id?: unknown } | null;
+  };
+
+  if (
+    root.session &&
+    typeof root.session.userId === 'string' &&
+    root.session.userId.trim()
+  ) {
+    return root.session.userId.trim();
+  }
+  if (root.user && typeof root.user.id === 'string' && root.user.id.trim()) {
+    return root.user.id.trim();
+  }
+
+  return null;
+}
+
+function formatSyncError(error: unknown): string {
+  if (error instanceof GhServiceRequestError) {
+    return error.requestId
+      ? `${error.message} (request ${error.requestId})`
+      : error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Failed to refresh GitHub notifications';
+}
 
 function getSourceLabel(source: InboxItemSource): string {
   switch (source) {
@@ -107,6 +149,7 @@ function TypeIcon({ type }: { type: InboxItemType }) {
 }
 
 function InboxPage() {
+  const { data: authSession } = authClient.useSession();
   const search = Route.useSearch();
   const { currentCompany } = useCurrentCompany();
   const companyId = currentCompany?._id;
@@ -129,6 +172,8 @@ function InboxPage() {
   const [typeFilter, setTypeFilter] = useState<InboxItemType | 'all'>('all');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const userId = useMemo(() => getSessionUserId(authSession), [authSession]);
 
   const queryArgs = useMemo(() => {
     if (!companyId) return 'skip' as const;
@@ -344,6 +389,26 @@ function InboxPage() {
     }
   };
 
+  const refreshGithubInbox = async () => {
+    if (!userId) {
+      showToast.error('Unable to resolve your user identity');
+      return;
+    }
+
+    setIsRefreshing(true);
+    try {
+      const payload = await syncGithubNotifications(userId);
+      const sync = payload.sync;
+      showToast.success(
+        `GitHub sync complete. fetched ${sync.notificationsFetched}, filtered ${sync.notificationsFiltered}, created ${sync.deliveriesCreated}, updated ${sync.deliveriesUpdated}, unmatched ${sync.notificationsUnmatched}.`
+      );
+    } catch (error) {
+      showToast.error(formatSyncError(error));
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const typeOptions: Array<{ value: InboxItemType | 'all'; label: string }> = [
     { value: 'all', label: 'All types' },
     { value: 'notification', label: 'Notification' },
@@ -385,11 +450,26 @@ function InboxPage() {
           </p>
         </div>
 
-        {import.meta.env.DEV && (
-          <Button variant="outline" size="sm" onClick={addSampleItems}>
-            Add sample notifications
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void refreshGithubInbox()}
+            disabled={isRefreshing || !userId}
+          >
+            {isRefreshing ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            Refresh
           </Button>
-        )}
+          {import.meta.env.DEV && (
+            <Button variant="outline" size="sm" onClick={addSampleItems}>
+              Add sample notifications
+            </Button>
+          )}
+        </div>
       </div>
 
       <Alert>

@@ -62,9 +62,13 @@ type TaskGroup = {
 export function SessionWidget({
   triggerClassName,
   showOnMobile = false,
+  displayMode = 'popover',
+  className,
 }: {
   triggerClassName?: string;
   showOnMobile?: boolean;
+  displayMode?: 'popover' | 'embedded';
+  className?: string;
 }) {
   const { currentCompany, isModuleEnabled } = useCurrentCompany();
   const companyId = currentCompany?._id;
@@ -114,6 +118,7 @@ export function SessionWidget({
   >([]);
   const [isFinishing, setIsFinishing] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const isEmbedded = displayMode === 'embedded';
   const hasCompanion =
     typeof window !== 'undefined' &&
     typeof window.desktopSession?.showCompanion === 'function';
@@ -593,261 +598,272 @@ export function SessionWidget({
     return null;
   }
 
-  return (
-    <>
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn(
-              'h-8 gap-2 border-primary/20 font-mono text-[11px] sm:text-xs px-2 sm:px-3',
-              showOnMobile ? 'flex' : 'hidden md:flex',
-              status === 'RUNNING' && 'border-primary/40 bg-primary/5',
-              triggerClassName
-            )}
-          >
-            <Timer className="h-3 w-3 text-primary" />
-            <span className="text-primary">
-              {isLoading ? '...' : formatDurationMs(displayDurationMs)}
-            </span>
-            <span className="hidden sm:inline text-muted-foreground">|</span>
-            <span className="hidden sm:inline text-muted-foreground">
-              {status === 'IDLE' ? 'No session' : status}
-            </span>
-            <span className="sm:hidden text-muted-foreground">
-              {status === 'IDLE' ? 'Idle' : status}
-            </span>
+  const panelContent = (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium">Session</p>
+          <p className="text-xs text-muted-foreground">
+            {status === 'IDLE'
+              ? 'Start tracking focus time'
+              : 'Manage your active session'}
+          </p>
+        </div>
+        {status !== 'IDLE' && (
+          <Badge variant={statusBadgeVariant(status)}>{status}</Badge>
+        )}
+      </div>
+      {!isEmbedded && hasCompanion && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => {
+            void window.desktopSession
+              ?.showCompanion('expanded')
+              .catch(error => {
+                showToast.error(
+                  error instanceof Error
+                    ? error.message
+                    : 'Failed to open companion'
+                );
+              });
+          }}
+        >
+          Open companion
+        </Button>
+      )}
+
+      {status === 'IDLE' ? (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">
+              Project (optional)
+            </label>
+            <Select
+              value={selectedProjectId ?? 'none'}
+              onValueChange={value =>
+                setSelectedProjectId(
+                  value === 'none' ? null : (value as Id<'projects'>)
+                )
+              }
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue
+                  placeholder="Select a project"
+                  className="text-xs"
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No project</SelectItem>
+                {projects?.map(project => (
+                  <SelectItem key={project._id} value={project._id}>
+                    {project.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {projectName && (
+            <p className="text-xs text-muted-foreground">
+              Starting in {projectName}
+            </p>
+          )}
+          <Button className="w-full" onClick={handleStart}>
+            <Play className="mr-2 h-4 w-4" />
+            Start Session
           </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-80" align="center">
-          <div className="space-y-4">
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="rounded-md border p-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium">Session</p>
-                <p className="text-xs text-muted-foreground">
-                  {status === 'IDLE'
-                    ? 'Start tracking focus time'
-                    : 'Manage your active session'}
+                <p className="text-xs text-muted-foreground">Elapsed</p>
+                <p className="text-lg font-semibold">
+                  {formatDurationMs(displayDurationMs)}
                 </p>
               </div>
-              {status !== 'IDLE' && (
-                <Badge variant={statusBadgeVariant(status)}>{status}</Badge>
-              )}
+              <Badge variant={statusBadgeVariant(status)}>{status}</Badge>
             </div>
-            {hasCompanion && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => {
-                  void window.desktopSession?.showCompanion().catch(error => {
-                    showToast.error(
-                      error instanceof Error
-                        ? error.message
-                        : 'Failed to open companion'
-                    );
-                  });
-                }}
-              >
-                Open companion
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">
+              Summary (optional)
+            </label>
+            <Input
+              value={summary}
+              onChange={e => setSummary(e.target.value)}
+              placeholder="What did you work on?"
+              className="h-8 text-xs"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {status === 'RUNNING' ? (
+              <Button variant="secondary" onClick={handlePause}>
+                <Pause className="mr-2 h-4 w-4" />
+                Pause
+              </Button>
+            ) : (
+              <Button variant="secondary" onClick={handleResume}>
+                <Play className="mr-2 h-4 w-4" />
+                Resume
               </Button>
             )}
-
-            {status === 'IDLE' ? (
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Project (optional)
-                  </label>
-                  <Select
-                    value={selectedProjectId ?? 'none'}
-                    onValueChange={value =>
-                      setSelectedProjectId(
-                        value === 'none' ? null : (value as Id<'projects'>)
-                      )
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue
-                        placeholder="Select a project"
-                        className="text-xs"
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No project</SelectItem>
-                      {projects?.map(project => (
-                        <SelectItem key={project._id} value={project._id}>
-                          {project.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {projectName && (
-                  <p className="text-xs text-muted-foreground">
-                    Starting in {projectName}
-                  </p>
-                )}
-                <Button className="w-full" onClick={handleStart}>
-                  <Play className="mr-2 h-4 w-4" />
-                  Start Session
-                </Button>
+            <Button
+              variant="outline"
+              onClick={handleFinish}
+              disabled={isFinishing}
+            >
+              <Square className="mr-2 h-4 w-4" />
+              Finish
+            </Button>
+          </div>
+          <Button
+            variant="ghost"
+            className="w-full text-destructive hover:text-destructive"
+            onClick={() => setIsCancelDialogOpen(true)}
+          >
+            <XCircle className="mr-2 h-4 w-4" />
+            Cancel Session
+          </Button>
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground">Tasks</p>
+              {allowedProjectIds ? (
+                <Badge variant="secondary" className="text-[10px]">
+                  Project scope
+                </Badge>
+              ) : null}
+            </div>
+            {tasks === undefined || isTaskListLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            ) : visibleTasks.length === 0 ? (
+              <div className="rounded-md border border-dashed px-3 py-4 text-xs text-muted-foreground">
+                No tasks available for this scope.
               </div>
             ) : (
-              <div className="space-y-3">
-                <div className="rounded-md border p-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Elapsed</p>
-                      <p className="text-lg font-semibold">
-                        {formatDurationMs(displayDurationMs)}
-                      </p>
+              <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
+                {taskGroups.map(group => (
+                  <div key={group.key} className="space-y-2">
+                    <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground">
+                      <span>{group.label}</span>
+                      <div className="h-px flex-1 bg-border/60" />
                     </div>
-                    <Badge variant={statusBadgeVariant(status)}>{status}</Badge>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Summary (optional)
-                  </label>
-                  <Input
-                    value={summary}
-                    onChange={e => setSummary(e.target.value)}
-                    placeholder="What did you work on?"
-                    className="h-8 text-xs"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {status === 'RUNNING' ? (
-                    <Button variant="secondary" onClick={handlePause}>
-                      <Pause className="mr-2 h-4 w-4" />
-                      Pause
-                    </Button>
-                  ) : (
-                    <Button variant="secondary" onClick={handleResume}>
-                      <Play className="mr-2 h-4 w-4" />
-                      Resume
-                    </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    onClick={handleFinish}
-                    disabled={isFinishing}
-                  >
-                    <Square className="mr-2 h-4 w-4" />
-                    Finish
-                  </Button>
-                </div>
-                <Button
-                  variant="ghost"
-                  className="w-full text-destructive hover:text-destructive"
-                  onClick={() => setIsCancelDialogOpen(true)}
-                >
-                  <XCircle className="mr-2 h-4 w-4" />
-                  Cancel Session
-                </Button>
-                <div className="space-y-2 pt-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Tasks
-                    </p>
-                    {allowedProjectIds ? (
-                      <Badge variant="secondary" className="text-[10px]">
-                        Project scope
-                      </Badge>
-                    ) : null}
-                  </div>
-                  {tasks === undefined || isTaskListLoading ? (
-                    <div className="flex items-center justify-center py-4">
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : visibleTasks.length === 0 ? (
-                    <div className="rounded-md border border-dashed px-3 py-4 text-xs text-muted-foreground">
-                      No tasks available for this scope.
-                    </div>
-                  ) : (
-                    <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
-                      {taskGroups.map(group => (
-                        <div key={group.key} className="space-y-2">
-                          <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground">
-                            <span>{group.label}</span>
-                            <div className="h-px flex-1 bg-border/60" />
-                          </div>
-                          {group.tasks.map(task => {
-                            const isActive = activeTaskIds.has(task._id);
-                            const isDone =
-                              task.status === 'done' ||
-                              task.status === 'cancelled';
-                            const triState = getTriState(task.status, isActive);
-                            return (
-                              <div
-                                key={task._id}
-                                className={cn(
-                                  'flex items-center justify-between rounded-md border px-2 py-2 text-xs',
-                                  isActive && 'border-primary/40 bg-primary/5'
-                                )}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <TaskTriStateButton
-                                    state={triState}
-                                    disabled={!canEditTasks}
-                                    aria-label={`Set task ${task.title} to ${getNextTriState(
-                                      triState
-                                    )}`}
-                                    onClick={event => {
-                                      event.stopPropagation();
-                                      handleCycleTaskState(task, isActive);
-                                    }}
-                                  />
-                                  <div className="flex flex-col gap-1">
-                                    <span className="font-medium">
-                                      {task.title}
-                                    </span>
-                                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                                      <span>
-                                        {task.status.replace('_', ' ')}
-                                      </span>
-                                      {isActive && status === 'RUNNING' && (
-                                        <Badge
-                                          variant="secondary"
-                                          className="px-1.5 py-0 text-[9px]"
-                                        >
-                                          Recording
-                                        </Badge>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                                {isDone && (
+                    {group.tasks.map(task => {
+                      const isActive = activeTaskIds.has(task._id);
+                      const isDone =
+                        task.status === 'done' || task.status === 'cancelled';
+                      const triState = getTriState(task.status, isActive);
+                      return (
+                        <div
+                          key={task._id}
+                          className={cn(
+                            'flex items-center justify-between rounded-md border px-2 py-2 text-xs',
+                            isActive && 'border-primary/40 bg-primary/5'
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <TaskTriStateButton
+                              state={triState}
+                              disabled={!canEditTasks}
+                              aria-label={`Set task ${task.title} to ${getNextTriState(
+                                triState
+                              )}`}
+                              onClick={event => {
+                                event.stopPropagation();
+                                handleCycleTaskState(task, isActive);
+                              }}
+                            />
+                            <div className="flex flex-col gap-1">
+                              <span className="font-medium">{task.title}</span>
+                              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                <span>{task.status.replace('_', ' ')}</span>
+                                {isActive && status === 'RUNNING' && (
                                   <Badge
                                     variant="secondary"
-                                    className="text-[10px]"
+                                    className="px-1.5 py-0 text-[9px]"
                                   >
-                                    Done
+                                    Recording
                                   </Badge>
                                 )}
                               </div>
-                            );
-                          })}
+                            </div>
+                          </div>
+                          {isDone && (
+                            <Badge variant="secondary" className="text-[10px]">
+                              Done
+                            </Badge>
+                          )}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
 
+  return (
+    <>
+      {isEmbedded ? (
+        <div
+          className={cn(
+            'relative w-[360px] rounded-xl border bg-background/95 p-4',
+            className
+          )}
+        >
+          {panelContent}
           {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center bg-background/80">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           )}
-        </PopoverContent>
-      </Popover>
+        </div>
+      ) : (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                'h-8 gap-2 border-primary/20 font-mono text-[11px] sm:text-xs px-2 sm:px-3',
+                showOnMobile ? 'flex' : 'hidden md:flex',
+                status === 'RUNNING' && 'border-primary/40 bg-primary/5',
+                triggerClassName
+              )}
+            >
+              <Timer className="h-3 w-3 text-primary" />
+              <span className="text-primary">
+                {isLoading ? '...' : formatDurationMs(displayDurationMs)}
+              </span>
+              <span className="hidden sm:inline text-muted-foreground">|</span>
+              <span className="hidden sm:inline text-muted-foreground">
+                {status === 'IDLE' ? 'No session' : status}
+              </span>
+              <span className="sm:hidden text-muted-foreground">
+                {status === 'IDLE' ? 'Idle' : status}
+              </span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="relative w-80" align="center">
+            {panelContent}
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+      )}
 
       <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
         <DialogContent className="sm:max-w-[420px]">

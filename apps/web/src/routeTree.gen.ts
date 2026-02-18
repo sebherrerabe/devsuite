@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root';
+import { Route as SessionCompanionRouteImport } from './routes/session-companion';
 import { Route as AuthRouteImport } from './routes/auth';
 import { Route as AppRouteImport } from './routes/_app';
 import { Route as AppIndexRouteImport } from './routes/_app.index';
@@ -40,6 +41,11 @@ import { Route as AppProjectsProjectIdTasksRouteImport } from './routes/_app.pro
 import { Route as AppProjectsProjectIdSettingsRouteImport } from './routes/_app.projects.$projectId.settings';
 import { Route as AppProjectsProjectIdSessionsRouteImport } from './routes/_app.projects.$projectId.sessions';
 
+const SessionCompanionRoute = SessionCompanionRouteImport.update({
+  id: '/session-companion',
+  path: '/session-companion',
+  getParentRoute: () => rootRouteImport,
+} as any);
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -196,6 +202,7 @@ const AppProjectsProjectIdSessionsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute;
   '/auth': typeof AuthRouteWithChildren;
+  '/session-companion': typeof SessionCompanionRoute;
   '/inbox': typeof AppInboxRoute;
   '/invoicing': typeof AppInvoicingRouteWithChildren;
   '/performance': typeof AppPerformanceRoute;
@@ -226,6 +233,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRouteWithChildren;
+  '/session-companion': typeof SessionCompanionRoute;
   '/inbox': typeof AppInboxRoute;
   '/performance': typeof AppPerformanceRoute;
   '/tasks': typeof AppTasksRoute;
@@ -254,6 +262,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   '/_app': typeof AppRouteWithChildren;
   '/auth': typeof AuthRouteWithChildren;
+  '/session-companion': typeof SessionCompanionRoute;
   '/_app/inbox': typeof AppInboxRoute;
   '/_app/invoicing': typeof AppInvoicingRouteWithChildren;
   '/_app/performance': typeof AppPerformanceRoute;
@@ -288,6 +297,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/session-companion'
     | '/inbox'
     | '/invoicing'
     | '/performance'
@@ -318,6 +328,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo;
   to:
     | '/auth'
+    | '/session-companion'
     | '/inbox'
     | '/performance'
     | '/tasks'
@@ -345,6 +356,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/auth'
+    | '/session-companion'
     | '/_app/inbox'
     | '/_app/invoicing'
     | '/_app/performance'
@@ -378,10 +390,18 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren;
   AuthRoute: typeof AuthRouteWithChildren;
+  SessionCompanionRoute: typeof SessionCompanionRoute;
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/session-companion': {
+      id: '/session-companion';
+      path: '/session-companion';
+      fullPath: '/session-companion';
+      preLoaderRoute: typeof SessionCompanionRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/auth': {
       id: '/auth';
       path: '/auth';
@@ -729,6 +749,7 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren);
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRouteWithChildren,
+  SessionCompanionRoute: SessionCompanionRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

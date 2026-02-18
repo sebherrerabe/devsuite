@@ -4,6 +4,7 @@ import test from 'node:test';
 import { sessionStatusValues, taskStatusValues } from '@devsuite/shared';
 import {
   getDesktopSessionActionAvailability,
+  parseDesktopSessionCommand,
   parseDesktopSessionState,
 } from '../../src/session-control.js';
 
@@ -68,4 +69,30 @@ test('remaining-task semantics stay aligned with shared task status contract', (
     .sort();
 
   assert.deepEqual(remainingStatuses, ['blocked', 'in_progress', 'todo']);
+});
+
+test('desktop end-session command contract supports explicit end decisions', () => {
+  const keepOngoing = parseDesktopSessionCommand({
+    scope: { userId: 'user-1', companyId: 'company-1' },
+    action: 'end',
+    endDecision: 'keep_ongoing',
+    requestedAt: 1,
+  });
+  assert.equal(keepOngoing.endDecision, 'keep_ongoing');
+
+  const markDone = parseDesktopSessionCommand({
+    scope: { userId: 'user-1', companyId: 'company-1' },
+    action: 'end',
+    endDecision: 'mark_all_done',
+    requestedAt: 2,
+  });
+  assert.equal(markDone.endDecision, 'mark_all_done');
+
+  const cancel = parseDesktopSessionCommand({
+    scope: { userId: 'user-1', companyId: 'company-1' },
+    action: 'end',
+    endDecision: 'cancel',
+    requestedAt: 3,
+  });
+  assert.equal(cancel.endDecision, 'cancel');
 });

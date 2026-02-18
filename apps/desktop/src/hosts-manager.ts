@@ -1,8 +1,10 @@
 import { execFile as nodeExecFile } from 'node:child_process';
 import {
   readFile as nodeReadFile,
+  mkdir as nodeMkdir,
   writeFile as nodeWriteFile,
 } from 'node:fs/promises';
+import { join as joinPath } from 'node:path';
 import { promisify } from 'node:util';
 
 import { runtimeLog, type RuntimeLogWriter } from './runtime-logger.js';
@@ -15,10 +17,17 @@ export const END_MARKER = '# END DEVSUITE BLOCK';
 export const HOSTS_WRITE_HELPER_FLAG = '--devsuite-hosts-write';
 export const HOSTS_WRITE_HELPER_PATH_ARG = '--hosts-path';
 export const HOSTS_WRITE_HELPER_BASE64_ARG = '--hosts-base64';
+export const HOSTS_WRITE_HELPER_TASK_NAME = 'DevSuiteHostsWriteHelper';
+export const HOSTS_WRITE_HELPER_DIR_SEGMENTS = ['DevSuite', 'hosts-helper'];
+export const HOSTS_WRITE_HELPER_REQUEST_FILENAME = 'request.json';
+export const HOSTS_WRITE_HELPER_RESULT_FILENAME = 'result.json';
+const HOSTS_WRITE_HELPER_TIMEOUT_MS = 15_000;
+const HOSTS_WRITE_HELPER_POLL_INTERVAL_MS = 200;
 
 type ReadFileLike = typeof nodeReadFile;
 type WriteFileLike = typeof nodeWriteFile;
 type ExecFileLike = typeof execFileAsync;
+type MkdirLike = typeof nodeMkdir;
 
 interface FsErrorLike {
   code?: string;
@@ -29,8 +38,12 @@ export interface HostsManagerOptions {
   logger?: RuntimeLogWriter;
   readFile?: ReadFileLike;
   writeFile?: WriteFileLike;
+  mkdir?: MkdirLike;
   execFile?: ExecFileLike;
   platform?: string;
+  programDataPath?: string;
+  helperTaskName?: string;
+  helperTimeoutMs?: number;
 }
 
 function isPermissionError(error: unknown): boolean {
@@ -150,13 +163,174 @@ async function readHostsFile(params: {
   }
 }
 
-async function writeHostsFile(params: {
+function resolveHostsWriteHelperPaths(programDataPath: string): {
+  helperDirectoryPath: string;
+  requestPath: string;
+  resultPath: string;
+} {
+  const helperDirectoryPath = joinPath(
+    programDataPath,
+    ...HOSTS_WRITE_HELPER_DIR_SEGMENTS
+  );
+  return {
+    helperDirectoryPath,
+    requestPath: joinPath(
+      helperDirectoryPath,
+      HOSTS_WRITE_HELPER_REQUEST_FILENAME
+    ),
+    resultPath: joinPath(
+      helperDirectoryPath,
+      HOSTS_WRITE_HELPER_RESULT_FILENAME
+    ),
+  };
+}
+
+function isHostsWriteHelperResultRecord(value: unknown): value is {
+  requestId?: unknown;
+  ok?: unknown;
+  error?: unknown;
+} {
+  return typeof value === 'object' && value !== null;
+}
+
+async function writeWithRegisteredHelper(params: {
   hostsPath: string;
   contents: string;
+  readFile: ReadFileLike;
   writeFile: WriteFileLike;
+  mkdir: MkdirLike;
   execFile: ExecFileLike;
   logger: RuntimeLogWriter;
   platform: string;
+  programDataPath: string;
+  helperTaskName: string;
+  helperTimeoutMs: number;
+}): Promise<boolean> {
+  if (params.platform !== 'win32') {
+    return false;
+  }
+
+  const paths = resolveHostsWriteHelperPaths(params.programDataPath);
+  try {
+    await params.mkdir(paths.helperDirectoryPath, {
+      recursive: true,
+    });
+  } catch (error) {
+    params.logger.warn(
+      'hosts-manager',
+      `failed to prepare helper directory at ${paths.helperDirectoryPath}: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return false;
+  }
+
+  try {
+    await params.execFile('schtasks', ['/Query', '/TN', params.helperTaskName]);
+  } catch {
+    params.logger.warn(
+      'hosts-manager',
+      `hosts helper task "${params.helperTaskName}" is unavailable; reinstall DevSuite to restore installer-level permissions`
+    );
+    return false;
+  }
+
+  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const requestPayload = JSON.stringify({
+    requestId,
+    hostsPath: params.hostsPath,
+    encodedContents: Buffer.from(params.contents, 'utf8').toString('base64'),
+  });
+
+  try {
+    await params.writeFile(paths.requestPath, requestPayload, 'utf8');
+    await params.writeFile(paths.resultPath, '', 'utf8');
+  } catch (error) {
+    params.logger.warn(
+      'hosts-manager',
+      `failed to stage helper request payload: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return false;
+  }
+
+  try {
+    await params.execFile('schtasks', ['/Run', '/TN', params.helperTaskName], {
+      windowsHide: true,
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    });
+  } catch (error) {
+    params.logger.warn(
+      'hosts-manager',
+      `failed to invoke helper task "${params.helperTaskName}": ${error instanceof Error ? error.message : String(error)}`
+    );
+    return false;
+  }
+
+  const timeoutAt = Date.now() + params.helperTimeoutMs;
+  while (Date.now() < timeoutAt) {
+    await new Promise(resolve =>
+      globalThis.setTimeout(resolve, HOSTS_WRITE_HELPER_POLL_INTERVAL_MS)
+    );
+
+    let rawResult = '';
+    try {
+      rawResult = await params.readFile(paths.resultPath, 'utf8');
+    } catch {
+      continue;
+    }
+
+    if (!rawResult.trim()) {
+      continue;
+    }
+
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(rawResult);
+    } catch {
+      continue;
+    }
+
+    if (!isHostsWriteHelperResultRecord(parsed)) {
+      continue;
+    }
+
+    if (parsed.requestId !== requestId) {
+      continue;
+    }
+
+    if (parsed.ok === true) {
+      params.logger.info(
+        'hosts-manager',
+        `hosts file updated via installer helper task: ${params.helperTaskName}`
+      );
+      return true;
+    }
+
+    params.logger.warn(
+      'hosts-manager',
+      `helper task failed to write hosts file: ${typeof parsed.error === 'string' ? parsed.error : 'unknown error'}`
+    );
+    return false;
+  }
+
+  params.logger.warn(
+    'hosts-manager',
+    `helper task timed out while writing hosts file: ${params.helperTaskName}`
+  );
+  return false;
+}
+
+async function writeHostsFile(params: {
+  hostsPath: string;
+  contents: string;
+  readFile: ReadFileLike;
+  writeFile: WriteFileLike;
+  mkdir: MkdirLike;
+  execFile: ExecFileLike;
+  logger: RuntimeLogWriter;
+  platform: string;
+  programDataPath: string;
+  helperTaskName: string;
+  helperTimeoutMs: number;
 }): Promise<boolean> {
   try {
     await params.writeFile(params.hostsPath, params.contents, 'utf8');
@@ -175,66 +349,28 @@ async function writeHostsFile(params: {
       `hosts write permission denied at ${params.hostsPath}; attempting elevated fallback`
     );
 
-    if (params.platform !== 'win32') {
-      params.logger.warn(
-        'hosts-manager',
-        'permission denied and no elevation strategy for non-Windows platform; falling back to notification-only mode'
-      );
-      return false;
-    }
-
-    try {
-      params.logger.warn(
-        'hosts-manager',
-        'requesting Windows elevation for hosts update (UAC prompt expected)'
-      );
-      const encodedContents = Buffer.from(params.contents, 'utf8').toString(
-        'base64'
-      );
-      const escapedExecPath = process.execPath.replace(/'/g, "''");
-      const helperArgs = [
-        ...(process.defaultApp && process.argv[1] ? [process.argv[1]] : []),
-        HOSTS_WRITE_HELPER_FLAG,
-        HOSTS_WRITE_HELPER_PATH_ARG,
-        params.hostsPath,
-        HOSTS_WRITE_HELPER_BASE64_ARG,
-        encodedContents,
-      ];
-      const escapedArgumentList = helperArgs
-        .map(value => `'${value.replace(/'/g, "''")}'`)
-        .join(',');
-      params.logger.info(
-        'hosts-manager',
-        `launching elevated helper via app executable: ${process.execPath}`
-      );
-
-      const elevateCommand = [
-        `$process = Start-Process -FilePath '${escapedExecPath}' -Verb RunAs -PassThru -Wait -WindowStyle Hidden -ArgumentList @(${escapedArgumentList})`,
-        '$exitCode = $process.ExitCode',
-        'exit $exitCode',
-      ].join('; ');
-
-      await params.execFile(
-        'powershell',
-        ['-NoProfile', '-NonInteractive', '-Command', elevateCommand],
-        {
-          windowsHide: true,
-          timeout: 45_000,
-          maxBuffer: 2 * 1024 * 1024,
-        }
-      );
-      params.logger.info(
-        'hosts-manager',
-        'elevated hosts write command completed'
-      );
+    const appliedWithHelper = await writeWithRegisteredHelper({
+      hostsPath: params.hostsPath,
+      contents: params.contents,
+      readFile: params.readFile,
+      writeFile: params.writeFile,
+      mkdir: params.mkdir,
+      execFile: params.execFile,
+      logger: params.logger,
+      platform: params.platform,
+      programDataPath: params.programDataPath,
+      helperTaskName: params.helperTaskName,
+      helperTimeoutMs: params.helperTimeoutMs,
+    });
+    if (appliedWithHelper) {
       return true;
-    } catch (elevatedError) {
-      params.logger.error(
-        'hosts-manager',
-        `elevated hosts write failed; falling back to notification-only mode: ${elevatedError instanceof Error ? elevatedError.message : String(elevatedError)}`
-      );
-      return false;
     }
+
+    params.logger.warn(
+      'hosts-manager',
+      'hosts helper is unavailable or failed; focus mode will continue without hosts enforcement until helper permissions are restored'
+    );
+    return false;
   }
 }
 
@@ -271,8 +407,13 @@ function resolveOptions(options: HostsManagerOptions = {}) {
     logger: options.logger ?? runtimeLog,
     readFile: options.readFile ?? nodeReadFile,
     writeFile: options.writeFile ?? nodeWriteFile,
+    mkdir: options.mkdir ?? nodeMkdir,
     execFile: options.execFile ?? execFileAsync,
     platform: options.platform ?? process.platform,
+    programDataPath:
+      options.programDataPath ?? process.env.ProgramData ?? 'C:\\ProgramData',
+    helperTaskName: options.helperTaskName ?? HOSTS_WRITE_HELPER_TASK_NAME,
+    helperTimeoutMs: options.helperTimeoutMs ?? HOSTS_WRITE_HELPER_TIMEOUT_MS,
   };
 }
 
@@ -324,10 +465,15 @@ export async function blockDomains(
   const applied = await writeHostsFile({
     hostsPath: resolved.hostsPath,
     contents: nextContents,
+    readFile: resolved.readFile,
     writeFile: resolved.writeFile,
+    mkdir: resolved.mkdir,
     execFile: resolved.execFile,
     logger: resolved.logger,
     platform: resolved.platform,
+    programDataPath: resolved.programDataPath,
+    helperTaskName: resolved.helperTaskName,
+    helperTimeoutMs: resolved.helperTimeoutMs,
   });
 
   if (applied) {
@@ -369,10 +515,15 @@ export async function unblockAll(
   const applied = await writeHostsFile({
     hostsPath: resolved.hostsPath,
     contents: stripped,
+    readFile: resolved.readFile,
     writeFile: resolved.writeFile,
+    mkdir: resolved.mkdir,
     execFile: resolved.execFile,
     logger: resolved.logger,
     platform: resolved.platform,
+    programDataPath: resolved.programDataPath,
+    helperTaskName: resolved.helperTaskName,
+    helperTimeoutMs: resolved.helperTimeoutMs,
   });
 
   if (applied) {

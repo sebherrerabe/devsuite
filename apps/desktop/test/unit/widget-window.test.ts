@@ -12,6 +12,7 @@ test('getSessionWidgetWindowOptions configures frameless transparent overlay wid
     preloadPath: 'preload.js',
     partition: 'persist:devsuite',
     additionalArguments: ['--x'],
+    mode: 'mini',
   });
 
   assert.equal(options.frame, false);

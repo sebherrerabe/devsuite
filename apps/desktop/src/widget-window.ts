@@ -1,5 +1,7 @@
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 
+export type SessionWidgetMode = 'mini' | 'expanded';
+
 export interface WidgetWindowOptions {
   width: number;
   height: number;
@@ -28,15 +30,34 @@ export interface WidgetWindowOptions {
   };
 }
 
+export function getSessionWidgetSize(mode: SessionWidgetMode): {
+  width: number;
+  height: number;
+} {
+  if (mode === 'mini') {
+    return {
+      width: 320,
+      height: 220,
+    };
+  }
+
+  return {
+    width: 460,
+    height: 700,
+  };
+}
+
 export function getSessionWidgetWindowOptions(params: {
   iconPath: string;
   preloadPath: string;
   partition: string;
   additionalArguments: string[];
+  mode: SessionWidgetMode;
 }): WidgetWindowOptions {
+  const size = getSessionWidgetSize(params.mode);
   return {
-    width: 320,
-    height: 220,
+    width: size.width,
+    height: size.height,
     frame: false,
     transparent: true,
     resizable: false,

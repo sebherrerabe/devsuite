@@ -14,6 +14,7 @@ import {
 import type {
   DesktopSessionAction,
   DesktopSessionCommand,
+  DesktopSessionEndDecision,
   DesktopSessionState,
 } from './session-control.js';
 import type {
@@ -47,9 +48,11 @@ type DesktopSessionApi = {
   ) => Promise<DesktopSessionState>;
   requestAction: (
     scope: DesktopSettingsScope,
-    action: DesktopSessionAction
+    action: DesktopSessionAction,
+    endDecision?: DesktopSessionEndDecision
   ) => Promise<void>;
-  showCompanion: () => Promise<void>;
+  showCompanion: (mode?: 'mini' | 'expanded') => Promise<void>;
+  setCompanionMode: (mode: 'mini' | 'expanded') => Promise<void>;
   onCommand: (
     listener: (command: DesktopSessionCommand) => void | Promise<void>
   ) => () => void;
@@ -206,11 +209,19 @@ const desktopSessionApi: DesktopSessionApi = {
       scope,
       nextState
     ) as Promise<DesktopSessionState>,
-  requestAction: async (scope, action) => {
-    await ipcRenderer.invoke('desktop-session:request-action', scope, action);
+  requestAction: async (scope, action, endDecision) => {
+    await ipcRenderer.invoke(
+      'desktop-session:request-action',
+      scope,
+      action,
+      endDecision
+    );
   },
-  showCompanion: async () => {
-    await ipcRenderer.invoke('desktop-session:show-companion');
+  showCompanion: async mode => {
+    await ipcRenderer.invoke('desktop-session:show-companion', mode);
+  },
+  setCompanionMode: async mode => {
+    await ipcRenderer.invoke('desktop-session:set-companion-mode', mode);
   },
   onCommand: listener => {
     const wrapped = (_event: unknown, payload: DesktopSessionCommand) => {

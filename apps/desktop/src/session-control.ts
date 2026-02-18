@@ -4,6 +4,10 @@ import {
 } from './focus-settings.js';
 
 export type DesktopSessionAction = 'start' | 'pause' | 'resume' | 'end';
+export type DesktopSessionEndDecision =
+  | 'keep_ongoing'
+  | 'mark_all_done'
+  | 'cancel';
 export type DesktopSessionStatus = 'IDLE' | 'RUNNING' | 'PAUSED';
 export type DesktopSessionConnectionState = 'connected' | 'syncing' | 'error';
 
@@ -28,6 +32,7 @@ export interface DesktopSessionActionAvailability {
 export interface DesktopSessionCommand {
   scope: DesktopSettingsScope;
   action: DesktopSessionAction;
+  endDecision?: DesktopSessionEndDecision;
   requestedAt: number;
 }
 
@@ -137,6 +142,26 @@ export function parseDesktopSessionAction(
   throw new Error('session action must be one of: start, pause, resume, end.');
 }
 
+export function parseDesktopSessionEndDecision(
+  value: unknown
+): DesktopSessionEndDecision | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (
+    value === 'keep_ongoing' ||
+    value === 'mark_all_done' ||
+    value === 'cancel'
+  ) {
+    return value;
+  }
+
+  throw new Error(
+    'endDecision must be one of: keep_ongoing, mark_all_done, cancel.'
+  );
+}
+
 export function createDefaultDesktopSessionState(): DesktopSessionState {
   const now = Date.now();
   return {
@@ -189,9 +214,12 @@ export function parseDesktopSessionCommand(
     throw new Error('Desktop session command payload must be an object.');
   }
 
+  const endDecision = parseDesktopSessionEndDecision(input.endDecision);
+
   return {
     scope: parseDesktopSettingsScope(input.scope),
     action: parseDesktopSessionAction(input.action),
+    ...(endDecision ? { endDecision } : {}),
     requestedAt: parseTimestamp(input.requestedAt, 'requestedAt'),
   };
 }

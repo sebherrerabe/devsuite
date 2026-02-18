@@ -160,6 +160,8 @@ export function DesktopSessionBridge() {
   const pauseSession = useMutation(api.sessions.pauseSession);
   const resumeSession = useMutation(api.sessions.resumeSession);
   const finishSession = useMutation(api.sessions.finishSession);
+  const deactivateTask = useMutation(api.sessions.deactivateTask);
+  const markTaskDone = useMutation(api.sessions.markTaskDone);
   const [commandError, setCommandError] = useState<string | null>(null);
 
   const scope = useMemo(() => {
@@ -256,15 +258,89 @@ export function DesktopSessionBridge() {
     };
     stableEffectiveDurationMs = Math.max(0, effectiveDurationMs);
   }
-  const remainingTaskCount = useMemo(() => {
+  const sessionProjectIds = useMemo(() => {
+    if (!activeSession) {
+      return null;
+    }
+
+    const projectIds =
+      sessionDetail?.session?.projectIds ?? activeSession.projectIds ?? [];
+    if (projectIds.length === 0) {
+      return null;
+    }
+
+    return new Set(projectIds);
+  }, [activeSession, sessionDetail?.session?.projectIds]);
+  const sessionRelevantTasks = useMemo(() => {
     if (tasks === undefined) {
       return null;
     }
 
-    return tasks.filter(
+    return tasks.filter(task => {
+      if (!sessionProjectIds) {
+        return true;
+      }
+      return !!task.projectId && sessionProjectIds.has(task.projectId);
+    });
+  }, [sessionProjectIds, tasks]);
+  const activeRecordingTaskIds = useMemo(() => {
+    const activeIds = new Set<Id<'tasks'>>();
+    if (!sessionDetail?.events) {
+      return activeIds;
+    }
+
+    for (const event of sessionDetail.events) {
+      const payloadTaskId = (event.payload as { taskId?: Id<'tasks'> }).taskId;
+      if (!payloadTaskId) {
+        continue;
+      }
+
+      if (event.type === 'TASK_ACTIVATED') {
+        activeIds.add(payloadTaskId);
+        continue;
+      }
+
+      if (
+        event.type === 'TASK_DEACTIVATED' ||
+        event.type === 'TASK_RESET' ||
+        event.type === 'TASK_MARKED_DONE'
+      ) {
+        activeIds.delete(payloadTaskId);
+        continue;
+      }
+
+      if (
+        event.type === 'SESSION_FINISHED' ||
+        event.type === 'SESSION_CANCELLED'
+      ) {
+        activeIds.clear();
+      }
+    }
+
+    return activeIds;
+  }, [sessionDetail?.events]);
+  const remainingTaskCount = useMemo(() => {
+    if (!activeSession) {
+      return 0;
+    }
+
+    if (sessionRelevantTasks === null || sessionDetail === undefined) {
+      return null;
+    }
+
+    if (activeRecordingTaskIds.size > 0) {
+      return 0;
+    }
+
+    return sessionRelevantTasks.filter(
       task => task.status !== 'done' && task.status !== 'cancelled'
     ).length;
-  }, [tasks]);
+  }, [
+    activeRecordingTaskIds,
+    activeSession,
+    sessionDetail,
+    sessionRelevantTasks,
+  ]);
 
   const actionRef = useRef<{
     scope: DesktopScope | null;
@@ -523,6 +599,36 @@ export function DesktopSessionBridge() {
             if (snapshot.activeStatus === 'IDLE' || !snapshot.activeSessionId) {
               break;
             }
+            const endDecision = command.endDecision ?? 'keep_ongoing';
+            if (endDecision === 'cancel') {
+              break;
+            }
+            if (endDecision === 'mark_all_done') {
+              if (
+                sessionRelevantTasks === null ||
+                sessionDetail === undefined
+              ) {
+                throw new Error('Session tasks are still syncing. Try again.');
+              }
+
+              const pendingTasks = sessionRelevantTasks.filter(
+                task => task.status !== 'done' && task.status !== 'cancelled'
+              );
+              for (const task of pendingTasks) {
+                if (activeRecordingTaskIds.has(task._id)) {
+                  await deactivateTask({
+                    companyId: snapshot.companyId,
+                    sessionId: snapshot.activeSessionId,
+                    taskId: task._id,
+                  });
+                }
+                await markTaskDone({
+                  companyId: snapshot.companyId,
+                  sessionId: snapshot.activeSessionId,
+                  taskId: task._id,
+                });
+              }
+            }
             await finishSession({
               companyId: snapshot.companyId,
               sessionId: snapshot.activeSessionId,
@@ -543,7 +649,17 @@ export function DesktopSessionBridge() {
     });
 
     return unsubscribe;
-  }, [finishSession, pauseSession, resumeSession, startSession]);
+  }, [
+    activeRecordingTaskIds,
+    deactivateTask,
+    finishSession,
+    markTaskDone,
+    pauseSession,
+    resumeSession,
+    sessionDetail,
+    sessionRelevantTasks,
+    startSession,
+  ]);
 
   const handledNotificationActionKeysRef = useRef<string[]>([]);
 

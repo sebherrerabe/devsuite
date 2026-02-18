@@ -123,7 +123,8 @@ test('parseDesktopSessionCommand validates scope, action and timestamp', () => {
       userId: ' user-1 ',
       companyId: ' company-1 ',
     },
-    action: 'pause',
+    action: 'end',
+    endDecision: 'mark_all_done',
     requestedAt: 1739555000000,
   });
 
@@ -132,7 +133,8 @@ test('parseDesktopSessionCommand validates scope, action and timestamp', () => {
       userId: 'user-1',
       companyId: 'company-1',
     },
-    action: 'pause',
+    action: 'end',
+    endDecision: 'mark_all_done',
     requestedAt: 1739555000000,
   });
 });
@@ -161,6 +163,19 @@ test('parseDesktopSessionCommand rejects invalid command payloads', () => {
         requestedAt: 1,
       }),
     /session action must be one of/
+  );
+  assert.throws(
+    () =>
+      parseDesktopSessionCommand({
+        scope: {
+          userId: 'user-1',
+          companyId: 'company-1',
+        },
+        action: 'end',
+        endDecision: 'close_anyway',
+        requestedAt: 1,
+      }),
+    /endDecision must be one of/
   );
 });
 

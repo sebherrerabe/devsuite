@@ -7,6 +7,7 @@ import { URL, fileURLToPath } from 'node:url';
 import type {
   BrowserWindow as BrowserWindowType,
   Event as ElectronEvent,
+  MessageBoxOptions,
   Tray as TrayType,
 } from 'electron';
 
@@ -36,8 +37,10 @@ import {
   createDefaultDesktopSessionState,
   getDesktopSessionActionAvailability,
   parseDesktopSessionAction,
+  parseDesktopSessionEndDecision,
   parseDesktopSessionState,
   type DesktopSessionAction,
+  type DesktopSessionEndDecision,
   type DesktopSessionState,
 } from './session-control.js';
 import {
@@ -74,10 +77,11 @@ import {
 import { executeStrictPolicyActions } from './strict-policy-actions.js';
 import { runtimeLog } from './runtime-logger.js';
 import { broadcastDesktopSessionStateToWindows } from './session-state-broadcast.js';
-import { createSessionWidgetHtml } from './session-widget-html.js';
 import {
   getSessionWidgetWindowOptions,
+  getSessionWidgetSize,
   positionWidgetBottomRight,
+  type SessionWidgetMode,
 } from './widget-window.js';
 import {
   registerDesktopWindowIpcHandlers,
@@ -105,6 +109,7 @@ const {
   protocol,
   nativeImage,
   Notification,
+  dialog,
   globalShortcut,
   screen,
 } = require('electron') as typeof import('electron');
@@ -127,6 +132,7 @@ const TEST_IPC_RENDERER_ARGS = ENABLE_TEST_IPC
   ? [TEST_IPC_RENDERER_SWITCH]
   : [];
 const SHOW_COMPANION_ARG = '--show-companion';
+const COMPANION_ROUTE_PATH = '/session-companion';
 const DESKTOP_ADDITIONAL_NAV_ORIGINS =
   process.env.DEVSUITE_DESKTOP_NAV_ALLOW_ORIGINS;
 const ICON_FILENAME_PRIMARY =
@@ -276,6 +282,7 @@ let desktopRuntimePreferences: DesktopRuntimePreferences = {
 let isAppQuitting = false;
 let isClosingSessionWidgetProgrammatically = false;
 let sessionWidgetDismissedByUser = false;
+let sessionWidgetMode: SessionWidgetMode = 'mini';
 const lastEffectiveDurationBySessionId = new Map<string, number>();
 const allowedDesktopNavigationOrigins = resolveAllowedDesktopNavigationOrigins({
   webUrl: process.env.DEVSUITE_WEB_URL,
@@ -305,6 +312,14 @@ function parseNonEmptyString(value: unknown, fieldName: string): string {
   }
 
   return trimmed;
+}
+
+function parseSessionWidgetMode(value: unknown): SessionWidgetMode {
+  if (value === 'mini' || value === 'expanded') {
+    return value;
+  }
+
+  throw new Error('Session widget mode must be "mini" or "expanded".');
 }
 
 function hasShowCompanionArg(argv: readonly string[]): boolean {
@@ -1032,7 +1047,10 @@ function parseOverrideReason(value: unknown): string {
 }
 
 async function dispatchDesktopSessionAction(
-  action: DesktopSessionAction
+  action: DesktopSessionAction,
+  options?: {
+    endDecision?: DesktopSessionEndDecision;
+  }
 ): Promise<void> {
   if (!desktopSessionScope) {
     throw new Error('Desktop scope is not initialized.');
@@ -1042,10 +1060,45 @@ async function dispatchDesktopSessionAction(
     return;
   }
 
+  let endDecision = options?.endDecision;
+  if (action === 'end' && !endDecision) {
+    const focusedWindow =
+      BrowserWindow.getFocusedWindow() ??
+      sessionWidgetWindowRef ??
+      mainWindowRef ??
+      undefined;
+    const decisionPrompt: MessageBoxOptions = {
+      type: 'question',
+      buttons: ['Keep ongoing', 'Mark all done', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+      title: 'End session',
+      message: 'How do you want to handle ongoing tasks before ending?',
+      detail:
+        'Keep ongoing leaves active tasks in progress. Mark all done completes all remaining tasks in this session scope.',
+    };
+    const decisionResult = focusedWindow
+      ? await dialog.showMessageBox(focusedWindow, decisionPrompt)
+      : await dialog.showMessageBox(decisionPrompt);
+    if (decisionResult.response === 2 || decisionResult.response === -1) {
+      endDecision = 'cancel';
+    } else if (decisionResult.response === 1) {
+      endDecision = 'mark_all_done';
+    } else {
+      endDecision = 'keep_ongoing';
+    }
+  }
+
+  if (action === 'end' && endDecision === 'cancel') {
+    return;
+  }
+
   const targetWindow = await ensureMainWindow({ show: false });
   const commandPayload = {
     scope: desktopSessionScope,
     action,
+    ...(action === 'end' && endDecision ? { endDecision } : {}),
     requestedAt: Date.now(),
   };
 
@@ -1111,12 +1164,13 @@ function rebuildTrayMenu(): void {
       type: 'separator',
     },
     {
-      label: 'Show Session Widget',
+      label: 'Toggle Session Widget',
       enabled: hasScope && isConnected,
       click: () => {
-        void showSessionWidget({
-          force: true,
+        void toggleSessionWidget({
+          forceOpen: true,
           origin: 'tray_menu',
+          mode: 'mini',
         });
       },
     },
@@ -1273,12 +1327,47 @@ function closeSessionWidgetIfOpen(): void {
   sessionWidgetWindowRef.close();
 }
 
+function buildSessionWidgetUrl(mode: SessionWidgetMode): string {
+  const rendererUrl = resolveRendererUrl();
+  if (!rendererUrl) {
+    return `data:text/html;charset=utf-8,${encodeURIComponent(BOOTSTRAP_HTML)}`;
+  }
+
+  if (rendererUrl.startsWith('data:')) {
+    return rendererUrl;
+  }
+
+  try {
+    const companionUrl = new URL(COMPANION_ROUTE_PATH, rendererUrl);
+    companionUrl.searchParams.set('mode', mode);
+    return companionUrl.toString();
+  } catch {
+    return rendererUrl;
+  }
+}
+
+function applySessionWidgetMode(mode: SessionWidgetMode): void {
+  sessionWidgetMode = mode;
+  if (!sessionWidgetWindowRef || sessionWidgetWindowRef.isDestroyed()) {
+    return;
+  }
+
+  const { width, height } = getSessionWidgetSize(mode);
+  sessionWidgetWindowRef.setSize(width, height, true);
+  positionWidgetBottomRight({
+    window: sessionWidgetWindowRef,
+    workAreaSize: screen.getPrimaryDisplay().workAreaSize,
+  });
+}
+
 async function showSessionWidget(options?: {
   force?: boolean;
   origin?: string;
+  mode?: SessionWidgetMode;
 }): Promise<void> {
   const force = options?.force ?? false;
   const origin = options?.origin ?? 'unknown';
+  const mode = options?.mode ?? sessionWidgetMode;
 
   if (!getAuthenticatedDesktopScope()) {
     return;
@@ -1301,6 +1390,11 @@ async function showSessionWidget(options?: {
   }
 
   if (sessionWidgetWindowRef && !sessionWidgetWindowRef.isDestroyed()) {
+    applySessionWidgetMode(mode);
+    const companionUrl = buildSessionWidgetUrl(mode);
+    if (sessionWidgetWindowRef.webContents.getURL() !== companionUrl) {
+      await sessionWidgetWindowRef.loadURL(companionUrl);
+    }
     runtimeLog.debug(
       'widget',
       `widget already open; focusing, origin=${origin}`
@@ -1316,6 +1410,7 @@ async function showSessionWidget(options?: {
       preloadPath: join(__dirname, 'preload.js'),
       partition: DESKTOP_PARTITION,
       additionalArguments: TEST_IPC_RENDERER_ARGS,
+      mode,
     })
   );
   const applyBottomRightPosition = () => {
@@ -1351,19 +1446,48 @@ async function showSessionWidget(options?: {
     sessionWidgetWindowRef = null;
   });
 
-  await sessionWidgetWindowRef.loadURL(
-    `data:text/html;charset=utf-8,${encodeURIComponent(createSessionWidgetHtml())}#devsuite-widget`
-  );
+  applySessionWidgetMode(mode);
+  await sessionWidgetWindowRef.loadURL(buildSessionWidgetUrl(mode));
   runtimeLog.info('widget', `widget opened: origin=${origin}, force=${force}`);
   broadcastDesktopSessionState();
+}
+
+async function toggleSessionWidget(options?: {
+  forceOpen?: boolean;
+  origin?: string;
+  mode?: SessionWidgetMode;
+}): Promise<void> {
+  const origin = options?.origin ?? 'unknown';
+
+  if (sessionWidgetWindowRef && !sessionWidgetWindowRef.isDestroyed()) {
+    if (sessionWidgetWindowRef.isVisible()) {
+      sessionWidgetWindowRef.hide();
+      runtimeLog.info('widget', `widget hidden by toggle: origin=${origin}`);
+      return;
+    }
+
+    await showSessionWidget({
+      force: options?.forceOpen ?? false,
+      origin,
+      ...(options?.mode ? { mode: options.mode } : {}),
+    });
+    return;
+  }
+
+  await showSessionWidget({
+    force: options?.forceOpen ?? false,
+    origin,
+    ...(options?.mode ? { mode: options.mode } : {}),
+  });
 }
 
 function tryRegisterCompanionShortcut(shortcut: string): boolean {
   try {
     return globalShortcut.register(shortcut, () => {
-      void showSessionWidget({
-        force: true,
+      void toggleSessionWidget({
+        forceOpen: true,
         origin: 'shortcut',
+        mode: 'mini',
       });
     });
   } catch (error) {
@@ -1858,7 +1982,7 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(
     'desktop-session:request-action',
-    async (_event, scope: unknown, action: unknown) => {
+    async (_event, scope: unknown, action: unknown, endDecision: unknown) => {
       const resolvedScope = await resolveScopedDesktopContext(scope);
       if (
         !desktopSessionScope ||
@@ -1868,15 +1992,36 @@ function registerIpcHandlers(): void {
       }
 
       const parsedAction = parseDesktopSessionAction(action);
-      await dispatchDesktopSessionAction(parsedAction);
+      const parsedEndDecision =
+        parsedAction === 'end'
+          ? parseDesktopSessionEndDecision(endDecision)
+          : undefined;
+      await dispatchDesktopSessionAction(
+        parsedAction,
+        parsedEndDecision ? { endDecision: parsedEndDecision } : undefined
+      );
     }
   );
-  ipcMain.handle('desktop-session:show-companion', async () => {
-    await showSessionWidget({
-      force: true,
-      origin: 'ipc_show_companion',
-    });
-  });
+  ipcMain.handle(
+    'desktop-session:show-companion',
+    async (_event, mode: unknown) => {
+      const parsedMode =
+        mode === undefined || mode === null
+          ? 'expanded'
+          : parseSessionWidgetMode(mode);
+      await showSessionWidget({
+        force: true,
+        origin: 'ipc_show_companion',
+        mode: parsedMode,
+      });
+    }
+  );
+  ipcMain.handle(
+    'desktop-session:set-companion-mode',
+    async (_event, mode: unknown) => {
+      applySessionWidgetMode(parseSessionWidgetMode(mode));
+    }
+  );
   ipcMain.handle('desktop-companion:get-shortcut', async () => {
     return companionShortcut;
   });
@@ -2097,6 +2242,7 @@ if (hasHostsWriteHelperArg(process.argv)) {
           showSessionWidget({
             force: true,
             origin: 'second_instance_arg',
+            mode: 'expanded',
           })
         );
         return;
@@ -2137,6 +2283,7 @@ if (hasHostsWriteHelperArg(process.argv)) {
         await showSessionWidget({
           force: true,
           origin: 'startup_arg',
+          mode: 'expanded',
         });
       }
 

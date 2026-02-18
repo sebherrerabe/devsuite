@@ -386,7 +386,11 @@ describe('desktop e2e smoke', () => {
     );
 
     await browser.execute(async scope => {
-      await globalThis.window.desktopSession.requestAction(scope, 'end');
+      await globalThis.window.desktopSession.requestAction(
+        scope,
+        'end',
+        'keep_ongoing'
+      );
     }, TEST_SCOPE);
     await browser.waitUntil(
       async () => (await getSessionState()).status === 'IDLE'

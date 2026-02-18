@@ -8,7 +8,7 @@ module.exports = {
     {
       from: 'assets',
       to: 'assets',
-      filter: ['icon.ico', 'icon.png'],
+      filter: ['icon.ico', 'icon.png', 'hosts-write-helper.ps1'],
     },
   ],
   win: {

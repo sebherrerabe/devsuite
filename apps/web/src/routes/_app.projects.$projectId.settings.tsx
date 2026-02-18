@@ -91,6 +91,7 @@ function ProjectSettingsPage() {
       setName(project.name);
       setDescription(project.description || '');
       setColor(project.color || '#64748b');
+      setEmoji(project.emoji || '');
       setSelectedRepoIds(project.repositoryIds || []);
       setNotesMarkdown(project.notesMarkdown || '');
     }
@@ -157,14 +158,6 @@ function ProjectSettingsPage() {
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const toggleRepo = (repoId: Id<'repositories'>) => {
-    setSelectedRepoIds(prev =>
-      prev.includes(repoId)
-        ? prev.filter(id => id !== repoId)
-        : [...prev, repoId]
-    );
   };
 
   const handleBillingSave = async () => {
@@ -425,15 +418,23 @@ function ProjectSettingsPage() {
               ) : (
                 <div className="space-y-3">
                   {repositories?.map(repo => (
-                    <div
-                      key={repo._id}
-                      className="flex items-center space-x-2 cursor-pointer"
-                      onClick={() => toggleRepo(repo._id)}
-                    >
+                    <div key={repo._id} className="flex items-center space-x-2">
                       <Checkbox
                         id={`repo-${repo._id}`}
                         checked={selectedRepoIds.includes(repo._id)}
-                        onCheckedChange={() => toggleRepo(repo._id)}
+                        onCheckedChange={checked => {
+                          if (checked === true) {
+                            setSelectedRepoIds(prev =>
+                              prev.includes(repo._id)
+                                ? prev
+                                : [...prev, repo._id]
+                            );
+                          } else {
+                            setSelectedRepoIds(prev =>
+                              prev.filter(id => id !== repo._id)
+                            );
+                          }
+                        }}
                       />
                       <Label
                         htmlFor={`repo-${repo._id}`}

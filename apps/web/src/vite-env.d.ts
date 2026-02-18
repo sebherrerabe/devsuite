@@ -35,6 +35,8 @@ interface DesktopFocusSettings {
 
 type DesktopSessionStatus = 'IDLE' | 'RUNNING' | 'PAUSED';
 type DesktopSessionAction = 'start' | 'pause' | 'resume' | 'end';
+type DesktopSessionEndDecision = 'keep_ongoing' | 'mark_all_done' | 'cancel';
+type DesktopCompanionMode = 'mini' | 'expanded';
 type DesktopSessionConnectionState = 'connected' | 'syncing' | 'error';
 type DesktopNotificationKind =
   | 'session_started'
@@ -63,6 +65,7 @@ interface DesktopSessionState {
 interface DesktopSessionCommand {
   scope: DesktopSettingsScope;
   action: DesktopSessionAction;
+  endDecision?: DesktopSessionEndDecision;
   requestedAt: number;
 }
 
@@ -135,9 +138,11 @@ interface Window {
     ) => Promise<DesktopSessionState>;
     requestAction: (
       scope: DesktopSettingsScope,
-      action: DesktopSessionAction
+      action: DesktopSessionAction,
+      endDecision?: DesktopSessionEndDecision
     ) => Promise<void>;
-    showCompanion: () => Promise<void>;
+    showCompanion: (mode?: DesktopCompanionMode) => Promise<void>;
+    setCompanionMode: (mode: DesktopCompanionMode) => Promise<void>;
     onCommand: (
       listener: (command: DesktopSessionCommand) => void | Promise<void>
     ) => () => void;

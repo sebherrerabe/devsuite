@@ -542,8 +542,23 @@ export const ingestNotifications = internalMutation({
 
         const existingId = companyItems.get(notification.threadId);
         if (existingId) {
-          // Notification ingest is insert-only by external thread id.
-          // Once registered for a company, it is never re-written by polling.
+          await ctx.db.patch(existingId, {
+            type: inboxType,
+            content,
+            isRead: false,
+            isArchived: false,
+            updatedAt: now,
+            deletedAt: null,
+          });
+          await ctx.scheduler.runAfter(
+            0,
+            pushDeliveryApi.sendToCompanySubscribers,
+            {
+              companyId,
+              inboxItemId: existingId,
+            }
+          );
+          updated += 1;
           continue;
         }
 

@@ -3,6 +3,7 @@ import {
   Link,
   Outlet,
   redirect,
+  useRouterState,
 } from '@tanstack/react-router';
 import { Toaster } from '@/components/ui/sonner';
 import { authClient } from '@/lib/auth';
@@ -31,8 +32,17 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+  const pathname = useRouterState({
+    select: state => state.location.pathname,
+  });
+  const isCompanionRoute = pathname === '/session-companion';
+
   return (
-    <div className="min-h-screen bg-background font-sans antialiased">
+    <div
+      className={`min-h-screen font-sans antialiased ${
+        isCompanionRoute ? 'bg-transparent' : 'bg-background'
+      }`}
+    >
       <Outlet />
       <Toaster />
     </div>
