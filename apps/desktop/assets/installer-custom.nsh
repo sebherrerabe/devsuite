@@ -1,9 +1,8 @@
 !include "nsDialogs.nsh"
 !include "LogicLib.nsh"
-!include "nsExec.nsh"
 
 !define DEVSUITE_HOSTS_HELPER_TASK "DevSuiteHostsWriteHelper"
-!define DEVSUITE_HOSTS_HELPER_DIR "$PROGRAMDATA\DevSuite\hosts-helper"
+!define DEVSUITE_HOSTS_HELPER_DIR "$WINDIR\..\ProgramData\DevSuite\hosts-helper"
 !define DEVSUITE_HOSTS_HELPER_SCRIPT "$INSTDIR\resources\assets\hosts-write-helper.ps1"
 
 !ifndef BUILD_UNINSTALLER
@@ -71,10 +70,10 @@ FunctionEnd
   ${EndIf}
 
   CreateDirectory "${DEVSUITE_HOSTS_HELPER_DIR}"
-  nsExec::ExecToLog 'icacls "${DEVSUITE_HOSTS_HELPER_DIR}" /grant *S-1-5-32-545:(OI)(CI)M /T /C'
+  ExecWait 'icacls "${DEVSUITE_HOSTS_HELPER_DIR}" /grant "*S-1-5-32-545:(OI)(CI)M" /T /C' $0
 
   IfFileExists "${DEVSUITE_HOSTS_HELPER_SCRIPT}" 0 +3
-    nsExec::ExecToLog 'schtasks /Create /TN "${DEVSUITE_HOSTS_HELPER_TASK}" /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $\"${DEVSUITE_HOSTS_HELPER_SCRIPT}$\"" /SC ONCE /ST 00:00 /RL HIGHEST /RU SYSTEM /F'
+    ExecWait 'schtasks /Create /TN "${DEVSUITE_HOSTS_HELPER_TASK}" /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $\"${DEVSUITE_HOSTS_HELPER_SCRIPT}$\"" /SC ONCE /ST 00:00 /RL HIGHEST /RU SYSTEM /F' $0
     Goto +2
   DetailPrint "DevSuite hosts helper script is missing. Reinstall may be required for hosts enforcement."
 !macroend
@@ -82,6 +81,6 @@ FunctionEnd
 
 !macro customUnInstall
   DeleteRegValue SHELL_CONTEXT "Software\Microsoft\Windows\CurrentVersion\Run" "DevSuite"
-  nsExec::ExecToLog 'schtasks /Delete /TN "${DEVSUITE_HOSTS_HELPER_TASK}" /F'
+  ExecWait 'schtasks /Delete /TN "${DEVSUITE_HOSTS_HELPER_TASK}" /F' $0
   RMDir /r "${DEVSUITE_HOSTS_HELPER_DIR}"
 !macroend
