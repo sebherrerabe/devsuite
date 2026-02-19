@@ -127,7 +127,7 @@ function computeSessionDurationFromDetail(
 
 function SessionCompanionRoute() {
   return (
-    <CompanyProvider syncDesktopScope={true}>
+    <CompanyProvider syncDesktopScope={true} clearScopeOnMissingContext={false}>
       <SessionCompanionContent />
     </CompanyProvider>
   );

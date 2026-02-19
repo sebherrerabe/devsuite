@@ -70,9 +70,11 @@ function getSessionUserId(sessionData: unknown): string | null {
 export function CompanyProvider({
   children,
   syncDesktopScope = true,
+  clearScopeOnMissingContext = true,
 }: {
   children: React.ReactNode;
   syncDesktopScope?: boolean;
+  clearScopeOnMissingContext?: boolean;
 }) {
   const { data: authSession } = authClient.useSession();
 
@@ -126,6 +128,9 @@ export function CompanyProvider({
 
     const userId = getSessionUserId(authSession);
     if (!authSession || !userId) {
+      if (!clearScopeOnMissingContext) {
+        return;
+      }
       void window.desktopAuth.clearScope().catch(error => {
         console.warn('[desktop] Failed to clear desktop session scope.', error);
       });
@@ -139,6 +144,9 @@ export function CompanyProvider({
     }
 
     if (!currentCompany?._id) {
+      if (!clearScopeOnMissingContext) {
+        return;
+      }
       void window.desktopAuth.clearScope().catch(error => {
         console.warn('[desktop] Failed to clear desktop session scope.', error);
       });
@@ -153,7 +161,13 @@ export function CompanyProvider({
       .catch(error => {
         console.warn('[desktop] Failed to set desktop session scope.', error);
       });
-  }, [authSession, bootstrap, currentCompany?._id, syncDesktopScope]);
+  }, [
+    authSession,
+    bootstrap,
+    currentCompany?._id,
+    syncDesktopScope,
+    clearScopeOnMissingContext,
+  ]);
 
   const isModuleEnabled = (module: AppModule) => {
     if (!moduleAccess) {
