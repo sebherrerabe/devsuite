@@ -4,6 +4,7 @@ import React, {
   useState,
   useEffect,
   useMemo,
+  useCallback,
 } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
@@ -41,6 +42,7 @@ interface CompanyContextType {
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'devsuite-current-company-id';
+type DesktopCompanyMode = 'owner' | 'consumer' | 'disabled';
 
 function getSessionUserId(sessionData: unknown): string | null {
   if (!sessionData || typeof sessionData !== 'object') {
@@ -71,10 +73,12 @@ export function CompanyProvider({
   children,
   syncDesktopScope = true,
   clearScopeOnMissingContext = true,
+  desktopCompanyMode = 'owner',
 }: {
   children: React.ReactNode;
   syncDesktopScope?: boolean;
   clearScopeOnMissingContext?: boolean;
+  desktopCompanyMode?: DesktopCompanyMode;
 }) {
   const { data: authSession } = authClient.useSession();
 
@@ -97,6 +101,20 @@ export function CompanyProvider({
     bootstrap?.moduleAccess?.companyDefaults ?? null;
   const userModuleOverrides = bootstrap?.moduleAccess?.userOverrides ?? null;
 
+  const applyCurrentCompanyId = useCallback(
+    (companyId: Id<'companies'> | null) => {
+      setCurrentCompanyId(previousCompanyId =>
+        previousCompanyId === companyId ? previousCompanyId : companyId
+      );
+      if (companyId) {
+        localStorage.setItem(STORAGE_KEY, companyId);
+        return;
+      }
+      localStorage.removeItem(STORAGE_KEY);
+    },
+    []
+  );
+
   // Handle cleanup when stored company no longer exists.
   // Only run this check after bootstrap resolves for the current query args.
   useEffect(() => {
@@ -117,7 +135,8 @@ export function CompanyProvider({
     if (
       typeof window === 'undefined' ||
       !window.desktopAuth ||
-      !syncDesktopScope
+      !syncDesktopScope ||
+      desktopCompanyMode !== 'owner'
     ) {
       return;
     }
@@ -167,7 +186,76 @@ export function CompanyProvider({
     currentCompany?._id,
     syncDesktopScope,
     clearScopeOnMissingContext,
+    desktopCompanyMode,
   ]);
+
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      !window.desktopCompany ||
+      desktopCompanyMode === 'disabled'
+    ) {
+      return;
+    }
+
+    const unsubscribe = window.desktopCompany.onSelectionChanged(companyId => {
+      const nextCompanyId = (companyId as Id<'companies'> | null) ?? null;
+      applyCurrentCompanyId(nextCompanyId);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [desktopCompanyMode, applyCurrentCompanyId]);
+
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      !window.desktopCompany ||
+      desktopCompanyMode !== 'consumer'
+    ) {
+      return;
+    }
+
+    let disposed = false;
+    void window.desktopCompany
+      .getSelection()
+      .then(companyId => {
+        if (disposed) {
+          return;
+        }
+        const nextCompanyId = (companyId as Id<'companies'> | null) ?? null;
+        applyCurrentCompanyId(nextCompanyId);
+      })
+      .catch(error => {
+        console.warn(
+          '[desktop] Failed to read desktop company selection.',
+          error
+        );
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [desktopCompanyMode, applyCurrentCompanyId]);
+
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      !window.desktopCompany ||
+      desktopCompanyMode !== 'owner'
+    ) {
+      return;
+    }
+
+    void window.desktopCompany
+      .setSelection(currentCompanyId ?? null)
+      .catch(error => {
+        console.warn(
+          '[desktop] Failed to sync desktop company selection.',
+          error
+        );
+      });
+  }, [desktopCompanyMode, currentCompanyId]);
 
   const isModuleEnabled = (module: AppModule) => {
     if (!moduleAccess) {
@@ -177,12 +265,20 @@ export function CompanyProvider({
   };
 
   const setCurrentCompany = (company: Company | null) => {
-    if (company) {
-      setCurrentCompanyId(company._id);
-      localStorage.setItem(STORAGE_KEY, company._id);
-    } else {
-      setCurrentCompanyId(null);
-      localStorage.removeItem(STORAGE_KEY);
+    const nextCompanyId = company?._id ?? null;
+    applyCurrentCompanyId(nextCompanyId);
+
+    if (
+      typeof window !== 'undefined' &&
+      window.desktopCompany &&
+      desktopCompanyMode === 'consumer'
+    ) {
+      void window.desktopCompany.setSelection(nextCompanyId).catch(error => {
+        console.warn(
+          '[desktop] Failed to request desktop company switch.',
+          error
+        );
+      });
     }
   };
 

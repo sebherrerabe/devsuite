@@ -10,7 +10,7 @@ export const Route = createFileRoute('/_app')({
 
 function AppLayout() {
   return (
-    <CompanyProvider>
+    <CompanyProvider desktopCompanyMode="owner">
       <DesktopSessionBridge />
       <InboxDesktopNotificationsProvider>
         <AppShell />

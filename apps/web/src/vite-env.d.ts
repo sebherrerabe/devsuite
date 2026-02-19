@@ -128,6 +128,13 @@ interface Window {
     clearScope: () => Promise<void>;
     clearLocalState: () => Promise<void>;
   };
+  desktopCompany?: {
+    getSelection: () => Promise<string | null>;
+    setSelection: (companyId: string | null) => Promise<string | null>;
+    onSelectionChanged: (
+      listener: (companyId: string | null) => void | Promise<void>
+    ) => () => void;
+  };
   desktopFocus?: {
     get: (scope: DesktopSettingsScope) => Promise<DesktopFocusSettings>;
     set: (

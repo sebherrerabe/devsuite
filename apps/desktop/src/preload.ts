@@ -40,6 +40,14 @@ type DesktopAuthApi = {
   clearLocalState: () => Promise<void>;
 };
 
+type DesktopCompanyApi = {
+  getSelection: () => Promise<string | null>;
+  setSelection: (companyId: string | null) => Promise<string | null>;
+  onSelectionChanged: (
+    listener: (companyId: string | null) => void | Promise<void>
+  ) => () => void;
+};
+
 type DesktopSessionApi = {
   getState: (scope: DesktopSettingsScope) => Promise<DesktopSessionState>;
   publishState: (
@@ -197,10 +205,31 @@ const desktopAuthApi: DesktopAuthApi = {
 
 const SESSION_COMMAND_CHANNEL = 'desktop-session:command';
 const SESSION_STATE_CHANGED_CHANNEL = 'desktop-session:state-changed';
+const COMPANY_SELECTION_CHANGED_CHANNEL = 'desktop-company:selection-changed';
 const NOTIFICATION_ACTION_CHANNEL = 'desktop-notification:action';
 const PROCESS_EVENTS_CHANNEL = 'desktop-process-monitor:events';
 const POLICY_AUDIT_CHANNEL = 'desktop-policy:audit-events';
 const WINDOW_MAXIMIZE_CHANGED_CHANNEL = 'desktop-window:maximize-changed';
+
+const desktopCompanyApi: DesktopCompanyApi = {
+  getSelection: async () =>
+    ipcRenderer.invoke('desktop-company:get-selection') as Promise<
+      string | null
+    >,
+  setSelection: async companyId =>
+    ipcRenderer.invoke('desktop-company:set-selection', companyId) as Promise<
+      string | null
+    >,
+  onSelectionChanged: listener => {
+    const wrapped = (_event: unknown, companyId: string | null) => {
+      void listener(companyId);
+    };
+    ipcRenderer.on(COMPANY_SELECTION_CHANGED_CHANNEL, wrapped);
+    return () => {
+      ipcRenderer.removeListener(COMPANY_SELECTION_CHANGED_CHANNEL, wrapped);
+    };
+  },
+};
 
 const desktopSessionApi: DesktopSessionApi = {
   getState: async scope =>
@@ -423,6 +452,7 @@ const shouldExposeApis =
 if (shouldExposeApis) {
   contextBridge.exposeInMainWorld('desktopFocus', desktopFocusApi);
   contextBridge.exposeInMainWorld('desktopAuth', desktopAuthApi);
+  contextBridge.exposeInMainWorld('desktopCompany', desktopCompanyApi);
   contextBridge.exposeInMainWorld('desktopSession', desktopSessionApi);
   contextBridge.exposeInMainWorld('desktopCompanion', desktopCompanionApi);
   contextBridge.exposeInMainWorld(
@@ -449,6 +479,7 @@ declare global {
   interface Window {
     desktopFocus: DesktopFocusApi;
     desktopAuth?: DesktopAuthApi;
+    desktopCompany?: DesktopCompanyApi;
     desktopSession?: DesktopSessionApi;
     desktopCompanion?: DesktopCompanionApi;
     desktopRuntimePreferences?: DesktopRuntimePreferencesApi;

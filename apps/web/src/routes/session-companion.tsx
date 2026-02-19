@@ -127,7 +127,11 @@ function computeSessionDurationFromDetail(
 
 function SessionCompanionRoute() {
   return (
-    <CompanyProvider syncDesktopScope={true} clearScopeOnMissingContext={false}>
+    <CompanyProvider
+      syncDesktopScope={false}
+      clearScopeOnMissingContext={false}
+      desktopCompanyMode="consumer"
+    >
       <SessionCompanionContent />
     </CompanyProvider>
   );
@@ -179,7 +183,13 @@ function SessionCompanionContent() {
   return (
     <div className="h-full w-full bg-transparent p-2">
       <div className="mx-auto flex h-full w-full max-w-[560px] flex-col gap-2">
-        <div className="desktop-companion-drag group cursor-move rounded-xl border bg-background/85 p-2 backdrop-blur-md">
+        <div className="group rounded-xl border bg-background/85 p-2 backdrop-blur-md">
+          <div className="desktop-companion-drag-handle mb-2 flex items-center justify-center rounded-md py-1">
+            <div
+              aria-hidden="true"
+              className="h-1.5 w-14 rounded-full bg-border/80"
+            />
+          </div>
           <div className="flex items-center gap-2">
             <div className="desktop-companion-no-drag min-w-0 flex-1">
               <CompanySwitcher />

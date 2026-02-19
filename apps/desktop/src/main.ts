@@ -93,7 +93,11 @@ import {
   shouldOpenInExternalBrowser,
 } from './web-content-security.js';
 import { shouldGrantDesktopPermission } from './desktop-permissions.js';
-import { resolveRendererUrl as resolveRendererUrlWithOptions } from './renderer-url.js';
+import {
+  resolveRendererUrl as resolveRendererUrlWithOptions,
+  resolveRendererUrlSource,
+  type ResolveRendererUrlOptions,
+} from './renderer-url.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -116,6 +120,7 @@ const {
 const DESKTOP_PARTITION = 'persist:devsuite';
 const SESSION_COMMAND_CHANNEL = 'desktop-session:command';
 const SESSION_STATE_CHANGED_CHANNEL = 'desktop-session:state-changed';
+const COMPANY_SELECTION_CHANGED_CHANNEL = 'desktop-company:selection-changed';
 const NOTIFICATION_ACTION_CHANNEL = 'desktop-notification:action';
 const PROCESS_EVENTS_CHANNEL = 'desktop-process-monitor:events';
 const POLICY_AUDIT_CHANNEL = 'desktop-policy:audit-events';
@@ -261,6 +266,7 @@ let mainWindowRef: BrowserWindowType | null = null;
 let sessionWidgetWindowRef: BrowserWindowType | null = null;
 let trayRef: TrayType | null = null;
 let desktopSessionScope: DesktopSettingsScope | null = null;
+let desktopSelectedCompanyId: string | null = null;
 let desktopSessionState: DesktopSessionState =
   createDefaultDesktopSessionState();
 let desktopFocusSettings: DesktopFocusSettings =
@@ -313,6 +319,13 @@ function parseNonEmptyString(value: unknown, fieldName: string): string {
   }
 
   return trimmed;
+}
+
+function parseDesktopCompanyId(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return parseNonEmptyString(value, 'companyId');
 }
 
 function parseSessionWidgetMode(value: unknown): SessionWidgetMode {
@@ -497,6 +510,38 @@ function broadcastDesktopSessionState(): void {
     snapshot,
     logger: runtimeLog,
   });
+}
+
+function broadcastDesktopCompanySelection(companyId: string | null): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(COMPANY_SELECTION_CHANGED_CHANNEL, companyId);
+    }
+  }
+}
+
+function setDesktopCompanySelection(
+  nextCompanyId: string | null,
+  options?: {
+    broadcast?: boolean;
+    source?: string;
+  }
+): void {
+  const previousCompanyId = desktopSelectedCompanyId;
+  if (previousCompanyId === nextCompanyId) {
+    return;
+  }
+
+  desktopSelectedCompanyId = nextCompanyId;
+  runtimeLog.info(
+    'session-sync',
+    `desktop company selection changed: from=${previousCompanyId ?? 'none'} to=${nextCompanyId ?? 'none'}, source=${options?.source ?? 'unknown'}`
+  );
+
+  if (options?.broadcast === false) {
+    return;
+  }
+  broadcastDesktopCompanySelection(nextCompanyId);
 }
 
 function appendProcessEvents(events: DesktopProcessEvent[]): void {
@@ -1313,6 +1358,9 @@ function setDesktopScope(nextScope: DesktopSettingsScope | null): void {
       'session-sync',
       `desktop scope changed: from=${formatScopeForLog(previousScope)} to=${formatScopeForLog(nextScope)}`
     );
+    setDesktopCompanySelection(nextScope?.companyId ?? null, {
+      source: 'desktop_scope',
+    });
     if (!nextScope) {
       runtimeLog.info(
         'widget',
@@ -1373,6 +1421,25 @@ function buildSessionWidgetUrl(mode: SessionWidgetMode): string {
   }
 }
 
+function describeRendererTarget(url: string | undefined): string {
+  if (!url) {
+    return 'bootstrap_fallback';
+  }
+  if (url.startsWith('devsuite://')) {
+    return 'bundled_renderer';
+  }
+  if (url.startsWith('http://localhost:5173')) {
+    return 'vite_localhost';
+  }
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return 'external_web_url';
+  }
+  if (url.startsWith('data:')) {
+    return 'bootstrap_fallback';
+  }
+  return 'unknown';
+}
+
 function applySessionWidgetMode(mode: SessionWidgetMode): void {
   sessionWidgetMode = mode;
   if (!sessionWidgetWindowRef || sessionWidgetWindowRef.isDestroyed()) {
@@ -1419,6 +1486,10 @@ async function showSessionWidget(options?: {
   if (sessionWidgetWindowRef && !sessionWidgetWindowRef.isDestroyed()) {
     applySessionWidgetMode(mode);
     const companionUrl = buildSessionWidgetUrl(mode);
+    runtimeLog.info(
+      'widget',
+      `companion load target: mode=${mode}, target=${describeRendererTarget(companionUrl)}, url=${companionUrl}`
+    );
     if (sessionWidgetWindowRef.webContents.getURL() !== companionUrl) {
       const wasVisible = sessionWidgetWindowRef.isVisible();
       if (wasVisible) {
@@ -1486,7 +1557,12 @@ async function showSessionWidget(options?: {
     sessionWidgetWindowRef.setIgnoreMouseEvents(false);
   }
   applySessionWidgetMode(mode);
-  await sessionWidgetWindowRef.loadURL(buildSessionWidgetUrl(mode));
+  const companionUrl = buildSessionWidgetUrl(mode);
+  runtimeLog.info(
+    'widget',
+    `companion load target: mode=${mode}, target=${describeRendererTarget(companionUrl)}, url=${companionUrl}`
+  );
+  await sessionWidgetWindowRef.loadURL(companionUrl);
   if (sessionWidgetWindowRef && !sessionWidgetWindowRef.isDestroyed()) {
     sessionWidgetWindowRef.setIgnoreMouseEvents(false);
     sessionWidgetWindowRef.show();
@@ -1749,11 +1825,25 @@ async function resolveScopedDesktopContext(
 }
 
 function resolveRendererUrl(): string | undefined {
-  return resolveRendererUrlWithOptions({
+  return resolveRendererUrlWithOptions(resolveRendererUrlOptions());
+}
+
+function resolveRendererUrlOptions(): ResolveRendererUrlOptions {
+  return {
     envUrl: process.env.DEVSUITE_WEB_URL,
     isPackaged: app.isPackaged,
     rendererExists: existsSync(RENDERER_INDEX_PATH),
-  });
+  };
+}
+
+function logRendererRuntimeConfiguration(): void {
+  const options = resolveRendererUrlOptions();
+  const rendererUrl = resolveRendererUrlWithOptions(options);
+  const rendererSource = resolveRendererUrlSource(options);
+  runtimeLog.info(
+    'widget',
+    `renderer runtime resolved: source=${rendererSource}, target=${describeRendererTarget(rendererUrl)}, isPackaged=${String(options.isPackaged)}, envUrl=${options.envUrl?.trim() || 'none'}, rendererIndexExists=${String(options.rendererExists)}, resolvedUrl=${rendererUrl ?? 'none'}`
+  );
 }
 
 function resolveRendererContentType(filePath: string): string {
@@ -1850,6 +1940,10 @@ async function registerRendererProtocol(): Promise<void> {
 
 async function loadWindowContent(mainWindow: BrowserWindowType): Promise<void> {
   const rendererUrl = resolveRendererUrl();
+  runtimeLog.info(
+    'widget',
+    `main window load target: target=${describeRendererTarget(rendererUrl)}, url=${rendererUrl ?? 'bootstrap_html'}`
+  );
   if (rendererUrl) {
     try {
       await mainWindow.loadURL(rendererUrl);
@@ -1943,6 +2037,19 @@ function registerIpcHandlers(): void {
     await desktopSession.clearStorageData();
     await desktopSession.clearCache();
   });
+  ipcMain.handle('desktop-company:get-selection', async () => {
+    return desktopSelectedCompanyId;
+  });
+  ipcMain.handle(
+    'desktop-company:set-selection',
+    async (_event, companyId: unknown) => {
+      const nextCompanyId = parseDesktopCompanyId(companyId);
+      setDesktopCompanySelection(nextCompanyId, {
+        source: 'ipc_set_selection',
+      });
+      return nextCompanyId;
+    }
+  );
   ipcMain.handle(
     'desktop-session:get-state',
     async (_event, scope: unknown) => {
@@ -2313,6 +2420,7 @@ if (hasHostsWriteHelperArg(process.argv)) {
         'widget',
         `desktop icon paths resolved (appIcon=${APP_ICON_PATH}, trayCandidates=${TRAY_ICON_CANDIDATE_PATHS.join(',')})`
       );
+      logRendererRuntimeConfiguration();
       try {
         await cleanupStaleBlocks();
       } catch (error) {
