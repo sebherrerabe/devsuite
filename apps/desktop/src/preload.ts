@@ -75,6 +75,23 @@ type DesktopCompanionApi = {
   setShortcut: (shortcut: string) => Promise<string>;
 };
 
+type DesktopCompanionSwitchDecision =
+  | 'stay_here'
+  | 'leave_running'
+  | 'pause_session'
+  | 'end_session';
+
+type DesktopCompanionUiApi = {
+  confirmCompanySwitch: (
+    nextCompanyName: string
+  ) => Promise<DesktopCompanionSwitchDecision>;
+  notify: (payload: {
+    level: 'success' | 'info' | 'warning' | 'error';
+    title: string;
+    body?: string | null;
+  }) => Promise<void>;
+};
+
 type DesktopRuntimePreferences = {
   openAtLogin: boolean;
   runInBackgroundOnClose: boolean;
@@ -293,6 +310,17 @@ const desktopCompanionApi: DesktopCompanionApi = {
     ) as Promise<string>,
 };
 
+const desktopCompanionUiApi: DesktopCompanionUiApi = {
+  confirmCompanySwitch: async nextCompanyName =>
+    ipcRenderer.invoke(
+      'desktop-companion-ui:confirm-company-switch',
+      nextCompanyName
+    ) as Promise<DesktopCompanionSwitchDecision>,
+  notify: async payload => {
+    await ipcRenderer.invoke('desktop-companion-ui:notify', payload);
+  },
+};
+
 const desktopRuntimePreferencesApi: DesktopRuntimePreferencesApi = {
   get: async () =>
     ipcRenderer.invoke(
@@ -455,6 +483,7 @@ if (shouldExposeApis) {
   contextBridge.exposeInMainWorld('desktopCompany', desktopCompanyApi);
   contextBridge.exposeInMainWorld('desktopSession', desktopSessionApi);
   contextBridge.exposeInMainWorld('desktopCompanion', desktopCompanionApi);
+  contextBridge.exposeInMainWorld('desktopCompanionUi', desktopCompanionUiApi);
   contextBridge.exposeInMainWorld(
     'desktopRuntimePreferences',
     desktopRuntimePreferencesApi
@@ -482,6 +511,7 @@ declare global {
     desktopCompany?: DesktopCompanyApi;
     desktopSession?: DesktopSessionApi;
     desktopCompanion?: DesktopCompanionApi;
+    desktopCompanionUi?: DesktopCompanionUiApi;
     desktopRuntimePreferences?: DesktopRuntimePreferencesApi;
     desktopNotification?: DesktopNotificationApi;
     desktopProcessMonitor?: DesktopProcessMonitorApi;

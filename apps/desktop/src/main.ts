@@ -161,6 +161,24 @@ const TRAY_ICON_CANDIDATE_PATHS = [
   process.execPath,
 ];
 
+type DesktopCompanionSwitchDecision =
+  | 'stay_here'
+  | 'leave_running'
+  | 'pause_session'
+  | 'end_session';
+
+type DesktopCompanionNotificationLevel =
+  | 'success'
+  | 'info'
+  | 'warning'
+  | 'error';
+
+type DesktopCompanionNotificationPayload = {
+  level: DesktopCompanionNotificationLevel;
+  title: string;
+  body: string | null;
+};
+
 function resolveExistingPath(candidates: readonly string[]): string {
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
@@ -334,6 +352,107 @@ function parseSessionWidgetMode(value: unknown): SessionWidgetMode {
   }
 
   throw new Error('Session widget mode must be "mini" or "expanded".');
+}
+
+function parseDesktopCompanionNotificationLevel(
+  value: unknown
+): DesktopCompanionNotificationLevel {
+  if (
+    value === 'success' ||
+    value === 'info' ||
+    value === 'warning' ||
+    value === 'error'
+  ) {
+    return value;
+  }
+
+  throw new Error(
+    'Desktop companion notification level must be success, info, warning, or error.'
+  );
+}
+
+function parseDesktopCompanionNotificationPayload(
+  payload: unknown
+): DesktopCompanionNotificationPayload {
+  if (!isRecord(payload)) {
+    throw new Error(
+      'Desktop companion notification payload must be an object.'
+    );
+  }
+
+  const level = parseDesktopCompanionNotificationLevel(payload.level);
+  const title = parseNonEmptyString(payload.title, 'title');
+  const body =
+    payload.body === null || payload.body === undefined
+      ? null
+      : parseNonEmptyString(payload.body, 'body');
+
+  return {
+    level,
+    title,
+    body,
+  };
+}
+
+async function showDesktopCompanionCompanySwitchDialog(
+  nextCompanyName: string
+): Promise<DesktopCompanionSwitchDecision> {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  const isWidgetFocused =
+    focusedWindow !== null &&
+    sessionWidgetWindowRef !== null &&
+    !sessionWidgetWindowRef.isDestroyed() &&
+    focusedWindow.id === sessionWidgetWindowRef.id;
+  const dialogParent = isWidgetFocused
+    ? undefined
+    : (focusedWindow ?? mainWindowRef ?? undefined);
+  const prompt: MessageBoxOptions = {
+    type: 'question',
+    buttons: ['Stay here', 'Leave running', 'Pause session', 'End session'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: 'Active session in progress',
+    message: `You have an active session. What would you like to do before switching to ${nextCompanyName}?`,
+  };
+
+  const result = dialogParent
+    ? await dialog.showMessageBox(dialogParent, prompt)
+    : await dialog.showMessageBox(prompt);
+  if (result.response === 3) {
+    return 'end_session';
+  }
+  if (result.response === 2) {
+    return 'pause_session';
+  }
+  if (result.response === 1) {
+    return 'leave_running';
+  }
+  return 'stay_here';
+}
+
+function showDesktopCompanionNativeNotification(
+  payload: DesktopCompanionNotificationPayload
+): void {
+  if (!Notification.isSupported()) {
+    return;
+  }
+
+  const titlePrefix =
+    payload.level === 'error'
+      ? 'Error'
+      : payload.level === 'warning'
+        ? 'Warning'
+        : payload.level === 'success'
+          ? 'Success'
+          : 'Info';
+  const notification = new Notification({
+    title: `${titlePrefix}: ${payload.title}`,
+    body: payload.body ?? '',
+    icon: APP_ICON_PATH,
+    silent: payload.level === 'info' || payload.level === 'success',
+  });
+  notification.show();
 }
 
 function hasShowCompanionArg(argv: readonly string[]): boolean {
@@ -2192,6 +2311,33 @@ function registerIpcHandlers(): void {
     'desktop-companion:set-shortcut',
     async (_event, shortcut: unknown) => {
       return updateCompanionShortcut(shortcut);
+    }
+  );
+  ipcMain.handle(
+    'desktop-companion-ui:confirm-company-switch',
+    async (_event, nextCompanyName: unknown) => {
+      const parsedCompanyName = parseNonEmptyString(
+        nextCompanyName,
+        'nextCompanyName'
+      );
+      const decision =
+        await showDesktopCompanionCompanySwitchDialog(parsedCompanyName);
+      runtimeLog.info(
+        'widget',
+        `companion switch dialog resolved: company=${parsedCompanyName}, decision=${decision}`
+      );
+      return decision;
+    }
+  );
+  ipcMain.handle(
+    'desktop-companion-ui:notify',
+    async (_event, payload: unknown) => {
+      const parsedPayload = parseDesktopCompanionNotificationPayload(payload);
+      runtimeLog.debug(
+        'widget',
+        `companion native notification requested: level=${parsedPayload.level}, title=${parsedPayload.title}`
+      );
+      showDesktopCompanionNativeNotification(parsedPayload);
     }
   );
   ipcMain.handle('desktop-runtime-preferences:get', async () => {

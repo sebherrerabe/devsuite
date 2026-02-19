@@ -37,6 +37,11 @@ type DesktopSessionStatus = 'IDLE' | 'RUNNING' | 'PAUSED';
 type DesktopSessionAction = 'start' | 'pause' | 'resume' | 'end';
 type DesktopSessionEndDecision = 'keep_ongoing' | 'mark_all_done' | 'cancel';
 type DesktopCompanionMode = 'mini' | 'expanded';
+type DesktopCompanionSwitchDecision =
+  | 'stay_here'
+  | 'leave_running'
+  | 'pause_session'
+  | 'end_session';
 type DesktopSessionConnectionState = 'connected' | 'syncing' | 'error';
 type DesktopNotificationKind =
   | 'session_started'
@@ -166,6 +171,16 @@ interface Window {
   desktopCompanion?: {
     getShortcut: () => Promise<string>;
     setShortcut: (shortcut: string) => Promise<string>;
+  };
+  desktopCompanionUi?: {
+    confirmCompanySwitch: (
+      nextCompanyName: string
+    ) => Promise<DesktopCompanionSwitchDecision>;
+    notify: (payload: {
+      level: 'success' | 'info' | 'warning' | 'error';
+      title: string;
+      body?: string | null;
+    }) => Promise<void>;
   };
   desktopRuntimePreferences?: {
     get: () => Promise<DesktopRuntimePreferences>;

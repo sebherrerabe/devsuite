@@ -192,7 +192,7 @@ function SessionCompanionContent() {
           </div>
           <div className="flex items-center gap-2">
             <div className="desktop-companion-no-drag min-w-0 flex-1">
-              <CompanySwitcher />
+              <CompanySwitcher useNativeDesktopDialogs />
             </div>
             <div className="desktop-companion-no-drag flex items-center gap-1 rounded-md border p-1">
               <Button

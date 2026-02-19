@@ -23,7 +23,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Check, ChevronsUpDown, Building2 } from 'lucide-react';
 
-export function CompanySwitcher() {
+export function CompanySwitcher({
+  useNativeDesktopDialogs = false,
+}: {
+  useNativeDesktopDialogs?: boolean;
+}) {
   const { currentCompany, setCurrentCompany, companies, isLoading } =
     useCurrentCompany();
   const { data: authSession } = authClient.useSession();
@@ -44,10 +48,83 @@ export function CompanySwitcher() {
     currentCompany?._id ? { companyId: currentCompany._id } : 'skip'
   );
 
+  const hasNativeCompanionDialogApi =
+    useNativeDesktopDialogs &&
+    typeof window !== 'undefined' &&
+    !!window.desktopCompanionUi?.confirmCompanySwitch;
+
+  const commitSwitchToCompany = (company: Company) => {
+    setCurrentCompany(company);
+    setPendingCompany(null);
+  };
+
+  const pauseAndSwitch = async (company: Company) => {
+    try {
+      if (activeSession && userId && window.desktopSession?.requestAction) {
+        const scope = { userId, companyId: activeSession.companyId };
+        await window.desktopSession.requestAction(scope, 'pause');
+      }
+    } catch {
+      // Fallback: just switch without pausing if action fails.
+    } finally {
+      commitSwitchToCompany(company);
+    }
+  };
+
+  const endAndSwitch = async (company: Company) => {
+    try {
+      if (activeSession && userId && window.desktopSession?.requestAction) {
+        const scope = { userId, companyId: activeSession.companyId };
+        await window.desktopSession.requestAction(scope, 'end');
+      }
+    } catch {
+      // Fallback: just switch without ending if action fails.
+    } finally {
+      commitSwitchToCompany(company);
+    }
+  };
+
+  const handleNativeCompanionSwitch = async (company: Company) => {
+    if (!window.desktopCompanionUi?.confirmCompanySwitch) {
+      setPendingCompany(company);
+      return;
+    }
+
+    setIsActing(true);
+    try {
+      const decision = await window.desktopCompanionUi.confirmCompanySwitch(
+        company.name
+      );
+      if (decision === 'stay_here') {
+        return;
+      }
+      if (decision === 'leave_running') {
+        commitSwitchToCompany(company);
+        return;
+      }
+      if (decision === 'pause_session') {
+        await pauseAndSwitch(company);
+        return;
+      }
+      await endAndSwitch(company);
+    } catch (error) {
+      console.warn(
+        '[desktop] Failed to open native company switch dialog.',
+        error
+      );
+    } finally {
+      setIsActing(false);
+    }
+  };
+
   const handleSelectCompany = (company: Company) => {
     if (company._id === currentCompany?._id) return;
 
     if (activeSession) {
+      if (hasNativeCompanionDialogApi) {
+        void handleNativeCompanionSwitch(company);
+        return;
+      }
       setPendingCompany(company);
       return;
     }
@@ -57,38 +134,25 @@ export function CompanySwitcher() {
 
   const commitSwitch = () => {
     if (!pendingCompany) return;
-    setCurrentCompany(pendingCompany);
-    setPendingCompany(null);
+    commitSwitchToCompany(pendingCompany);
   };
 
   const handlePause = async () => {
-    setIsActing(true);
-    try {
-      if (activeSession && userId && window.desktopSession?.requestAction) {
-        const scope = { userId, companyId: activeSession.companyId };
-        await window.desktopSession.requestAction(scope, 'pause');
-      }
-    } catch {
-      // Fallback: just switch without pausing if action fails.
-    } finally {
-      setIsActing(false);
-      commitSwitch();
+    if (!pendingCompany) {
+      return;
     }
+    setIsActing(true);
+    await pauseAndSwitch(pendingCompany);
+    setIsActing(false);
   };
 
   const handleEnd = async () => {
-    setIsActing(true);
-    try {
-      if (activeSession && userId && window.desktopSession?.requestAction) {
-        const scope = { userId, companyId: activeSession.companyId };
-        await window.desktopSession.requestAction(scope, 'end');
-      }
-    } catch {
-      // Fallback: just switch without ending if action fails.
-    } finally {
-      setIsActing(false);
-      commitSwitch();
+    if (!pendingCompany) {
+      return;
     }
+    setIsActing(true);
+    await endAndSwitch(pendingCompany);
+    setIsActing(false);
   };
 
   const handleLeaveRunning = () => {
