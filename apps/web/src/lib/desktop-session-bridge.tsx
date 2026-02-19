@@ -21,7 +21,7 @@ interface DesktopScope {
 type DesktopBridgeConnectionState = 'connected' | 'syncing' | 'error';
 type DesktopNotificationActionPayload = {
   scope: DesktopScope;
-  action: 'open_app' | 'open_sessions' | 'start_session';
+  action: 'open_app' | 'open_sessions' | 'start_session' | 'open_inbox';
   route: string | null;
   requestedAt: number;
 };
@@ -466,7 +466,7 @@ export function DesktopSessionBridge() {
         | 'tasks_remaining_reminder';
       title: string;
       body: string;
-      action?: 'open_app' | 'open_sessions' | 'start_session';
+      action?: 'open_app' | 'open_sessions' | 'start_session' | 'open_inbox';
       route?: string | null;
       throttleKey: string;
     }) => {

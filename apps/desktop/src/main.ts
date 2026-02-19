@@ -283,6 +283,7 @@ let isAppQuitting = false;
 let isClosingSessionWidgetProgrammatically = false;
 let sessionWidgetDismissedByUser = false;
 let sessionWidgetMode: SessionWidgetMode = 'mini';
+
 const lastEffectiveDurationBySessionId = new Map<string, number>();
 const allowedDesktopNavigationOrigins = resolveAllowedDesktopNavigationOrigins({
   webUrl: process.env.DEVSUITE_WEB_URL,
@@ -943,6 +944,10 @@ function resolveDesktopNotificationRoute(
     return '/';
   }
 
+  if (request.action === 'open_inbox' || request.kind === 'inbox_item') {
+    return '/inbox';
+  }
+
   return null;
 }
 
@@ -1062,11 +1067,15 @@ async function dispatchDesktopSessionAction(
 
   let endDecision = options?.endDecision;
   if (action === 'end' && !endDecision) {
-    const focusedWindow =
-      BrowserWindow.getFocusedWindow() ??
-      sessionWidgetWindowRef ??
-      mainWindowRef ??
-      undefined;
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    const isWidgetFocused =
+      focusedWindow !== null &&
+      sessionWidgetWindowRef !== null &&
+      !sessionWidgetWindowRef.isDestroyed() &&
+      focusedWindow.id === sessionWidgetWindowRef.id;
+    const dialogParent = isWidgetFocused
+      ? undefined
+      : (focusedWindow ?? mainWindowRef ?? undefined);
     const decisionPrompt: MessageBoxOptions = {
       type: 'question',
       buttons: ['Keep ongoing', 'Mark all done', 'Cancel'],
@@ -1078,8 +1087,8 @@ async function dispatchDesktopSessionAction(
       detail:
         'Keep ongoing leaves active tasks in progress. Mark all done completes all remaining tasks in this session scope.',
     };
-    const decisionResult = focusedWindow
-      ? await dialog.showMessageBox(focusedWindow, decisionPrompt)
+    const decisionResult = dialogParent
+      ? await dialog.showMessageBox(dialogParent, decisionPrompt)
       : await dialog.showMessageBox(decisionPrompt);
     if (decisionResult.response === 2 || decisionResult.response === -1) {
       endDecision = 'cancel';
@@ -1283,7 +1292,15 @@ async function updateRuntimePreferences(
   return saved;
 }
 
+function formatScopeForLog(scope: DesktopSettingsScope | null): string {
+  if (!scope) {
+    return 'none';
+  }
+  return `${scope.userId}:${scope.companyId}`;
+}
+
 function setDesktopScope(nextScope: DesktopSettingsScope | null): void {
+  const previousScope = desktopSessionScope;
   const hasChanged =
     !nextScope ||
     !desktopSessionScope ||
@@ -1292,7 +1309,17 @@ function setDesktopScope(nextScope: DesktopSettingsScope | null): void {
   desktopSessionScope = nextScope;
 
   if (hasChanged) {
-    closeSessionWidgetIfOpen();
+    runtimeLog.info(
+      'session-sync',
+      `desktop scope changed: from=${formatScopeForLog(previousScope)} to=${formatScopeForLog(nextScope)}`
+    );
+    if (!nextScope) {
+      runtimeLog.info(
+        'widget',
+        'closing companion widget because desktop scope was cleared'
+      );
+      closeSessionWidgetIfOpen();
+    }
     sessionWidgetDismissedByUser = false;
     desktopSessionState = createDefaultDesktopSessionState();
     strictPolicyState = createDefaultStrictPolicyState();
@@ -1393,12 +1420,17 @@ async function showSessionWidget(options?: {
     applySessionWidgetMode(mode);
     const companionUrl = buildSessionWidgetUrl(mode);
     if (sessionWidgetWindowRef.webContents.getURL() !== companionUrl) {
+      const wasVisible = sessionWidgetWindowRef.isVisible();
+      if (wasVisible) {
+        sessionWidgetWindowRef.hide();
+      }
       await sessionWidgetWindowRef.loadURL(companionUrl);
     }
     runtimeLog.debug(
       'widget',
       `widget already open; focusing, origin=${origin}`
     );
+    sessionWidgetWindowRef.setIgnoreMouseEvents(false);
     sessionWidgetWindowRef.show();
     sessionWidgetWindowRef.focus();
     return;
@@ -1427,6 +1459,10 @@ async function showSessionWidget(options?: {
 
   sessionWidgetWindowRef.once('ready-to-show', () => {
     applyBottomRightPosition();
+    if (!sessionWidgetWindowRef || sessionWidgetWindowRef.isDestroyed()) {
+      return;
+    }
+    sessionWidgetWindowRef.show();
   });
   applyWindowNavigationSecurity(sessionWidgetWindowRef);
 
@@ -1446,8 +1482,16 @@ async function showSessionWidget(options?: {
     sessionWidgetWindowRef = null;
   });
 
+  if (sessionWidgetWindowRef && !sessionWidgetWindowRef.isDestroyed()) {
+    sessionWidgetWindowRef.setIgnoreMouseEvents(false);
+  }
   applySessionWidgetMode(mode);
   await sessionWidgetWindowRef.loadURL(buildSessionWidgetUrl(mode));
+  if (sessionWidgetWindowRef && !sessionWidgetWindowRef.isDestroyed()) {
+    sessionWidgetWindowRef.setIgnoreMouseEvents(false);
+    sessionWidgetWindowRef.show();
+    sessionWidgetWindowRef.focus();
+  }
   runtimeLog.info('widget', `widget opened: origin=${origin}, force=${force}`);
   broadcastDesktopSessionState();
 }
@@ -1461,6 +1505,7 @@ async function toggleSessionWidget(options?: {
 
   if (sessionWidgetWindowRef && !sessionWidgetWindowRef.isDestroyed()) {
     if (sessionWidgetWindowRef.isVisible()) {
+      sessionWidgetWindowRef.setIgnoreMouseEvents(true, { forward: true });
       sessionWidgetWindowRef.hide();
       runtimeLog.info('widget', `widget hidden by toggle: origin=${origin}`);
       return;
@@ -1880,15 +1925,18 @@ function registerIpcHandlers(): void {
     return scope;
   });
   ipcMain.handle('desktop-auth:set-scope', async (_event, scope: unknown) => {
+    runtimeLog.debug('session-sync', 'desktop-auth:set-scope invoked');
     const savedScope = await saveDesktopSessionScope(scope);
     setDesktopScope(savedScope);
     return savedScope;
   });
   ipcMain.handle('desktop-auth:clear-scope', async () => {
+    runtimeLog.debug('session-sync', 'desktop-auth:clear-scope invoked');
     await clearDesktopSessionScope();
     setDesktopScope(null);
   });
   ipcMain.handle('desktop-auth:clear-local-state', async () => {
+    runtimeLog.debug('session-sync', 'desktop-auth:clear-local-state invoked');
     await clearDesktopSessionScope();
     setDesktopScope(null);
     const desktopSession = session.fromPartition(DESKTOP_PARTITION);
@@ -2022,6 +2070,14 @@ function registerIpcHandlers(): void {
       applySessionWidgetMode(parseSessionWidgetMode(mode));
     }
   );
+  ipcMain.handle('desktop-widget:close', () => {
+    if (sessionWidgetWindowRef && !sessionWidgetWindowRef.isDestroyed()) {
+      sessionWidgetWindowRef.setIgnoreMouseEvents(true, { forward: true });
+      sessionWidgetWindowRef.hide();
+      sessionWidgetDismissedByUser = true;
+      runtimeLog.info('widget', 'widget hidden by user (desktop-widget:close)');
+    }
+  });
   ipcMain.handle('desktop-companion:get-shortcut', async () => {
     return companionShortcut;
   });

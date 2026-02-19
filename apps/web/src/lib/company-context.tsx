@@ -67,7 +67,13 @@ function getSessionUserId(sessionData: unknown): string | null {
   return null;
 }
 
-export function CompanyProvider({ children }: { children: React.ReactNode }) {
+export function CompanyProvider({
+  children,
+  syncDesktopScope = true,
+}: {
+  children: React.ReactNode;
+  syncDesktopScope?: boolean;
+}) {
   const { data: authSession } = authClient.useSession();
 
   const [currentCompanyId, setCurrentCompanyId] =
@@ -106,12 +112,33 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
   }, [bootstrap, companies, currentCompanyId]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.desktopAuth) {
+    if (
+      typeof window === 'undefined' ||
+      !window.desktopAuth ||
+      !syncDesktopScope
+    ) {
+      return;
+    }
+
+    if (authSession === undefined) {
       return;
     }
 
     const userId = getSessionUserId(authSession);
-    if (!userId || !currentCompany?._id) {
+    if (!authSession || !userId) {
+      void window.desktopAuth.clearScope().catch(error => {
+        console.warn('[desktop] Failed to clear desktop session scope.', error);
+      });
+      return;
+    }
+
+    // Wait for company bootstrap in authenticated contexts so we don't
+    // clear desktop scope during the brief loading gap and close the widget.
+    if (bootstrap === undefined) {
+      return;
+    }
+
+    if (!currentCompany?._id) {
       void window.desktopAuth.clearScope().catch(error => {
         console.warn('[desktop] Failed to clear desktop session scope.', error);
       });
@@ -126,7 +153,7 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       .catch(error => {
         console.warn('[desktop] Failed to set desktop session scope.', error);
       });
-  }, [authSession, currentCompany?._id]);
+  }, [authSession, bootstrap, currentCompany?._id, syncDesktopScope]);
 
   const isModuleEnabled = (module: AppModule) => {
     if (!moduleAccess) {

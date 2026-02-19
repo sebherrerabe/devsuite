@@ -432,7 +432,7 @@ export const ingestNotifications = internalMutation({
 
     const existingByCompany = new Map<
       Id<'companies'>,
-      Map<string, Id<'inboxItems'>>
+      Map<string, { id: Id<'inboxItems'>; ghUpdatedAt: number | null }>
     >();
     for (const company of activeCompanies) {
       if ((companyOrgMap.get(company._id) ?? []).length === 0) {
@@ -444,7 +444,10 @@ export const ingestNotifications = internalMutation({
         .withIndex('by_companyId', q => q.eq('companyId', company._id))
         .collect();
 
-      const indexed = new Map<string, Id<'inboxItems'>>();
+      const indexed = new Map<
+        string,
+        { id: Id<'inboxItems'>; ghUpdatedAt: number | null }
+      >();
       for (const item of items) {
         if (item.source !== 'github') {
           continue;
@@ -455,7 +458,12 @@ export const ingestNotifications = internalMutation({
           continue;
         }
 
-        indexed.set(externalId, item._id);
+        const ghMeta = item.content.metadata?.github as
+          | Record<string, unknown>
+          | undefined;
+        const ghUpdatedAt =
+          typeof ghMeta?.updatedAt === 'number' ? ghMeta.updatedAt : null;
+        indexed.set(externalId, { id: item._id, ghUpdatedAt });
       }
 
       existingByCompany.set(company._id, indexed);
@@ -537,12 +545,23 @@ export const ingestNotifications = internalMutation({
 
         const companyItems =
           existingByCompany.get(companyId) ??
-          new Map<string, Id<'inboxItems'>>();
+          new Map<
+            string,
+            { id: Id<'inboxItems'>; ghUpdatedAt: number | null }
+          >();
         existingByCompany.set(companyId, companyItems);
 
-        const existingId = companyItems.get(notification.threadId);
-        if (existingId) {
-          await ctx.db.patch(existingId, {
+        const existing = companyItems.get(notification.threadId);
+        if (existing) {
+          const incomingUpdatedAt = notification.updatedAt;
+          if (
+            !incomingUpdatedAt ||
+            (existing.ghUpdatedAt !== null &&
+              incomingUpdatedAt <= existing.ghUpdatedAt)
+          ) {
+            continue;
+          }
+          await ctx.db.patch(existing.id, {
             type: inboxType,
             content,
             isRead: false,
@@ -550,12 +569,16 @@ export const ingestNotifications = internalMutation({
             updatedAt: now,
             deletedAt: null,
           });
+          companyItems.set(notification.threadId, {
+            id: existing.id,
+            ghUpdatedAt: incomingUpdatedAt,
+          });
           await ctx.scheduler.runAfter(
             0,
             pushDeliveryApi.sendToCompanySubscribers,
             {
               companyId,
-              inboxItemId: existingId,
+              inboxItemId: existing.id,
             }
           );
           updated += 1;
@@ -584,7 +607,10 @@ export const ingestNotifications = internalMutation({
           }
         );
 
-        companyItems.set(notification.threadId, insertedId);
+        companyItems.set(notification.threadId, {
+          id: insertedId,
+          ghUpdatedAt: notification.updatedAt ?? null,
+        });
         created += 1;
       }
     }

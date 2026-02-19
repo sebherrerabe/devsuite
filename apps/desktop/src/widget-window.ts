@@ -5,6 +5,7 @@ export type SessionWidgetMode = 'mini' | 'expanded';
 export interface WidgetWindowOptions {
   width: number;
   height: number;
+  show: boolean;
   frame: boolean;
   transparent: boolean;
   resizable: boolean;
@@ -36,14 +37,14 @@ export function getSessionWidgetSize(mode: SessionWidgetMode): {
 } {
   if (mode === 'mini') {
     return {
-      width: 320,
-      height: 220,
+      width: 380,
+      height: 260,
     };
   }
 
   return {
-    width: 460,
-    height: 700,
+    width: 560,
+    height: 760,
   };
 }
 
@@ -58,6 +59,7 @@ export function getSessionWidgetWindowOptions(params: {
   return {
     width: size.width,
     height: size.height,
+    show: false,
     frame: false,
     transparent: true,
     resizable: false,

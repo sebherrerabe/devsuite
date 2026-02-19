@@ -1,8 +1,10 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from 'convex/react';
+import type { Id } from '../../../../convex/_generated/dataModel';
+import { api } from '../../../../convex/_generated/api';
 import { authClient } from '@/lib/auth';
 import { CompanyProvider, useCurrentCompany } from '@/lib/company-context';
-import { DesktopSessionBridge } from '@/lib/desktop-session-bridge';
 import { SessionWidget } from '@/components/session-widget';
 import { CompanySwitcher } from '@/components/company-switcher';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { showToast } from '@/lib/toast';
 import { formatDurationMs } from '@/lib/time';
 import { cn } from '@/lib/utils';
-import { Loader2, Pause, Play, Square, Timer } from 'lucide-react';
+import { Loader2, Pause, Play, Square, Timer, X } from 'lucide-react';
 
 export const Route = createFileRoute('/session-companion')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -29,6 +31,7 @@ type CompanionDesktopSessionState = {
   connectionState: 'connected' | 'syncing' | 'error';
   effectiveDurationMs: number;
   updatedAt: number;
+  publishedAt?: number;
 };
 type CompanionDesktopSessionAction = 'start' | 'pause' | 'resume' | 'end';
 
@@ -56,10 +59,75 @@ function getSessionUserId(sessionData: unknown): string | null {
   return null;
 }
 
+function computeSessionDurationFromDetail(
+  sessionDetail:
+    | {
+        session?: {
+          status?: string;
+          startAt?: number;
+        } | null;
+        events?: Array<{
+          type: string;
+          timestamp: number;
+        }> | null;
+        durationSummary?: {
+          effectiveDurationMs?: number;
+        } | null;
+      }
+    | null
+    | undefined,
+  nowMs: number
+): number {
+  if (!sessionDetail?.session) {
+    return 0;
+  }
+
+  const session = sessionDetail.session;
+  if (session.status !== 'RUNNING') {
+    return Math.max(0, sessionDetail.durationSummary?.effectiveDurationMs ?? 0);
+  }
+
+  const startAt = session.startAt ?? nowMs;
+  const events = sessionDetail.events ?? [];
+  if (events.length === 0) {
+    return Math.max(0, nowMs - startAt);
+  }
+
+  let effectiveDurationMs = 0;
+  let isRunning = false;
+  let lastTimestamp = startAt;
+  const orderedEvents = [...events].sort((left, right) => {
+    return left.timestamp - right.timestamp;
+  });
+
+  for (const event of orderedEvents) {
+    if (isRunning) {
+      effectiveDurationMs += Math.max(0, event.timestamp - lastTimestamp);
+    }
+
+    if (event.type === 'SESSION_STARTED' || event.type === 'SESSION_RESUMED') {
+      isRunning = true;
+    } else if (
+      event.type === 'SESSION_PAUSED' ||
+      event.type === 'SESSION_FINISHED' ||
+      event.type === 'SESSION_CANCELLED'
+    ) {
+      isRunning = false;
+    }
+
+    lastTimestamp = event.timestamp;
+  }
+
+  if (isRunning) {
+    effectiveDurationMs += Math.max(0, nowMs - lastTimestamp);
+  }
+
+  return effectiveDurationMs;
+}
+
 function SessionCompanionRoute() {
   return (
-    <CompanyProvider>
-      <DesktopSessionBridge />
+    <CompanyProvider syncDesktopScope={true}>
       <SessionCompanionContent />
     </CompanyProvider>
   );
@@ -69,8 +137,7 @@ function SessionCompanionContent() {
   const navigate = useNavigate({ from: '/session-companion' });
   const search = Route.useSearch();
   const { data: authSession } = authClient.useSession();
-  const { currentCompany } = useCurrentCompany();
-
+  const { currentCompany, isLoading } = useCurrentCompany();
   const mode = search.mode as CompanionMode;
   const scope = useMemo(() => {
     const userId = getSessionUserId(authSession);
@@ -100,25 +167,24 @@ function SessionCompanionContent() {
     });
   };
 
-  if (!currentCompany) {
-    return (
-      <div className="min-h-screen bg-transparent p-4">
-        <div className="rounded-xl border bg-background/95 p-4">
-          <p className="text-sm text-muted-foreground">
-            Select a company in DevSuite before using the companion.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const closeCompanion = () => {
+    if (!window.desktopWidget?.close) {
+      return;
+    }
+    void window.desktopWidget.close().catch(error => {
+      console.warn('[desktop] Failed to close companion.', error);
+    });
+  };
 
   return (
-    <div className="min-h-screen bg-transparent p-3">
-      <div className="mx-auto flex max-w-[460px] flex-col gap-2">
-        <div className="rounded-xl border bg-background/85 p-2 backdrop-blur-md">
-          <div className="flex items-center justify-between gap-2">
-            <CompanySwitcher />
-            <div className="flex items-center gap-1 rounded-md border p-1">
+    <div className="h-full w-full bg-transparent p-2">
+      <div className="mx-auto flex h-full w-full max-w-[560px] flex-col gap-2">
+        <div className="desktop-companion-drag group cursor-move rounded-xl border bg-background/85 p-2 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <div className="desktop-companion-no-drag min-w-0 flex-1">
+              <CompanySwitcher />
+            </div>
+            <div className="desktop-companion-no-drag flex items-center gap-1 rounded-md border p-1">
               <Button
                 variant={mode === 'mini' ? 'default' : 'ghost'}
                 size="sm"
@@ -136,18 +202,34 @@ function SessionCompanionContent() {
                 Expanded
               </Button>
             </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="desktop-companion-no-drag h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+              onClick={closeCompanion}
+              aria-label="Close companion"
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         </div>
 
-        {mode === 'mini' ? (
-          <MiniCompanionCard
-            scope={scope}
-            onExpand={() => setMode('expanded')}
-          />
+        {isLoading ? (
+          <div className="flex h-20 items-center justify-center rounded-xl border bg-background/85">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : !currentCompany ? (
+          <div className="rounded-xl border bg-background/95 p-4">
+            <p className="text-sm text-muted-foreground">
+              Select a company in DevSuite before using the companion.
+            </p>
+          </div>
+        ) : mode === 'mini' ? (
+          <MiniCompanionCard scope={scope} companyId={currentCompany._id} />
         ) : (
           <SessionWidget
             displayMode="embedded"
-            className="max-h-[calc(100vh-84px)] w-[460px] overflow-y-auto bg-background/90 shadow-xl backdrop-blur-md"
+            className="max-h-[calc(100vh-74px)] w-full overflow-y-auto bg-background/90 shadow-xl backdrop-blur-md"
           />
         )}
       </div>
@@ -157,26 +239,29 @@ function SessionCompanionContent() {
 
 function MiniCompanionCard({
   scope,
-  onExpand,
+  companyId,
 }: {
   scope: CompanionScope | null;
-  onExpand: () => void;
+  companyId: Id<'companies'>;
 }) {
-  const [state, setState] = useState<CompanionDesktopSessionState | null>(null);
+  const [desktopState, setDesktopState] =
+    useState<CompanionDesktopSessionState | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  useEffect(() => {
-    if (state?.status !== 'RUNNING') {
-      return;
-    }
+  const activeSession = useQuery(api.sessions.getActiveSession, { companyId });
+  const sessionDetail = useQuery(
+    api.sessions.getSession,
+    activeSession ? { companyId, sessionId: activeSession._id } : 'skip'
+  );
 
+  useEffect(() => {
     const timer = window.setInterval(() => {
       setNowMs(Date.now());
     }, 1000);
     return () => {
       window.clearInterval(timer);
     };
-  }, [state?.status]);
+  }, []);
 
   useEffect(() => {
     if (!window.desktopSession || !scope) {
@@ -188,7 +273,7 @@ function MiniCompanionCard({
       .getState(scope)
       .then(currentState => {
         if (!disposed) {
-          setState(currentState);
+          setDesktopState(currentState);
         }
       })
       .catch(error => {
@@ -197,7 +282,7 @@ function MiniCompanionCard({
 
     const unsubscribe = window.desktopSession.onStateChanged(nextState => {
       if (!disposed) {
-        setState(nextState);
+        setDesktopState(nextState);
       }
     });
 
@@ -207,13 +292,26 @@ function MiniCompanionCard({
     };
   }, [scope]);
 
-  const status = state?.status ?? 'IDLE';
-  const connectionState = state?.connectionState ?? 'syncing';
-  const effectiveDurationMs = state?.effectiveDurationMs ?? 0;
-  const displayDurationMs =
+  const status: CompanionDesktopSessionState['status'] = activeSession
+    ? activeSession.status === 'PAUSED'
+      ? 'PAUSED'
+      : 'RUNNING'
+    : (desktopState?.status ?? 'IDLE');
+  const connectionState = desktopState?.connectionState ?? 'syncing';
+  const convexDurationMs = sessionDetail
+    ? computeSessionDurationFromDetail(sessionDetail, nowMs)
+    : null;
+  const fallbackPublishedAt =
+    desktopState?.publishedAt ?? desktopState?.updatedAt ?? nowMs;
+  const fallbackDurationMs =
     status === 'RUNNING'
-      ? Math.max(0, effectiveDurationMs + (nowMs - (state?.updatedAt ?? nowMs)))
-      : effectiveDurationMs;
+      ? Math.max(
+          0,
+          (desktopState?.effectiveDurationMs ?? 0) +
+            (nowMs - fallbackPublishedAt)
+        )
+      : Math.max(0, desktopState?.effectiveDurationMs ?? 0);
+  const displayDurationMs = convexDurationMs ?? fallbackDurationMs;
 
   const runAction = async (action: CompanionDesktopSessionAction) => {
     if (!window.desktopSession || !scope) {
@@ -250,7 +348,7 @@ function MiniCompanionCard({
         </Badge>
       </div>
 
-      <div className="mb-2 grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <Button
           size="sm"
           onClick={() => void runAction('start')}
@@ -281,20 +379,16 @@ function MiniCompanionCard({
           </Button>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <Button size="sm" variant="outline" onClick={onExpand}>
-          Expanded
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void runAction('end')}
-          disabled={isBusy || status === 'IDLE'}
-        >
-          <Square className="mr-2 h-3.5 w-3.5" />
-          End
-        </Button>
-      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="mt-2 w-full"
+        onClick={() => void runAction('end')}
+        disabled={isBusy || status === 'IDLE'}
+      >
+        <Square className="mr-2 h-3.5 w-3.5" />
+        End
+      </Button>
 
       {connectionState !== 'connected' && (
         <div className="mt-3 flex items-center gap-2 rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground">

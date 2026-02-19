@@ -13,6 +13,7 @@ import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import type { FunctionReference } from 'convex/server';
 import { useCurrentCompany } from '@/lib/company-context';
+import { authClient } from '@/lib/auth';
 import { resolveInboxNotificationRoute } from '@devsuite/shared';
 
 type InboxItem = Doc<'inboxItems'>;
@@ -211,11 +212,35 @@ function getTypeLabel(type: InboxItem['type']): string {
   return type.replace('_', ' ');
 }
 
-function showInboxDesktopNotification(item: InboxItem) {
-  if (typeof window === 'undefined' || !('Notification' in window)) return;
+function showInboxDesktopNotification(
+  item: InboxItem,
+  scope: { userId: string; companyId: string } | null
+) {
+  if (typeof window === 'undefined') return;
 
   const title = item.content.title || 'New inbox notification';
   const body = `${getSourceLabel(item.source)} | ${getTypeLabel(item.type)}`;
+
+  if (scope && window.desktopNotification?.emit) {
+    void window.desktopNotification
+      .emit({
+        scope,
+        kind: 'inbox_item',
+        title,
+        body,
+        action: 'open_inbox',
+        route: '/inbox',
+        throttleKey: `${scope.userId}:${scope.companyId}:inbox_item:${item._id}`,
+        throttleMs: 0,
+      })
+      .catch(() => {
+        // Silently ignore Electron notification failures.
+      });
+    return;
+  }
+
+  if (!('Notification' in window)) return;
+
   const targetRoute = resolveInboxNotificationRoute({
     itemId: item._id,
     source: item.source,
@@ -246,9 +271,30 @@ function showInboxDesktopNotification(item: InboxItem) {
     // Some browsers throw if notifications are blocked after permission changes.
   }
 }
-function showOverflowDesktopNotification(count: number) {
-  if (typeof window === 'undefined' || !('Notification' in window)) return;
+function showOverflowDesktopNotification(
+  count: number,
+  scope: { userId: string; companyId: string } | null
+) {
+  if (typeof window === 'undefined') return;
   if (count <= 0) return;
+
+  if (scope && window.desktopNotification?.emit) {
+    void window.desktopNotification
+      .emit({
+        scope,
+        kind: 'inbox_item',
+        title: 'DevSuite inbox',
+        body: `${count} more notifications received`,
+        action: 'open_inbox',
+        route: '/inbox',
+        throttleKey: `${scope.userId}:${scope.companyId}:inbox_item:overflow`,
+        throttleMs: 5000,
+      })
+      .catch(() => {});
+    return;
+  }
+
+  if (!('Notification' in window)) return;
 
   try {
     const notification = new Notification('DevSuite inbox', {
@@ -274,6 +320,7 @@ export function InboxDesktopNotificationsProvider({
 }) {
   const { currentCompany } = useCurrentCompany();
   const companyId = currentCompany?._id;
+  const { data: authSession } = authClient.useSession();
 
   const [permission, setPermission] = useState<DesktopNotificationPermission>(
     () => getPermissionState()
@@ -495,26 +542,55 @@ export function InboxDesktopNotificationsProvider({
     const persistedKnownIds = writeKnownInboxIds(companyKey, knownIds);
     knownIdsByCompanyRef.current.set(companyKey, persistedKnownIds);
 
-    if (!isEnabled || permission !== 'granted') return;
+    const isElectronContext =
+      typeof window !== 'undefined' && !!window.desktopNotification;
+
+    // Always respect the user's explicit opt-out, regardless of runtime.
+    if (!enabledPreference) return;
+    // In the browser, also require the Notification permission to be granted.
+    if (!isElectronContext && permission !== 'granted') return;
 
     const unseenUnread = unseenItems.filter(
       item => !item.isRead && !item.isArchived
     );
     if (unseenUnread.length === 0) return;
 
+    const userId =
+      (
+        authSession as
+          | {
+              session?: { userId?: string } | null;
+              user?: { id?: string } | null;
+            }
+          | null
+          | undefined
+      )?.session?.userId ??
+      (
+        authSession as
+          | {
+              session?: { userId?: string } | null;
+              user?: { id?: string } | null;
+            }
+          | null
+          | undefined
+      )?.user?.id ??
+      null;
+    const scope =
+      isElectronContext && userId && companyId ? { userId, companyId } : null;
+
     const directNotifications = unseenUnread.slice(
       0,
       MAX_DESKTOP_NOTIFICATIONS
     );
     for (const item of directNotifications) {
-      showInboxDesktopNotification(item);
+      showInboxDesktopNotification(item, scope);
     }
 
     const overflowCount = unseenUnread.length - directNotifications.length;
     if (overflowCount > 0) {
-      showOverflowDesktopNotification(overflowCount);
+      showOverflowDesktopNotification(overflowCount, scope);
     }
-  }, [companyId, items, isEnabled, permission]);
+  }, [companyId, items, enabledPreference, permission, authSession]);
 
   const value = useMemo<InboxDesktopNotificationsContextValue>(
     () => ({

@@ -53,6 +53,7 @@ type DesktopSessionApi = {
   ) => Promise<void>;
   showCompanion: (mode?: 'mini' | 'expanded') => Promise<void>;
   setCompanionMode: (mode: 'mini' | 'expanded') => Promise<void>;
+  setWidgetMousePassthrough: (enabled: boolean) => Promise<void>;
   onCommand: (
     listener: (command: DesktopSessionCommand) => void | Promise<void>
   ) => () => void;
@@ -141,6 +142,10 @@ type DesktopWindowApi = {
   ) => () => void;
 };
 
+type DesktopWidgetApi = {
+  close: () => Promise<void>;
+};
+
 type DesktopTestWebsiteEvent = {
   type: 'website_blocked_started' | 'website_blocked_stopped';
   domain: string;
@@ -222,6 +227,12 @@ const desktopSessionApi: DesktopSessionApi = {
   },
   setCompanionMode: async mode => {
     await ipcRenderer.invoke('desktop-session:set-companion-mode', mode);
+  },
+  setWidgetMousePassthrough: async enabled => {
+    await ipcRenderer.invoke(
+      'desktop-session:set-widget-mouse-passthrough',
+      enabled
+    );
   },
   onCommand: listener => {
     const wrapped = (_event: unknown, payload: DesktopSessionCommand) => {
@@ -342,6 +353,12 @@ const desktopPolicyApi: DesktopPolicyApi = {
     }>,
 };
 
+const desktopWidgetApi: DesktopWidgetApi = {
+  close: async () => {
+    await ipcRenderer.invoke('desktop-widget:close');
+  },
+};
+
 const desktopWindowApi: DesktopWindowApi = {
   minimize: async () => {
     await ipcRenderer.invoke('desktop-window:minimize');
@@ -421,6 +438,7 @@ if (shouldExposeApis) {
     desktopProcessMonitorApi
   );
   contextBridge.exposeInMainWorld('desktopPolicy', desktopPolicyApi);
+  contextBridge.exposeInMainWorld('desktopWidget', desktopWidgetApi);
   contextBridge.exposeInMainWorld('desktopWindow', desktopWindowApi);
   if (shouldForceExposeApisForTestHarness) {
     contextBridge.exposeInMainWorld('desktopTest', desktopTestApi);
@@ -437,6 +455,7 @@ declare global {
     desktopNotification?: DesktopNotificationApi;
     desktopProcessMonitor?: DesktopProcessMonitorApi;
     desktopPolicy?: DesktopPolicyApi;
+    desktopWidget?: DesktopWidgetApi;
     desktopWindow?: DesktopWindowApi;
     desktopTest?: DesktopTestApi;
   }

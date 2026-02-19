@@ -17,21 +17,22 @@ test('getSessionWidgetWindowOptions configures frameless transparent overlay wid
 
   assert.equal(options.frame, false);
   assert.equal(options.transparent, true);
+  assert.equal(options.show, false);
   assert.equal(options.alwaysOnTop, true);
   assert.equal(options.skipTaskbar, true);
   assert.equal(options.backgroundColor, '#00000000');
-  assert.equal(options.width, 320);
-  assert.equal(options.height, 220);
+  assert.equal(options.width, 380);
+  assert.equal(options.height, 260);
 });
 
 test('getBottomRightWidgetPosition computes expected bottom-right placement', () => {
   const position = getBottomRightWidgetPosition({
     workAreaSize: { width: 1920, height: 1080 },
-    windowSize: [320, 220],
+    windowSize: [380, 260],
   });
 
   assert.deepEqual(position, {
-    x: 1584,
-    y: 844,
+    x: 1524,
+    y: 804,
   });
 });

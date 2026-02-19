@@ -5,6 +5,7 @@ import {
   redirect,
   useRouterState,
 } from '@tanstack/react-router';
+import { useEffect } from 'react';
 import { Toaster } from '@/components/ui/sonner';
 import { authClient } from '@/lib/auth';
 import { RouteError } from '@/components/error-boundary';
@@ -12,7 +13,10 @@ import { RouteError } from '@/components/error-boundary';
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
     // Skip auth check for auth routes
-    if (location.pathname.startsWith('/auth')) {
+    if (
+      location.pathname.startsWith('/auth') ||
+      location.pathname === '/session-companion'
+    ) {
       return;
     }
 
@@ -37,6 +41,22 @@ function RootComponent() {
   });
   const isCompanionRoute = pathname === '/session-companion';
 
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const htmlElement = document.documentElement;
+    const bodyElement = document.body;
+    htmlElement.classList.toggle('desktop-companion-mode', isCompanionRoute);
+    bodyElement.classList.toggle('desktop-companion-mode', isCompanionRoute);
+
+    return () => {
+      htmlElement.classList.remove('desktop-companion-mode');
+      bodyElement.classList.remove('desktop-companion-mode');
+    };
+  }, [isCompanionRoute]);
+
   return (
     <div
       className={`min-h-screen font-sans antialiased ${
@@ -44,7 +64,23 @@ function RootComponent() {
       }`}
     >
       <Outlet />
-      <Toaster />
+      <Toaster
+        position={isCompanionRoute ? 'top-center' : 'bottom-right'}
+        toastOptions={
+          isCompanionRoute
+            ? {
+                duration: 3000,
+                classNames: {
+                  error: 'pointer-events-auto',
+                  default: 'pointer-events-auto',
+                  success: 'opacity-90',
+                  info: 'opacity-90',
+                  warning: 'opacity-90',
+                },
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

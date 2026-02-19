@@ -115,6 +115,29 @@
   }
 }
 
+html.desktop-companion-mode,
+body.desktop-companion-mode {
+  background: transparent !important;
+}
+
+body.desktop-companion-mode {
+  overflow: hidden;
+}
+
+html.desktop-companion-mode #root {
+  background: transparent !important;
+}
+
+html.desktop-companion-mode .desktop-companion-drag {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+html.desktop-companion-mode .desktop-companion-no-drag,
+html.desktop-companion-mode .desktop-companion-no-drag * {
+  -webkit-app-region: no-drag;
+}
+
 /* MDXEditor Overrides */
 .mdxeditor {
   /* Fix for dark mode text visibility */

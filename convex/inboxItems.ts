@@ -94,12 +94,14 @@ export const listInboxItems = query({
     source: v.optional(inboxItemSourceValidator),
     type: v.optional(inboxItemTypeValidator),
     limit: v.optional(v.number()),
+    excludePrivate: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await assertCompanyAccess(ctx, args.companyId);
 
     const unreadOnly = args.unreadOnly ?? false;
     const includeArchived = args.includeArchived ?? false;
+    const excludePrivate = args.excludePrivate ?? false;
     const limit = args.limit ?? 200;
 
     const items = await ctx.db
@@ -113,6 +115,7 @@ export const listInboxItems = query({
       .filter(item => (unreadOnly ? item.isRead === false : true))
       .filter(item => (args.source ? item.source === args.source : true))
       .filter(item => (args.type ? item.type === args.type : true))
+      .filter(item => (excludePrivate ? item.isPrivate !== true : true))
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, Math.max(1, Math.min(500, limit)));
   },

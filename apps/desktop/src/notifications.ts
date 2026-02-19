@@ -11,12 +11,14 @@ export type DesktopNotificationKind =
   | 'ide_session_required'
   | 'distractor_app_detected'
   | 'website_blocked_detected'
-  | 'tasks_remaining_reminder';
+  | 'tasks_remaining_reminder'
+  | 'inbox_item';
 
 export type DesktopNotificationAction =
   | 'open_app'
   | 'open_sessions'
-  | 'start_session';
+  | 'start_session'
+  | 'open_inbox';
 
 export interface DesktopNotificationRequest {
   scope: DesktopSettingsScope;
@@ -53,7 +55,8 @@ function parseNotificationKind(value: unknown): DesktopNotificationKind {
     value === 'ide_session_required' ||
     value === 'distractor_app_detected' ||
     value === 'website_blocked_detected' ||
-    value === 'tasks_remaining_reminder'
+    value === 'tasks_remaining_reminder' ||
+    value === 'inbox_item'
   ) {
     return value;
   }
@@ -65,7 +68,8 @@ function parseNotificationAction(value: unknown): DesktopNotificationAction {
   if (
     value === 'open_app' ||
     value === 'open_sessions' ||
-    value === 'start_session'
+    value === 'start_session' ||
+    value === 'open_inbox'
   ) {
     return value;
   }

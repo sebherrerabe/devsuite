@@ -46,8 +46,13 @@ type DesktopNotificationKind =
   | 'ide_session_required'
   | 'distractor_app_detected'
   | 'website_blocked_detected'
-  | 'tasks_remaining_reminder';
-type DesktopNotificationAction = 'open_app' | 'open_sessions' | 'start_session';
+  | 'tasks_remaining_reminder'
+  | 'inbox_item';
+type DesktopNotificationAction =
+  | 'open_app'
+  | 'open_sessions'
+  | 'start_session'
+  | 'open_inbox';
 type DesktopProcessCategory = 'ide' | 'app_block';
 type DesktopProcessEventType = 'process_started' | 'process_stopped';
 
@@ -143,6 +148,7 @@ interface Window {
     ) => Promise<void>;
     showCompanion: (mode?: DesktopCompanionMode) => Promise<void>;
     setCompanionMode: (mode: DesktopCompanionMode) => Promise<void>;
+    setWidgetMousePassthrough: (enabled: boolean) => Promise<void>;
     onCommand: (
       listener: (command: DesktopSessionCommand) => void | Promise<void>
     ) => () => void;
@@ -209,6 +215,9 @@ interface Window {
       scope: DesktopSettingsScope;
       overrideUntilMs: number | null;
     }>;
+  };
+  desktopWidget?: {
+    close: () => Promise<void>;
   };
   desktopWindow?: {
     minimize: () => Promise<void>;

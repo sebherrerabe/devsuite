@@ -5,6 +5,7 @@ import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { useCurrentCompany } from '@/lib/company-context';
 import { authClient } from '@/lib/auth';
+import { usePrivacyMode } from '@/lib/privacy-mode-context';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
@@ -166,6 +167,7 @@ function InboxPage() {
     typeof (window as { desktopNotification?: unknown }).desktopNotification !==
       'undefined';
 
+  const { isPrivacyMode } = usePrivacyMode();
   const [sourceFilter, setSourceFilter] = useState<InboxItemSource | 'all'>(
     'all'
   );
@@ -184,8 +186,16 @@ function InboxPage() {
       source: sourceFilter === 'all' ? undefined : sourceFilter,
       type: typeFilter === 'all' ? undefined : typeFilter,
       limit: 500,
+      excludePrivate: isPrivacyMode,
     };
-  }, [companyId, unreadOnly, includeArchived, sourceFilter, typeFilter]);
+  }, [
+    companyId,
+    unreadOnly,
+    includeArchived,
+    sourceFilter,
+    typeFilter,
+    isPrivacyMode,
+  ]);
 
   const items = useQuery(api.inboxItems.listInboxItems, queryArgs);
   const bulkUpdate = useMutation(api.inboxItems.bulkUpdate);
@@ -693,14 +703,26 @@ function InboxPage() {
                   <TableCell>
                     <div className="flex items-start gap-3">
                       <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-md border bg-background">
-                        <TypeIcon type={item.type} />
+                        {isPrivacyMode ? (
+                          <Bell className="h-4 w-4" />
+                        ) : (
+                          <TypeIcon type={item.type} />
+                        )}
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           {!item.isRead && (
                             <span className="h-2 w-2 rounded-full bg-primary" />
                           )}
-                          {item.content?.url ? (
+                          {isPrivacyMode ? (
+                            <span
+                              className={`truncate italic text-muted-foreground ${
+                                item.isRead ? '' : 'font-medium'
+                              }`}
+                            >
+                              [Private notification]
+                            </span>
+                          ) : item.content?.url ? (
                             <a
                               href={item.content.url}
                               target="_blank"
@@ -732,16 +754,18 @@ function InboxPage() {
                             </Badge>
                           )}
                         </div>
-                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                          <span className="inline-flex items-center gap-1">
-                            <SourceIcon source={item.source} />
-                            {getSourceLabel(item.source)}
-                          </span>
-                          <span>•</span>
-                          <span className="capitalize">
-                            {item.type.replace('_', ' ')}
-                          </span>
-                        </div>
+                        {!isPrivacyMode && (
+                          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="inline-flex items-center gap-1">
+                              <SourceIcon source={item.source} />
+                              {getSourceLabel(item.source)}
+                            </span>
+                            <span>•</span>
+                            <span className="capitalize">
+                              {item.type.replace('_', ' ')}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </TableCell>

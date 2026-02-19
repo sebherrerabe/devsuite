@@ -95,7 +95,11 @@ function ProjectSettingsPage() {
       setSelectedRepoIds(project.repositoryIds || []);
       setNotesMarkdown(project.notesMarkdown || '');
     }
-  }, [project]);
+    // Only reinitialize form when navigating to a different project.
+    // Using project?._id instead of project prevents inline quick-actions
+    // (Pin, Favorite) from resetting unsaved form edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?._id]);
 
   useEffect(() => {
     if (projectRate?.rateCard) {
