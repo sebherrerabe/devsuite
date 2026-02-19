@@ -2,6 +2,7 @@
 
 import { internalAction } from './_generated/server';
 import { internal } from './_generated/api';
+import { isItemEligibleForPush } from './lib/inboxPushEligibility';
 import type { Doc, Id } from './_generated/dataModel';
 import { v } from 'convex/values';
 import webpush from 'web-push';
@@ -101,9 +102,14 @@ export const sendToCompanySubscribers = internalAction({
   args: {
     companyId: v.id('companies'),
     inboxItemId: v.id('inboxItems'),
+    forceNotify: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     if (!configureVapid()) {
+      console.log('[inbox-push] skipped', {
+        reason: 'missing_vapid_config',
+        inboxItemId: args.inboxItemId,
+      });
       return {
         delivered: 0,
         failed: 0,
@@ -152,7 +158,19 @@ export const sendToCompanySubscribers = internalAction({
       }
     );
 
-    if (!item || item.isRead || item.isArchived) {
+    const eligible = isItemEligibleForPush(item, args.forceNotify === true);
+    if (!eligible) {
+      const reason = !item
+        ? 'item_not_found'
+        : item.isArchived
+          ? 'archived'
+          : 'read';
+      console.log('[inbox-push] skipped', {
+        reason: 'item_not_eligible',
+        detail: reason,
+        inboxItemId: args.inboxItemId,
+        forceNotify: args.forceNotify,
+      });
       return {
         delivered: 0,
         failed: 0,
@@ -169,11 +187,24 @@ export const sendToCompanySubscribers = internalAction({
     );
 
     if (!subscriptions || subscriptions.length === 0) {
+      console.log('[inbox-push] skipped', {
+        reason: 'no_subscriptions',
+        inboxItemId: args.inboxItemId,
+      });
       return {
         delivered: 0,
         failed: 0,
         removed: 0,
         skipped: 'no_subscriptions' as const,
+      };
+    }
+
+    if (!item) {
+      return {
+        delivered: 0,
+        failed: 0,
+        removed: 0,
+        skipped: 'item_not_eligible' as const,
       };
     }
 
@@ -218,6 +249,12 @@ export const sendToCompanySubscribers = internalAction({
       }
     }
 
+    console.log('[inbox-push] delivered', {
+      inboxItemId: args.inboxItemId,
+      delivered,
+      failed,
+      removed,
+    });
     return {
       delivered,
       failed,

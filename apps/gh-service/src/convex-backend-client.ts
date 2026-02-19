@@ -43,6 +43,10 @@ export interface GithubNotificationSyncTelemetry {
   errorMessage?: string | null;
 }
 
+export interface GithubNotificationSyncCursor {
+  lastSuccessAt: number | null;
+}
+
 export class ConvexBackendError extends Error {
   constructor(
     readonly statusCode: number,
@@ -99,6 +103,22 @@ export class ConvexBackendClient {
       userId,
       telemetry,
     });
+  }
+
+  async getNotificationSyncCursor(
+    userId: string
+  ): Promise<GithubNotificationSyncCursor> {
+    const payload = await this.post('/github/service/sync-cursor', {
+      userId,
+    });
+
+    const lastSuccessAt =
+      typeof payload.lastSuccessAt === 'number' &&
+      Number.isFinite(payload.lastSuccessAt)
+        ? payload.lastSuccessAt
+        : null;
+
+    return { lastSuccessAt };
   }
 
   private async post(

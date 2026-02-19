@@ -15,6 +15,7 @@ import type { FunctionReference } from 'convex/server';
 import { useCurrentCompany } from '@/lib/company-context';
 import { authClient } from '@/lib/auth';
 import { resolveInboxNotificationRoute } from '@devsuite/shared';
+import { isElectronDesktopContext } from './desktop-context-detection';
 
 type InboxItem = Doc<'inboxItems'>;
 type DesktopNotificationPermission =
@@ -217,6 +218,7 @@ function showInboxDesktopNotification(
   scope: { userId: string; companyId: string } | null
 ) {
   if (typeof window === 'undefined') return;
+  const isElectronContext = isElectronDesktopContext();
 
   const title = item.content.title || 'New inbox notification';
   const body = `${getSourceLabel(item.source)} | ${getTypeLabel(item.type)}`;
@@ -236,6 +238,10 @@ function showInboxDesktopNotification(
       .catch(() => {
         // Silently ignore Electron notification failures.
       });
+    return;
+  }
+
+  if (isElectronContext) {
     return;
   }
 
@@ -277,6 +283,7 @@ function showOverflowDesktopNotification(
 ) {
   if (typeof window === 'undefined') return;
   if (count <= 0) return;
+  const isElectronContext = isElectronDesktopContext();
 
   if (scope && window.desktopNotification?.emit) {
     void window.desktopNotification
@@ -291,6 +298,10 @@ function showOverflowDesktopNotification(
         throttleMs: 5000,
       })
       .catch(() => {});
+    return;
+  }
+
+  if (isElectronContext) {
     return;
   }
 
@@ -401,6 +412,9 @@ export function InboxDesktopNotificationsProvider({
 
   const syncBrowserPushSubscription = useCallback(
     async (targetCompanyId: Id<'companies'>) => {
+      if (isElectronDesktopContext()) {
+        return;
+      }
       const vapidPublicKey = getVapidPublicKey();
       if (!vapidPublicKey) {
         return;
@@ -514,6 +528,38 @@ export function InboxDesktopNotificationsProvider({
   }, [companyId, isEnabled, syncBrowserPushSubscription]);
 
   useEffect(() => {
+    if (!companyId || !isElectronDesktopContext()) return;
+
+    let isCancelled = false;
+
+    const cleanupBrowserPushInElectron = async () => {
+      const subscription = await getExistingBrowserPushSubscription();
+      if (!subscription || isCancelled) return;
+
+      const endpoint = subscription.endpoint?.trim();
+      try {
+        await subscription.unsubscribe();
+      } catch {
+        // Non-fatal if unsubscribe fails.
+      }
+
+      if (!endpoint || isCancelled) return;
+
+      try {
+        await removePushSubscription({ companyId, endpoint });
+      } catch {
+        // Non-fatal if backend removal fails.
+      }
+    };
+
+    void cleanupBrowserPushInElectron();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [companyId, removePushSubscription]);
+
+  useEffect(() => {
     if (!companyId || !items) return;
 
     const companyKey = String(companyId);
@@ -542,8 +588,7 @@ export function InboxDesktopNotificationsProvider({
     const persistedKnownIds = writeKnownInboxIds(companyKey, knownIds);
     knownIdsByCompanyRef.current.set(companyKey, persistedKnownIds);
 
-    const isElectronContext =
-      typeof window !== 'undefined' && !!window.desktopNotification;
+    const isElectronContext = isElectronDesktopContext();
 
     // Always respect the user's explicit opt-out, regardless of runtime.
     if (!enabledPreference) return;

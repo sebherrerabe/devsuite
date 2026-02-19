@@ -646,6 +646,46 @@ const ghServiceRecordSyncTelemetry = httpAction(async (ctx, request) => {
   return jsonResponse(200, { id });
 });
 
+const ghServiceGetSyncCursor = httpAction(async (ctx, request) => {
+  if (request.method !== 'POST') {
+    return jsonResponse(405, { error: 'Method not allowed' });
+  }
+
+  const authError = authorizeGhServiceRequest(request);
+  if (authError) {
+    return authError;
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonResponse(400, { error: 'Invalid JSON body' });
+  }
+
+  const userId =
+    payload &&
+    typeof payload === 'object' &&
+    typeof (payload as { userId?: unknown }).userId === 'string'
+      ? (payload as { userId: string }).userId.trim()
+      : '';
+
+  if (!userId) {
+    return jsonResponse(400, { error: 'userId is required' });
+  }
+
+  const telemetry = await ctx.runQuery(
+    internal.githubService.getMyNotificationSyncTelemetry,
+    { userId }
+  );
+  const lastSuccessAt =
+    telemetry && typeof telemetry.lastSuccessAt === 'number'
+      ? telemetry.lastSuccessAt
+      : null;
+
+  return jsonResponse(200, { lastSuccessAt });
+});
+
 const notionServiceUpsertConnection = httpAction(async (ctx, request) => {
   if (request.method !== 'POST') {
     return jsonResponse(405, { error: 'Method not allowed' });
@@ -859,6 +899,12 @@ http.route({
   path: '/github/service/sync-telemetry',
   method: 'POST',
   handler: ghServiceRecordSyncTelemetry,
+});
+
+http.route({
+  path: '/github/service/sync-cursor',
+  method: 'POST',
+  handler: ghServiceGetSyncCursor,
 });
 
 http.route({

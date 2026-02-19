@@ -1137,8 +1137,10 @@ async function emitDesktopNotification(payload: unknown): Promise<{
   );
 
   if (isThrottled) {
+    const throttleTag =
+      request.kind === 'inbox_item' ? 'inbox-notify' : 'session-sync';
     runtimeLog.debug(
-      'session-sync',
+      throttleTag,
       `notification throttled: kind=${request.kind}, throttleKey=${request.throttleKey}, throttleMs=${request.throttleMs}`
     );
     return {
@@ -1149,8 +1151,10 @@ async function emitDesktopNotification(payload: unknown): Promise<{
 
   notificationSentAtByKey.set(request.throttleKey, now);
   const route = resolveDesktopNotificationRoute(request);
+  const logTag =
+    request.kind === 'inbox_item' ? 'inbox-notify' : 'session-sync';
   runtimeLog.info(
-    'session-sync',
+    logTag,
     `notification emit accepted: kind=${request.kind}, action=${request.action}, route=${route ?? 'none'}, throttleKey=${request.throttleKey}`
   );
 

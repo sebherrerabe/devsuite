@@ -15,6 +15,7 @@
     "clean": "pnpm -r run clean",
     "test": "echo 'Tests will be implemented in future projects'",
     "test:performance": "tsx --test convex/lib/performanceMetrics.test.ts convex/lib/performanceDashboard.test.ts",
+    "test:gh-notification": "tsx --test convex/lib/githubIngestDecision.test.ts convex/lib/inboxPushEligibility.test.ts convex/lib/githubThreadSelection.test.ts apps/gh-service/src/gh-runner.test.ts apps/web/src/lib/inbox-desktop-notifications-context.test.ts",
     "prepare": "husky"
   },
   "packageManager": "pnpm@9.15.4",

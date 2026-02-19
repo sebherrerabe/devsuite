@@ -296,7 +296,29 @@ interface GhNotificationItem {
 export interface FetchNotificationsParams {
   token: string;
   limit: number;
+  since?: number | null;
   audit?: CommandAuditContext;
+}
+
+export function buildNotificationsApiPath(params: {
+  limit: number;
+  since?: number | null;
+}): string {
+  const query = new globalThis.URLSearchParams({
+    all: 'true',
+    participating: 'false',
+    per_page: `${params.limit}`,
+  });
+
+  if (
+    typeof params.since === 'number' &&
+    Number.isFinite(params.since) &&
+    params.since > 0
+  ) {
+    query.set('since', new Date(params.since).toISOString());
+  }
+
+  return `/notifications?${query.toString()}`;
 }
 
 function parseUpdatedAt(value: unknown): number | null {
@@ -666,13 +688,14 @@ export async function fetchPullRequestBundleData(
 export async function fetchNotifications(
   params: FetchNotificationsParams
 ): Promise<GhNotification[]> {
+  const apiPath = buildNotificationsApiPath({
+    limit: params.limit,
+    ...(params.since !== undefined ? { since: params.since } : {}),
+  });
   const raw = await runJsonCommand(
     'notifications-list',
     params.token,
-    [
-      'api',
-      `/notifications?all=true&participating=false&per_page=${params.limit}`,
-    ],
+    ['api', apiPath],
     'GitHub CLI returned invalid notifications JSON',
     params.audit
   );

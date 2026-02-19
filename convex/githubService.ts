@@ -9,6 +9,7 @@ import { internal } from './_generated/api';
 import { v } from 'convex/values';
 import type { FunctionReference } from 'convex/server';
 import type { Id } from './_generated/dataModel';
+import { selectPreferredGithubThreadEntry } from './lib/githubThreadSelection';
 
 interface UserIdentity {
   subject: string;
@@ -23,6 +24,7 @@ const pushDeliveryApi = (
         {
           companyId: Id<'companies'>;
           inboxItemId: Id<'inboxItems'>;
+          forceNotify?: boolean;
         },
         unknown
       >;
@@ -432,7 +434,14 @@ export const ingestNotifications = internalMutation({
 
     const existingByCompany = new Map<
       Id<'companies'>,
-      Map<string, { id: Id<'inboxItems'>; ghUpdatedAt: number | null }>
+      Map<
+        string,
+        {
+          id: Id<'inboxItems'>;
+          ghUpdatedAt: number | null;
+          updatedAt: number;
+        }
+      >
     >();
     for (const company of activeCompanies) {
       if ((companyOrgMap.get(company._id) ?? []).length === 0) {
@@ -446,10 +455,14 @@ export const ingestNotifications = internalMutation({
 
       const indexed = new Map<
         string,
-        { id: Id<'inboxItems'>; ghUpdatedAt: number | null }
+        {
+          id: Id<'inboxItems'>;
+          ghUpdatedAt: number | null;
+          updatedAt: number;
+        }
       >();
       for (const item of items) {
-        if (item.source !== 'github') {
+        if (item.deletedAt !== null || item.source !== 'github') {
           continue;
         }
 
@@ -463,7 +476,19 @@ export const ingestNotifications = internalMutation({
           | undefined;
         const ghUpdatedAt =
           typeof ghMeta?.updatedAt === 'number' ? ghMeta.updatedAt : null;
-        indexed.set(externalId, { id: item._id, ghUpdatedAt });
+        const next = selectPreferredGithubThreadEntry(
+          indexed.get(externalId) ?? null,
+          {
+            id: item._id,
+            ghUpdatedAt,
+            updatedAt: item.updatedAt,
+          }
+        );
+        indexed.set(externalId, {
+          id: next.id,
+          ghUpdatedAt: next.ghUpdatedAt,
+          updatedAt: next.updatedAt,
+        });
       }
 
       existingByCompany.set(company._id, indexed);
@@ -547,7 +572,11 @@ export const ingestNotifications = internalMutation({
           existingByCompany.get(companyId) ??
           new Map<
             string,
-            { id: Id<'inboxItems'>; ghUpdatedAt: number | null }
+            {
+              id: Id<'inboxItems'>;
+              ghUpdatedAt: number | null;
+              updatedAt: number;
+            }
           >();
         existingByCompany.set(companyId, companyItems);
 
@@ -559,19 +588,28 @@ export const ingestNotifications = internalMutation({
             (existing.ghUpdatedAt !== null &&
               incomingUpdatedAt <= existing.ghUpdatedAt)
           ) {
+            console.log('[gh-ingest] skipped', {
+              threadId: notification.threadId,
+              reason: !incomingUpdatedAt
+                ? 'no_updated_at'
+                : 'older_or_equal_updated_at',
+            });
             continue;
           }
+          console.log('[gh-ingest] updated', {
+            threadId: notification.threadId,
+            inboxItemId: existing.id,
+          });
           await ctx.db.patch(existing.id, {
             type: inboxType,
             content,
-            isRead: false,
-            isArchived: false,
             updatedAt: now,
             deletedAt: null,
           });
           companyItems.set(notification.threadId, {
             id: existing.id,
             ghUpdatedAt: incomingUpdatedAt,
+            updatedAt: now,
           });
           await ctx.scheduler.runAfter(
             0,
@@ -579,12 +617,16 @@ export const ingestNotifications = internalMutation({
             {
               companyId,
               inboxItemId: existing.id,
+              forceNotify: true,
             }
           );
           updated += 1;
           continue;
         }
 
+        console.log('[gh-ingest] inserted', {
+          threadId: notification.threadId,
+        });
         const insertedId = await ctx.db.insert('inboxItems', {
           companyId,
           type: inboxType,
@@ -610,6 +652,7 @@ export const ingestNotifications = internalMutation({
         companyItems.set(notification.threadId, {
           id: insertedId,
           ghUpdatedAt: notification.updatedAt ?? null,
+          updatedAt: now,
         });
         created += 1;
       }

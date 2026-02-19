@@ -3,6 +3,8 @@ import { ConvexBackendClient } from './convex-backend-client.js';
 import { fetchNotifications } from './gh-runner.js';
 import type { Logger } from './logger.js';
 
+const SYNC_SINCE_OVERLAP_MS = 60_000;
+
 export interface NotificationSyncResult {
   githubUser: string | null;
   status: 'success' | 'skipped_no_routes' | 'error';
@@ -70,10 +72,18 @@ export async function syncUserNotifications(options: {
   const session = await options.connectionManager.getAuthenticatedToken(
     options.userId
   );
+  const syncCursor = await options.backendClient.getNotificationSyncCursor(
+    options.userId
+  );
+  const since =
+    typeof syncCursor.lastSuccessAt === 'number'
+      ? Math.max(0, syncCursor.lastSuccessAt - SYNC_SINCE_OVERLAP_MS)
+      : null;
 
   const fetched = await fetchNotifications({
     token: session.token,
     limit: options.batchSize,
+    ...(since !== null ? { since } : {}),
     ...(options.logger
       ? {
           audit: {

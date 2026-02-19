@@ -15,7 +15,8 @@ export type RuntimeLogSubsystem =
   | 'website-block'
   | 'session-sync'
   | 'hosts-manager'
-  | 'widget';
+  | 'widget'
+  | 'inbox-notify';
 
 export interface RuntimeLogWriter {
   debug(subsystem: RuntimeLogSubsystem, message: string): void;
