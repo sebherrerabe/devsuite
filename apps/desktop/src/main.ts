@@ -2300,6 +2300,7 @@ function registerIpcHandlers(): void {
         nextStatus: desktopSessionState.status,
         domains: desktopFocusSettings.websiteBlockList,
       });
+      void evaluateAndRunStrictPolicy();
       if (
         previousStatus !== 'RUNNING' &&
         desktopSessionState.status === 'RUNNING'

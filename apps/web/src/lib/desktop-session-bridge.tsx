@@ -293,13 +293,17 @@ export function DesktopSessionBridge() {
     }
 
     for (const event of sessionDetail.events) {
-      const payloadTaskId = (event.payload as { taskId?: Id<'tasks'> }).taskId;
-      if (!payloadTaskId) {
+      const ev = event as {
+        taskId?: Id<'tasks'>;
+        payload?: { taskId?: Id<'tasks'> };
+      };
+      const taskId = ev.payload?.taskId ?? ev.taskId;
+      if (!taskId) {
         continue;
       }
 
       if (event.type === 'TASK_ACTIVATED') {
-        activeIds.add(payloadTaskId);
+        activeIds.add(taskId);
         continue;
       }
 
@@ -308,7 +312,7 @@ export function DesktopSessionBridge() {
         event.type === 'TASK_RESET' ||
         event.type === 'TASK_MARKED_DONE'
       ) {
-        activeIds.delete(payloadTaskId);
+        activeIds.delete(taskId);
         continue;
       }
 

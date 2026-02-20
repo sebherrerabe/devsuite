@@ -20,6 +20,8 @@ import {
   FolderPlus,
   ListChecks,
   Loader2,
+  Monitor,
+  MonitorOff,
   Pause,
   Play,
   RotateCcw,
@@ -384,6 +386,22 @@ function SessionDetailContent({
           tone: 'teal',
           icon: FolderMinus,
         };
+      case 'IDE_FOCUS_GAINED':
+        return {
+          title: 'IDE focused',
+          meta: (payload as { executable?: string }).executable,
+          category: 'IDE',
+          tone: 'sky',
+          icon: Monitor,
+        };
+      case 'IDE_FOCUS_LOST':
+        return {
+          title: 'IDE unfocused',
+          meta: (payload as { executable?: string }).executable,
+          category: 'IDE',
+          tone: 'slate',
+          icon: MonitorOff,
+        };
       default:
         return {
           title: event.type,
@@ -529,6 +547,15 @@ function SessionDetailContent({
               {session.isExcludedFromSummaries && (
                 <Badge variant="secondary">Excluded from summaries</Badge>
               )}
+              {session.recordingIDE && (
+                <Badge
+                  variant="outline"
+                  className="border-sky-500/40 text-sky-200"
+                >
+                  <Monitor className="mr-1 h-3 w-3" />
+                  Desktop: {session.recordingIDE}
+                </Badge>
+              )}
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
@@ -550,6 +577,17 @@ function SessionDetailContent({
                 <p className="font-medium">
                   {formatDurationMs(durationSummary.effectiveDurationMs)}
                 </p>
+                {session.recordingIDE && (
+                  <p className="text-[10px] text-muted-foreground">
+                    {events.some(
+                      e =>
+                        e.type === 'IDE_FOCUS_GAINED' ||
+                        e.type === 'IDE_FOCUS_LOST'
+                    )
+                      ? 'IDE focus tracked'
+                      : 'IDE focus not recorded (fallback to session time)'}
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Unallocated</p>

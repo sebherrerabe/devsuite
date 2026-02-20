@@ -99,11 +99,16 @@ export function deriveSessionDurations(params: DeriveSessionParams): {
     : sortedEvents;
   const nowMs = params.nowMs ?? Date.now();
 
+  const hasIdeFocusEvents = events.some(
+    e => e.type === 'IDE_FOCUS_GAINED' || e.type === 'IDE_FOCUS_LOST'
+  );
+  const useWallClockFallback = !!params.recordingIDE && !hasIdeFocusEvents;
+
   const taskSummaries = new Map<Id<'tasks'>, TaskSummaryState>();
   const activeTasks = new Set<Id<'tasks'>>();
 
   let isRunning = false;
-  let isIdeFocused = !params.recordingIDE;
+  let isIdeFocused = !params.recordingIDE || useWallClockFallback;
   let lastTimestamp: number | null = null;
 
   let effectiveDurationMs = 0;
@@ -134,7 +139,7 @@ export function deriveSessionDurations(params: DeriveSessionParams): {
     if (!isRunning) {
       return;
     }
-    if (params.recordingIDE && !isIdeFocused) {
+    if (params.recordingIDE && !useWallClockFallback && !isIdeFocused) {
       return;
     }
     effectiveDurationMs += delta;

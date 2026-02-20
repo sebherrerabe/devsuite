@@ -119,3 +119,25 @@ test('deriveSessionDurations without recordingIDE uses wall-clock', () => {
 
   assert.equal(durationSummary.effectiveDurationMs, T3 - T0);
 });
+
+test('deriveSessionDurations with recordingIDE but no IDE events falls back to wall-clock', () => {
+  const events: SessionEventRecord[] = [
+    mkEvent('SESSION_STARTED', T0),
+    mkEvent('TASK_ACTIVATED', T1, { taskId: 'task1' as never }),
+    mkEvent('TASK_DEACTIVATED', T2, { taskId: 'task1' as never }),
+    mkEvent('SESSION_FINISHED', T3),
+  ];
+
+  const { durationSummary, taskSummaries } = deriveSessionDurations({
+    sessionStatus: 'FINISHED',
+    sessionStartAt: T0,
+    sessionEndAt: T3,
+    events,
+    recordingIDE: 'cursor.exe',
+  });
+
+  assert.equal(durationSummary.effectiveDurationMs, T3 - T0);
+  const taskSummary = taskSummaries.get('task1' as never);
+  assert.ok(taskSummary);
+  assert.equal(taskSummary.activeDurationMs, T2 - T1);
+});

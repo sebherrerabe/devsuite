@@ -49,16 +49,21 @@ export function deriveActiveSegments(params: DeriveSegmentsParams): {
   );
   const nowMs = params.nowMs ?? Date.now();
 
+  const hasIdeFocusEvents = events.some(
+    e => e.type === 'IDE_FOCUS_GAINED' || e.type === 'IDE_FOCUS_LOST'
+  );
+  const useWallClockFallback = !!params.recordingIDE && !hasIdeFocusEvents;
+
   const activeTasks = new Set<Id<'tasks'>>();
   let isRunning = false;
-  let isIdeFocused = !params.recordingIDE;
+  let isIdeFocused = !params.recordingIDE || useWallClockFallback;
   let lastTimestamp: number | null = null;
   const segments: ActiveSegment[] = [];
 
   const pushSegment = (startAt: number, endAt: number) => {
     if (endAt <= startAt) return;
     if (!isRunning) return;
-    if (params.recordingIDE && !isIdeFocused) return;
+    if (params.recordingIDE && !useWallClockFallback && !isIdeFocused) return;
     if (activeTasks.size === 0) return;
     segments.push({
       startAt,
