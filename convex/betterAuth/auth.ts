@@ -8,10 +8,11 @@ import authConfig from '../auth.config';
 import schema from './schema';
 
 export function requireSiteUrl(siteUrl: string | undefined): string {
-  if (!siteUrl) {
+  const resolved = siteUrl ?? process.env.CONVEX_SITE_URL;
+  if (!resolved) {
     throw new Error('SITE_URL is required for Better Auth');
   }
-  return siteUrl;
+  return resolved;
 }
 
 export function requireBetterAuthSecret(secret: string | undefined): string {
@@ -21,10 +22,14 @@ export function requireBetterAuthSecret(secret: string | undefined): string {
   return secret;
 }
 
-const siteUrl = requireSiteUrl(process.env.SITE_URL);
-const betterAuthSecret = requireBetterAuthSecret(
-  process.env.BETTER_AUTH_SECRET
-);
+// Lazy validation: only validate when options are built, not at module load.
+// This allows Convex to analyze modules during deploy before env vars are available.
+function getValidatedEnv() {
+  return {
+    siteUrl: requireSiteUrl(process.env.SITE_URL),
+    betterAuthSecret: requireBetterAuthSecret(process.env.BETTER_AUTH_SECRET),
+  };
+}
 
 // Better Auth Component
 export const authComponent = createClient<DataModel, typeof schema>(
@@ -39,6 +44,7 @@ export const authComponent = createClient<DataModel, typeof schema>(
 
 // Better Auth Options
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
+  const { siteUrl, betterAuthSecret } = getValidatedEnv();
   return {
     appName: 'DevSuite',
     secret: betterAuthSecret,
@@ -57,7 +63,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
   } satisfies BetterAuthOptions;
 };
 
-// For `@better-auth/cli`
+// For `@better-auth/cli` - validated lazily when first used
 export const options = createAuthOptions({} as GenericCtx<DataModel>);
 
 // Better Auth Instance
