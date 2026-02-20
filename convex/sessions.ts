@@ -321,7 +321,9 @@ export const listSessions = query({
           sessionStartAt: session.startAt,
           sessionEndAt: session.endAt,
           events,
-          recordingIDE: session.recordingIDE,
+          ...(session.recordingIDE !== undefined
+            ? { recordingIDE: session.recordingIDE }
+            : {}),
         });
 
         return {
@@ -366,7 +368,9 @@ export const getSession = query({
       sessionStartAt: session.startAt,
       sessionEndAt: session.endAt,
       events,
-      recordingIDE: session.recordingIDE,
+      ...(session.recordingIDE !== undefined
+        ? { recordingIDE: session.recordingIDE }
+        : {}),
     });
 
     const taskSummaryList = Array.from(taskSummaries.values()).sort((a, b) => {
@@ -460,7 +464,9 @@ export const getTaskSessionMetadata = query({
         sessionStartAt: session.startAt,
         sessionEndAt: session.endAt,
         events: sessionEvents,
-        recordingIDE: session.recordingIDE,
+        ...(session.recordingIDE !== undefined
+          ? { recordingIDE: session.recordingIDE }
+          : {}),
         nowMs: now,
       });
 
@@ -582,7 +588,7 @@ export const startSession = mutation({
       summary: args.summary?.trim() ?? null,
       projectIds,
       isExcludedFromSummaries: false,
-      recordingIDE: recordingIDE ?? undefined,
+      ...(recordingIDE !== undefined ? { recordingIDE } : {}),
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -731,7 +737,9 @@ export const finishSession = mutation({
       sessionStartAt: session.startAt,
       sessionEndAt: now,
       events,
-      recordingIDE: session.recordingIDE,
+      ...(session.recordingIDE !== undefined
+        ? { recordingIDE: session.recordingIDE }
+        : {}),
       nowMs: now,
     });
     const focusDurationMs = segments.reduce(

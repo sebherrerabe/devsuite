@@ -16,7 +16,8 @@ export type RuntimeLogSubsystem =
   | 'session-sync'
   | 'hosts-manager'
   | 'widget'
-  | 'inbox-notify';
+  | 'inbox-notify'
+  | 'foreground-window-tracker';
 
 export interface RuntimeLogWriter {
   debug(subsystem: RuntimeLogSubsystem, message: string): void;

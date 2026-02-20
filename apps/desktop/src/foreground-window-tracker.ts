@@ -76,11 +76,16 @@ export function buildPayload(owner: {
     : owner.path
       ? getPathBasename(owner.path)
       : '';
-  return {
+  const payload: IdeFocusPayload = {
     executable: executable || 'unknown',
-    processId: owner.processId,
-    path: owner.path,
   };
+  if (owner.processId !== undefined) {
+    payload.processId = owner.processId;
+  }
+  if (owner.path !== undefined) {
+    payload.path = owner.path;
+  }
+  return payload;
 }
 
 export class ForegroundWindowTracker {

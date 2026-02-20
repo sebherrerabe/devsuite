@@ -21,7 +21,7 @@ function mkEvent(
   return {
     type,
     timestamp: ts,
-    serverTimestamp: serverTs,
+    ...(serverTs !== undefined ? { serverTimestamp: serverTs } : {}),
     payload,
   };
 }
