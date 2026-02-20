@@ -7,7 +7,8 @@
  * IMPORTANT: These functions use soft delete only - no hard deletes.
  */
 
-import { internalMutation } from './_generated/server';
+import { internalMutation, mutation } from './_generated/server';
+import { components } from './_generated/api';
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import { createSoftDeletePatch } from './lib/helpers';
@@ -307,5 +308,33 @@ export const resetCompanyData = internalMutation({
       success: true,
       deleted: results,
     };
+  },
+});
+
+// ============================================================================
+// Better Auth JWKS Reset
+// ============================================================================
+
+/**
+ * Clear Better Auth JWKS table when BETTER_AUTH_SECRET has changed.
+ *
+ * When the secret changes, existing JWKS keys cannot be decrypted, causing
+ * "Failed to decrypt private key" errors. This clears the table so Better Auth
+ * can generate fresh keys.
+ *
+ * Requires DEV_ALLOW_SEED=true. Usage: npx convex run dev:clearBetterAuthJwks
+ */
+export const clearBetterAuthJwks = mutation({
+  args: {},
+  handler: async ctx => {
+    assertDevMode();
+    // Component API includes jwks.clearAll after convex dev regenerates
+    const jwksClearAll = (components as any).betterAuth?.jwks?.clearAll;
+    if (!jwksClearAll) {
+      throw new Error(
+        'betterAuth.jwks.clearAll not found - run convex dev first'
+      );
+    }
+    return await ctx.runMutation(jwksClearAll, {});
   },
 });
