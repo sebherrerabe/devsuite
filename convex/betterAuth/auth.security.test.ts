@@ -21,6 +21,10 @@ test('requireSiteUrl: accepts configured site url', () => {
   assert.equal(requireSiteUrl('https://example.com'), 'https://example.com');
 });
 
+test('requireBetterAuthSecret: returns placeholder when undefined', () => {
+  assert.equal(requireBetterAuthSecret(undefined), 'x'.repeat(32));
+});
+
 test('requireBetterAuthSecret: rejects short secrets', () => {
   assert.throws(
     () => requireBetterAuthSecret('short-secret'),

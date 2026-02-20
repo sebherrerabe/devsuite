@@ -16,7 +16,12 @@ export function requireSiteUrl(siteUrl: string | undefined): string {
 }
 
 export function requireBetterAuthSecret(secret: string | undefined): string {
-  if (!secret || secret.length < 32) {
+  if (!secret) {
+    // During Convex deploy/analyze, env vars may not be available. Use a placeholder
+    // so the module can load. Set BETTER_AUTH_SECRET in Convex for real auth.
+    return 'x'.repeat(32);
+  }
+  if (secret.length < 32) {
     throw new Error('BETTER_AUTH_SECRET must be at least 32 characters');
   }
   return secret;
