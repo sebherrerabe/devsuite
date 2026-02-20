@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { showToast } from '@/lib/toast';
 import { formatDurationMs } from '@/lib/time';
 import { cn } from '@/lib/utils';
@@ -32,6 +33,8 @@ import { getNextTriState, getTriState } from '@/lib/task-tristate';
 import { TaskTriStateButton } from '@/components/task-tristate-button';
 import { Loader2, Pause, Play, Square, XCircle, Timer } from 'lucide-react';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
+
+const DEFAULT_IDE_LIST = ['code.exe', 'cursor.exe', 'idea64.exe'];
 
 const statusBadgeVariant = (
   status: string
@@ -79,6 +82,18 @@ export function SessionWidget({
     isSessionsEnabled && companyId ? { companyId } : 'skip'
   );
 
+  const hasCompanion =
+    typeof window !== 'undefined' &&
+    typeof window.desktopSession?.showCompanion === 'function';
+  const userSettings = useQuery(
+    api.userSettings.get,
+    hasCompanion && companyId ? { companyId } : 'skip'
+  );
+  const ideWatchList =
+    (userSettings?.desktopFocus?.ideWatchList?.length ?? 0) > 0
+      ? (userSettings?.desktopFocus?.ideWatchList ?? [])
+      : DEFAULT_IDE_LIST;
+
   const sessionDetail = useQuery(
     api.sessions.getSession,
     isSessionsEnabled && companyId && activeSession
@@ -109,6 +124,9 @@ export function SessionWidget({
   const updateTask = useMutation(api.tasks.updateTask);
 
   const [summary, setSummary] = useState('');
+  const [selectedRecordingIDE, setSelectedRecordingIDE] = useState<string>(
+    DEFAULT_IDE_LIST[0] ?? 'code.exe'
+  );
   const [selectedProjectId, setSelectedProjectId] =
     useState<Id<'projects'> | null>(null);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
@@ -119,9 +137,6 @@ export function SessionWidget({
   const [isFinishing, setIsFinishing] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const isEmbedded = displayMode === 'embedded';
-  const hasCompanion =
-    typeof window !== 'undefined' &&
-    typeof window.desktopSession?.showCompanion === 'function';
 
   const isRunning = sessionDetail?.session?.status === 'RUNNING';
 
@@ -400,6 +415,7 @@ export function SessionWidget({
       await startSession({
         companyId,
         projectIds: selectedProjectId ? [selectedProjectId] : [],
+        recordingIDE: hasCompanion ? selectedRecordingIDE : undefined,
       });
       setSummary('');
       showToast.success('Session started');
@@ -636,6 +652,28 @@ export function SessionWidget({
 
       {status === 'IDLE' ? (
         <div className="space-y-3">
+          {hasCompanion && (
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-muted-foreground">
+                IDE for this session
+              </Label>
+              <Select
+                value={selectedRecordingIDE}
+                onValueChange={setSelectedRecordingIDE}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Select IDE" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ideWatchList.map(ide => (
+                    <SelectItem key={ide} value={ide} className="text-xs">
+                      {ide}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground">
               Project (optional)

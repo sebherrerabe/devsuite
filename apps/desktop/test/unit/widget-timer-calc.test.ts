@@ -25,6 +25,25 @@ test('calculateWidgetEffectiveDuration uses publishedAt while running', () => {
   assert.equal(duration, 13_000);
 });
 
+test('calculateWidgetEffectiveDuration returns base when recordingIDE set', () => {
+  const duration = calculateWidgetEffectiveDuration({
+    state: {
+      status: 'RUNNING',
+      sessionId: 's1',
+      effectiveDurationMs: 12_000,
+      remainingTaskCount: 2,
+      connectionState: 'connected',
+      lastError: null,
+      updatedAt: 100,
+      publishedAt: 200,
+      recordingIDE: 'cursor.exe',
+    },
+    nowMs: 1_200,
+  });
+
+  assert.equal(duration, 12_000);
+});
+
 test('calculateWidgetEffectiveDuration returns base when paused', () => {
   const duration = calculateWidgetEffectiveDuration({
     state: {

@@ -20,6 +20,8 @@ export interface DesktopSessionState {
   lastError: string | null;
   updatedAt: number;
   publishedAt?: number;
+  /** User-selected IDE for strict-mode effective time (desktop only) */
+  recordingIDE?: string | null;
 }
 
 export interface DesktopSessionActionAvailability {
@@ -185,6 +187,13 @@ export function parseDesktopSessionState(input: unknown): DesktopSessionState {
   const publishedAt =
     parseOptionalTimestamp(input.publishedAt, 'publishedAt') ?? updatedAt;
 
+  const recordingIDE =
+    input.recordingIDE === undefined || input.recordingIDE === null
+      ? null
+      : typeof input.recordingIDE === 'string' && input.recordingIDE.trim()
+        ? input.recordingIDE.trim()
+        : null;
+
   return {
     status: parseSessionStatus(input.status),
     sessionId: parseSessionId(input.sessionId),
@@ -204,6 +213,7 @@ export function parseDesktopSessionState(input: unknown): DesktopSessionState {
     lastError: parseOptionalError(input.lastError),
     updatedAt,
     publishedAt,
+    recordingIDE,
   };
 }
 

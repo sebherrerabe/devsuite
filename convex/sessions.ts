@@ -42,7 +42,9 @@ type SessionEventType =
   | 'TASK_RESET'
   | 'STEP_LOGGED'
   | 'PROJECT_ASSIGNED_TO_SESSION'
-  | 'PROJECT_UNASSIGNED_FROM_SESSION';
+  | 'PROJECT_UNASSIGNED_FROM_SESSION'
+  | 'IDE_FOCUS_GAINED'
+  | 'IDE_FOCUS_LOST';
 
 /**
  * User identity type from Convex auth
@@ -319,6 +321,7 @@ export const listSessions = query({
           sessionStartAt: session.startAt,
           sessionEndAt: session.endAt,
           events,
+          recordingIDE: session.recordingIDE,
         });
 
         return {
@@ -363,6 +366,7 @@ export const getSession = query({
       sessionStartAt: session.startAt,
       sessionEndAt: session.endAt,
       events,
+      recordingIDE: session.recordingIDE,
     });
 
     const taskSummaryList = Array.from(taskSummaries.values()).sort((a, b) => {
@@ -456,6 +460,7 @@ export const getTaskSessionMetadata = query({
         sessionStartAt: session.startAt,
         sessionEndAt: session.endAt,
         events: sessionEvents,
+        recordingIDE: session.recordingIDE,
         nowMs: now,
       });
 
@@ -497,6 +502,29 @@ export const getTaskSessionMetadata = query({
 // Session Lifecycle Mutations
 // ============================================================================
 
+/** Known IDE executables for recordingIDE validation when ideWatchList is empty. */
+const KNOWN_IDE_ALLOWLIST = ['code.exe', 'cursor.exe', 'idea64.exe'];
+const MIN_IDE_FOCUS_EVENT_INTERVAL_MS = 1_000;
+
+function normalizeExecutable(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) return '';
+  return trimmed.endsWith('.exe') ? trimmed : `${trimmed}.exe`;
+}
+
+function isValidRecordingIDE(
+  recordingIDE: string,
+  ideWatchList: string[]
+): boolean {
+  const normalized = normalizeExecutable(recordingIDE);
+  if (!normalized) return false;
+  const watchSet = new Set(
+    ideWatchList.map(normalizeExecutable).filter(Boolean)
+  );
+  if (watchSet.has(normalized)) return true;
+  return KNOWN_IDE_ALLOWLIST.includes(normalized);
+}
+
 /**
  * Start a new session.
  */
@@ -506,6 +534,7 @@ export const startSession = mutation({
     projectIds: v.optional(v.array(v.id('projects'))),
     summary: v.optional(v.string()),
     clientTimestamp: v.optional(v.number()),
+    recordingIDE: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
@@ -523,6 +552,23 @@ export const startSession = mutation({
       assertCompanyScoped(project, companyId, 'projects');
     }
 
+    let recordingIDE: string | undefined;
+    if (args.recordingIDE) {
+      const settings = await ctx.db
+        .query('userSettings')
+        .withIndex('by_companyId_userId', q =>
+          q.eq('companyId', companyId).eq('userId', userId)
+        )
+        .first();
+      const ideWatchList = settings?.desktopFocus?.ideWatchList ?? [];
+      if (!isValidRecordingIDE(args.recordingIDE, ideWatchList)) {
+        throw new Error(
+          `recordingIDE must be in ideWatchList or known allowlist: ${args.recordingIDE}`
+        );
+      }
+      recordingIDE = normalizeExecutable(args.recordingIDE);
+    }
+
     const now = Date.now();
     const sessionId = await ctx.db.insert('sessions', {
       companyId,
@@ -536,6 +582,7 @@ export const startSession = mutation({
       summary: args.summary?.trim() ?? null,
       projectIds,
       isExcludedFromSummaries: false,
+      recordingIDE: recordingIDE ?? undefined,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -645,6 +692,7 @@ export const finishSession = mutation({
     sessionId: v.id('sessions'),
     summary: v.optional(v.string()),
     clientTimestamp: v.optional(v.number()),
+    endReason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
@@ -674,7 +722,7 @@ export const finishSession = mutation({
       sessionId: args.sessionId,
       actorId: userId,
       type: 'SESSION_FINISHED',
-      payload: {},
+      payload: args.endReason ? { endReason: args.endReason } : {},
       clientTimestamp: args.clientTimestamp ?? null,
     });
 
@@ -683,6 +731,7 @@ export const finishSession = mutation({
       sessionStartAt: session.startAt,
       sessionEndAt: now,
       events,
+      recordingIDE: session.recordingIDE,
       nowMs: now,
     });
     const focusDurationMs = segments.reduce(
@@ -1065,6 +1114,117 @@ export const unassignProject = mutation({
       projectId: args.projectId,
       payload: { projectId: args.projectId },
       clientTimestamp: args.clientTimestamp ?? null,
+    });
+
+    return args.sessionId;
+  },
+});
+
+// ============================================================================
+// IDE Focus Events (Desktop Strict Mode)
+// ============================================================================
+
+const ideFocusEventPayloadValidator = v.object({
+  executable: v.string(),
+  processId: v.optional(v.number()),
+  path: v.optional(v.string()),
+});
+
+function matchesRecordingIDE(
+  recordingIDE: string,
+  payload: { executable: string; path?: string }
+): boolean {
+  const recNorm = normalizeExecutable(recordingIDE);
+  const execNorm = normalizeExecutable(payload.executable);
+  if (execNorm && recNorm === execNorm) return true;
+  if (payload.path) {
+    const pathBasename = payload.path.split(/[/\\]/).pop()?.toLowerCase() ?? '';
+    const pathNorm = pathBasename.endsWith('.exe')
+      ? pathBasename
+      : `${pathBasename}.exe`;
+    if (pathNorm && recNorm === pathNorm) return true;
+  }
+  return false;
+}
+
+/**
+ * Append an IDE focus event (GAINED or LOST) for strict-mode effective time tracking.
+ * Desktop-only; requires session to have recordingIDE set.
+ */
+export const appendSessionIdeFocusEvent = mutation({
+  args: {
+    companyId: v.id('companies'),
+    sessionId: v.id('sessions'),
+    type: v.union(v.literal('IDE_FOCUS_GAINED'), v.literal('IDE_FOCUS_LOST')),
+    payload: ideFocusEventPayloadValidator,
+    clientTimestamp: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getUserId(ctx);
+    const companyId = requireCompanyId(args.companyId);
+    await assertCompanyAccess(ctx, companyId, userId);
+
+    const session = await getSessionForWrite(
+      ctx,
+      companyId,
+      args.sessionId,
+      userId
+    );
+    if (session.status !== 'RUNNING') {
+      throw new Error('Session must be RUNNING to append IDE focus events');
+    }
+    if (!session.recordingIDE) {
+      throw new Error(
+        'Session must have recordingIDE set to append IDE focus events'
+      );
+    }
+    if (!matchesRecordingIDE(session.recordingIDE, args.payload)) {
+      throw new Error(
+        `Payload executable/path does not match session recordingIDE: ${session.recordingIDE}`
+      );
+    }
+
+    const lastIdeEvent = await ctx.db
+      .query('sessionEvents')
+      .withIndex('by_sessionId_timestamp', q =>
+        q.eq('sessionId', args.sessionId)
+      )
+      .order('desc')
+      .filter(q =>
+        q.or(
+          q.eq(q.field('type'), 'IDE_FOCUS_GAINED'),
+          q.eq(q.field('type'), 'IDE_FOCUS_LOST')
+        )
+      )
+      .first();
+
+    const now = Date.now();
+    if (lastIdeEvent) {
+      const lastTs = lastIdeEvent.serverTimestamp ?? lastIdeEvent.timestamp;
+      if (now - lastTs < MIN_IDE_FOCUS_EVENT_INTERVAL_MS) {
+        throw new Error(
+          `IDE focus events must be at least ${MIN_IDE_FOCUS_EVENT_INTERVAL_MS}ms apart`
+        );
+      }
+      if (lastIdeEvent.type === args.type) {
+        throw new Error(
+          `Consecutive IDE focus events must alternate: last was ${lastIdeEvent.type}, expected ${args.type === 'IDE_FOCUS_GAINED' ? 'IDE_FOCUS_LOST' : 'IDE_FOCUS_GAINED'}`
+        );
+      }
+    }
+
+    await ctx.db.insert('sessionEvents', {
+      companyId,
+      sessionId: args.sessionId,
+      actorId: userId,
+      type: args.type,
+      taskId: null,
+      projectId: null,
+      timestamp: now,
+      serverTimestamp: now,
+      clientTimestamp: args.clientTimestamp ?? null,
+      payload: args.payload,
+      createdAt: now,
     });
 
     return args.sessionId;

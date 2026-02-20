@@ -91,6 +91,8 @@ export type Session = {
   projectIds: ProjectId[];
   /** Excluded from summaries (true for cancelled/discarded) */
   isExcludedFromSummaries: boolean;
+  /** User-selected IDE for strict-mode effective time tracking (e.g. "code.exe") */
+  recordingIDE?: string;
 } & Timestamped &
   SoftDeletable;
 
@@ -111,6 +113,7 @@ export const sessionSchema = z
     summary: z.string().max(5000).nullable(),
     projectIds: z.array(projectIdSchema),
     isExcludedFromSummaries: z.boolean(),
+    recordingIDE: z.string().optional(),
   })
   .merge(timestampedSchema)
   .merge(softDeletableSchema);
@@ -147,6 +150,8 @@ export const sessionEventTypeValues = [
   'STEP_LOGGED',
   'PROJECT_ASSIGNED_TO_SESSION',
   'PROJECT_UNASSIGNED_FROM_SESSION',
+  'IDE_FOCUS_GAINED',
+  'IDE_FOCUS_LOST',
 ] as const;
 
 export type SessionEventType = (typeof sessionEventTypeValues)[number];
@@ -212,6 +217,19 @@ export type SessionProjectEventPayload = z.infer<
   typeof sessionProjectEventPayloadSchema
 >;
 
+/**
+ * Payload for IDE_FOCUS_GAINED / IDE_FOCUS_LOST (desktop strict mode)
+ */
+export const sessionIdeFocusEventPayloadSchema = z.object({
+  executable: z.string(),
+  processId: z.number().optional(),
+  path: z.string().optional(),
+});
+
+export type SessionIdeFocusEventPayload = z.infer<
+  typeof sessionIdeFocusEventPayloadSchema
+>;
+
 // ============================================================================
 // Session Events (discriminated union)
 // ============================================================================
@@ -222,6 +240,7 @@ const sessionEventBaseSchema = z.object({
   sessionId: sessionIdSchema,
   actorId: userIdSchema,
   timestamp: timestampSchema,
+  serverTimestamp: timestampSchema.optional(),
   clientTimestamp: timestampSchema.nullable().optional(),
   createdAt: timestampSchema,
 });
@@ -286,6 +305,16 @@ export const projectUnassignedEventSchema = sessionEventBaseSchema.extend({
   payload: sessionProjectEventPayloadSchema,
 });
 
+export const ideFocusGainedEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('IDE_FOCUS_GAINED'),
+  payload: sessionIdeFocusEventPayloadSchema,
+});
+
+export const ideFocusLostEventSchema = sessionEventBaseSchema.extend({
+  type: z.literal('IDE_FOCUS_LOST'),
+  payload: sessionIdeFocusEventPayloadSchema,
+});
+
 /**
  * Zod schema for SessionEvent (discriminated union)
  */
@@ -302,6 +331,8 @@ export const sessionEventSchema = z.discriminatedUnion('type', [
   stepLoggedEventSchema,
   projectAssignedEventSchema,
   projectUnassignedEventSchema,
+  ideFocusGainedEventSchema,
+  ideFocusLostEventSchema,
 ]);
 
 export type SessionEvent = z.infer<typeof sessionEventSchema>;
@@ -374,6 +405,7 @@ export const sessionListItemSchema = z.object({
   summary: z.string().max(5000).nullable(),
   projectIds: z.array(projectIdSchema),
   isExcludedFromSummaries: z.boolean(),
+  recordingIDE: z.string().optional(),
   durationSummary: sessionDurationSummarySchema,
 });
 

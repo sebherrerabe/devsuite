@@ -2,6 +2,7 @@
  * Session duration derivation utilities.
  *
  * Derives durations and summaries from the session event log.
+ * When recordingIDE is set, effective time = intersection of (running) AND (IDE in focus).
  */
 
 import type { Id } from '../_generated/dataModel';
@@ -18,13 +19,16 @@ export type SessionEventType =
   | 'TASK_RESET'
   | 'STEP_LOGGED'
   | 'PROJECT_ASSIGNED_TO_SESSION'
-  | 'PROJECT_UNASSIGNED_FROM_SESSION';
+  | 'PROJECT_UNASSIGNED_FROM_SESSION'
+  | 'IDE_FOCUS_GAINED'
+  | 'IDE_FOCUS_LOST';
 
 export type SessionStatus = 'RUNNING' | 'PAUSED' | 'FINISHED' | 'CANCELLED';
 
 export type SessionEventRecord = {
   type: SessionEventType;
   timestamp: number;
+  serverTimestamp?: number;
   payload: Record<string, unknown>;
 };
 
@@ -52,20 +56,54 @@ type DeriveSessionParams = {
   sessionStartAt: number;
   sessionEndAt: number | null;
   events: SessionEventRecord[];
+  recordingIDE?: string;
   nowMs?: number;
 };
+
+function getEffectiveTimestamp(event: SessionEventRecord): number {
+  return event.serverTimestamp ?? event.timestamp;
+}
+
+/**
+ * Dedupe consecutive identical IDE focus states (Interval Integrity Rule).
+ */
+function dedupeIdeFocusEvents(
+  events: SessionEventRecord[]
+): SessionEventRecord[] {
+  const result: SessionEventRecord[] = [];
+  let lastIdeState: 'GAINED' | 'LOST' | null = null;
+
+  for (const event of events) {
+    if (event.type === 'IDE_FOCUS_GAINED' || event.type === 'IDE_FOCUS_LOST') {
+      const state = event.type === 'IDE_FOCUS_GAINED' ? 'GAINED' : 'LOST';
+      if (lastIdeState === state) {
+        continue;
+      }
+      lastIdeState = state;
+    }
+    result.push(event);
+  }
+
+  return result;
+}
 
 export function deriveSessionDurations(params: DeriveSessionParams): {
   durationSummary: SessionDurationSummary;
   taskSummaries: Map<Id<'tasks'>, SessionTaskSummary>;
 } {
-  const events = [...params.events].sort((a, b) => a.timestamp - b.timestamp);
+  const sortedEvents = [...params.events].sort(
+    (a, b) => getEffectiveTimestamp(a) - getEffectiveTimestamp(b)
+  );
+  const events = params.recordingIDE
+    ? dedupeIdeFocusEvents(sortedEvents)
+    : sortedEvents;
   const nowMs = params.nowMs ?? Date.now();
 
   const taskSummaries = new Map<Id<'tasks'>, TaskSummaryState>();
   const activeTasks = new Set<Id<'tasks'>>();
 
   let isRunning = false;
+  let isIdeFocused = !params.recordingIDE;
   let lastTimestamp: number | null = null;
 
   let effectiveDurationMs = 0;
@@ -96,6 +134,9 @@ export function deriveSessionDurations(params: DeriveSessionParams): {
     if (!isRunning) {
       return;
     }
+    if (params.recordingIDE && !isIdeFocused) {
+      return;
+    }
     effectiveDurationMs += delta;
     if (activeTasks.size === 0) {
       unallocatedDurationMs += delta;
@@ -108,8 +149,9 @@ export function deriveSessionDurations(params: DeriveSessionParams): {
   };
 
   for (const event of events) {
+    const eventTs = getEffectiveTimestamp(event);
     if (lastTimestamp !== null) {
-      applyDelta(Math.max(0, event.timestamp - lastTimestamp));
+      applyDelta(Math.max(0, eventTs - lastTimestamp));
     }
 
     switch (event.type) {
@@ -122,6 +164,12 @@ export function deriveSessionDurations(params: DeriveSessionParams): {
       case 'SESSION_CANCELLED':
         isRunning = false;
         break;
+      case 'IDE_FOCUS_GAINED':
+        isIdeFocused = true;
+        break;
+      case 'IDE_FOCUS_LOST':
+        isIdeFocused = false;
+        break;
       case 'TASK_ACTIVATED': {
         const taskId = event.payload.taskId as Id<'tasks'> | undefined;
         if (taskId) {
@@ -129,7 +177,7 @@ export function deriveSessionDurations(params: DeriveSessionParams): {
           summary.wasActive = true;
           summary._isActive = true;
           if (summary.firstActivatedAt === null) {
-            summary.firstActivatedAt = event.timestamp;
+            summary.firstActivatedAt = eventTs;
           }
           activeTasks.add(taskId);
         }
@@ -141,7 +189,7 @@ export function deriveSessionDurations(params: DeriveSessionParams): {
           const summary = ensureTask(taskId);
           summary.wasActive = true;
           summary._isActive = false;
-          summary.lastDeactivatedAt = event.timestamp;
+          summary.lastDeactivatedAt = eventTs;
           activeTasks.delete(taskId);
         }
         break;
@@ -172,7 +220,7 @@ export function deriveSessionDurations(params: DeriveSessionParams): {
         break;
     }
 
-    lastTimestamp = event.timestamp;
+    lastTimestamp = eventTs;
   }
 
   let effectiveEndAt: number | null = params.sessionEndAt;
@@ -181,7 +229,7 @@ export function deriveSessionDurations(params: DeriveSessionParams): {
   }
 
   if (events.length === 0) {
-    if (effectiveEndAt !== null) {
+    if (effectiveEndAt !== null && !params.recordingIDE) {
       const delta = Math.max(0, effectiveEndAt - params.sessionStartAt);
       effectiveDurationMs = delta;
       unallocatedDurationMs = delta;

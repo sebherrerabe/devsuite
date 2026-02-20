@@ -70,6 +70,19 @@ interface DesktopSessionState {
   lastError: string | null;
   updatedAt: number;
   publishedAt?: number;
+  recordingIDE?: string | null;
+}
+
+interface IdeFocusEventPayload {
+  executable: string;
+  processId?: number;
+  path?: string;
+}
+
+interface IdeFocusEvent {
+  type: 'IDE_FOCUS_GAINED' | 'IDE_FOCUS_LOST';
+  payload: IdeFocusEventPayload;
+  clientTimestamp: number;
 }
 
 interface DesktopSessionCommand {
@@ -166,6 +179,15 @@ interface Window {
     ) => () => void;
     onStateChanged: (
       listener: (state: DesktopSessionState) => void | Promise<void>
+    ) => () => void;
+    onIdeFocusEvent: (
+      listener: (event: IdeFocusEvent) => void | Promise<void>
+    ) => () => void;
+    onStaleAutoEndRequested: (
+      listener: (payload: {
+        companyId: string;
+        sessionId: string;
+      }) => void | Promise<void>
     ) => () => void;
   };
   desktopCompanion?: {

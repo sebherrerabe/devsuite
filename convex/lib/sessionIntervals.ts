@@ -2,6 +2,7 @@
  * Session interval derivation utilities.
  *
  * Derives active task segments from the session event log.
+ * When recordingIDE is set, segments = intersection of (running, task active, IDE focused).
  */
 
 import type { Id } from '../_generated/dataModel';
@@ -10,6 +11,7 @@ import type { SessionEventType, SessionStatus } from './sessionDerivation';
 export type SessionEventRecord = {
   type: SessionEventType;
   timestamp: number;
+  serverTimestamp?: number;
   payload: Record<string, unknown>;
   taskId?: Id<'tasks'> | null;
 };
@@ -25,28 +27,38 @@ type DeriveSegmentsParams = {
   sessionStartAt: number;
   sessionEndAt: number | null;
   events: SessionEventRecord[];
+  recordingIDE?: string;
   nowMs?: number;
 };
+
+function getEffectiveTimestamp(event: SessionEventRecord): number {
+  return event.serverTimestamp ?? event.timestamp;
+}
 
 /**
  * Derive active task segments from session events.
  *
  * A segment is emitted when the session is running AND at least one task is active.
+ * When recordingIDE is set, only emit segments when IDE is in focus.
  */
 export function deriveActiveSegments(params: DeriveSegmentsParams): {
   segments: ActiveSegment[];
 } {
-  const events = [...params.events].sort((a, b) => a.timestamp - b.timestamp);
+  const events = [...params.events].sort(
+    (a, b) => getEffectiveTimestamp(a) - getEffectiveTimestamp(b)
+  );
   const nowMs = params.nowMs ?? Date.now();
 
   const activeTasks = new Set<Id<'tasks'>>();
   let isRunning = false;
+  let isIdeFocused = !params.recordingIDE;
   let lastTimestamp: number | null = null;
   const segments: ActiveSegment[] = [];
 
   const pushSegment = (startAt: number, endAt: number) => {
     if (endAt <= startAt) return;
     if (!isRunning) return;
+    if (params.recordingIDE && !isIdeFocused) return;
     if (activeTasks.size === 0) return;
     segments.push({
       startAt,
@@ -56,8 +68,9 @@ export function deriveActiveSegments(params: DeriveSegmentsParams): {
   };
 
   for (const event of events) {
+    const eventTs = getEffectiveTimestamp(event);
     if (lastTimestamp !== null) {
-      pushSegment(lastTimestamp, event.timestamp);
+      pushSegment(lastTimestamp, eventTs);
     }
 
     switch (event.type) {
@@ -69,6 +82,12 @@ export function deriveActiveSegments(params: DeriveSegmentsParams): {
       case 'SESSION_FINISHED':
       case 'SESSION_CANCELLED':
         isRunning = false;
+        break;
+      case 'IDE_FOCUS_GAINED':
+        isIdeFocused = true;
+        break;
+      case 'IDE_FOCUS_LOST':
+        isIdeFocused = false;
         break;
       case 'TASK_ACTIVATED': {
         const taskId = (event.taskId ??
@@ -104,7 +123,7 @@ export function deriveActiveSegments(params: DeriveSegmentsParams): {
         break;
     }
 
-    lastTimestamp = event.timestamp;
+    lastTimestamp = eventTs;
   }
 
   let effectiveEndAt: number | null = params.sessionEndAt;
@@ -112,10 +131,8 @@ export function deriveActiveSegments(params: DeriveSegmentsParams): {
     effectiveEndAt = nowMs;
   }
 
-  if (effectiveEndAt !== null) {
-    if (lastTimestamp !== null) {
-      pushSegment(lastTimestamp, effectiveEndAt);
-    }
+  if (effectiveEndAt !== null && lastTimestamp !== null) {
+    pushSegment(lastTimestamp, effectiveEndAt);
   }
 
   return { segments };

@@ -160,6 +160,9 @@ export function DesktopSessionBridge() {
   const pauseSession = useMutation(api.sessions.pauseSession);
   const resumeSession = useMutation(api.sessions.resumeSession);
   const finishSession = useMutation(api.sessions.finishSession);
+  const appendSessionIdeFocusEvent = useMutation(
+    api.sessions.appendSessionIdeFocusEvent
+  );
   const deactivateTask = useMutation(api.sessions.deactivateTask);
   const markTaskDone = useMutation(api.sessions.markTaskDone);
   const [commandError, setCommandError] = useState<string | null>(null);
@@ -394,6 +397,7 @@ export function DesktopSessionBridge() {
       lastError: commandError,
       updatedAt,
       publishedAt,
+      recordingIDE: activeSession?.recordingIDE ?? null,
     };
     logDesktopBridgePublish({
       status: payload.status,
@@ -410,6 +414,7 @@ export function DesktopSessionBridge() {
   }, [
     activeSessionId,
     activeSessionStatus,
+    activeSession?.recordingIDE,
     commandError,
     connectionState,
     stableEffectiveDurationMs,
@@ -434,6 +439,88 @@ export function DesktopSessionBridge() {
       window.clearInterval(interval);
     };
   }, [isSessionsEnabled, publishDesktopState, scope]);
+
+  useEffect(() => {
+    if (
+      !window.desktopSession?.onIdeFocusEvent ||
+      !companyId ||
+      !activeSessionId ||
+      !activeSession?.recordingIDE
+    ) {
+      return;
+    }
+    const unsubscribe = window.desktopSession.onIdeFocusEvent(async event => {
+      try {
+        await appendSessionIdeFocusEvent({
+          companyId,
+          sessionId: activeSessionId,
+          type: event.type,
+          payload: event.payload,
+          clientTimestamp: event.clientTimestamp,
+        });
+      } catch (error) {
+        console.warn(
+          '[desktop] Failed to append IDE focus event.',
+          event.type,
+          error
+        );
+      }
+    });
+    return unsubscribe;
+  }, [
+    companyId,
+    activeSessionId,
+    activeSession?.recordingIDE,
+    appendSessionIdeFocusEvent,
+  ]);
+
+  useEffect(() => {
+    if (
+      !window.desktopSession?.onStaleAutoEndRequested ||
+      !scope ||
+      !companyId ||
+      !activeSessionId
+    ) {
+      return;
+    }
+    const unsubscribe = window.desktopSession.onStaleAutoEndRequested(
+      async payload => {
+        if (
+          payload.companyId !== companyId ||
+          payload.sessionId !== activeSessionId
+        ) {
+          return;
+        }
+        try {
+          await finishSession({
+            companyId,
+            sessionId: activeSessionId,
+            endReason: 'stale_auto_end',
+          });
+          if (window.desktopNotification) {
+            void window.desktopNotification
+              .emit({
+                scope,
+                kind: 'session_ended',
+                title: 'Session auto-ended',
+                body: 'Session auto-ended due to inactivity.',
+                action: 'open_sessions',
+                route: '/sessions',
+                throttleKey: `stale_auto_end_${activeSessionId}`,
+                throttleMs: 60_000,
+              })
+              .catch(() => {});
+          }
+        } catch (error) {
+          console.warn(
+            '[desktop] Failed to finish session (stale auto-end).',
+            error
+          );
+        }
+      }
+    );
+    return unsubscribe;
+  }, [scope, companyId, activeSessionId, finishSession]);
 
   useEffect(() => {
     if (!window.desktopNotification || !scope || !isSessionsEnabled) {

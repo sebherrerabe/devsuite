@@ -58,6 +58,10 @@ import {
   type DesktopProcessEvent,
 } from './process-monitor.js';
 import {
+  ForegroundWindowTracker,
+  type IdeFocusPayload,
+} from './foreground-window-tracker.js';
+import {
   blockDomains,
   cleanupStaleBlocks,
   HOSTS_WRITE_HELPER_BASE64_ARG,
@@ -116,13 +120,16 @@ const {
   dialog,
   globalShortcut,
   screen,
+  powerMonitor,
 } = require('electron') as typeof import('electron');
 const DESKTOP_PARTITION = 'persist:devsuite';
 const SESSION_COMMAND_CHANNEL = 'desktop-session:command';
 const SESSION_STATE_CHANGED_CHANNEL = 'desktop-session:state-changed';
+const STALE_AUTO_END_CHANNEL = 'desktop-session:stale-auto-end';
 const COMPANY_SELECTION_CHANGED_CHANNEL = 'desktop-company:selection-changed';
 const NOTIFICATION_ACTION_CHANNEL = 'desktop-notification:action';
 const PROCESS_EVENTS_CHANNEL = 'desktop-process-monitor:events';
+const IDE_FOCUS_EVENTS_CHANNEL = 'desktop-ide-focus:events';
 const POLICY_AUDIT_CHANNEL = 'desktop-policy:audit-events';
 const MAX_PROCESS_EVENT_LOG = 500;
 const MAX_POLICY_AUDIT_LOG = 1000;
@@ -289,6 +296,9 @@ let desktopSessionState: DesktopSessionState =
   createDefaultDesktopSessionState();
 let desktopFocusSettings: DesktopFocusSettings =
   createDefaultDesktopFocusSettings();
+let foregroundWindowTrackerRef: ForegroundWindowTracker | null = null;
+let foregroundTrackerRecordingIDE: string | null = null;
+let effectiveDurationTickTimer: ReturnType<typeof setInterval> | null = null;
 let strictPolicyState: StrictPolicyState = createDefaultStrictPolicyState();
 const notificationSentAtByKey = new Map<string, number>();
 const pendingNotificationActions: DesktopNotificationActionEvent[] = [];
@@ -309,6 +319,33 @@ let sessionWidgetDismissedByUser = false;
 let sessionWidgetMode: SessionWidgetMode = 'mini';
 
 const lastEffectiveDurationBySessionId = new Map<string, number>();
+
+/** Local effective time state when recordingIDE is set (desktop strict mode). */
+interface LocalEffectiveState {
+  isIdeFocused: boolean;
+  effectiveDurationMsBase: number;
+  effectiveSegmentStartedAt: number | null;
+}
+let localEffectiveState: LocalEffectiveState = {
+  isIdeFocused: false,
+  effectiveDurationMsBase: 0,
+  effectiveSegmentStartedAt: null,
+};
+
+const STALE_IDE_FOCUS_MS = 10 * 60 * 1000;
+const STALE_WARNING_MS = 8 * 60 * 1000;
+let lastIdeFocusAt = 0;
+let staleWarningShown = false;
+
+function resetLocalEffectiveState(): void {
+  localEffectiveState = {
+    isIdeFocused: false,
+    effectiveDurationMsBase: 0,
+    effectiveSegmentStartedAt: null,
+  };
+  lastIdeFocusAt = 0;
+  staleWarningShown = false;
+}
 const allowedDesktopNavigationOrigins = resolveAllowedDesktopNavigationOrigins({
   webUrl: process.env.DEVSUITE_WEB_URL,
   nodeEnv: process.env.NODE_ENV,
@@ -574,9 +611,21 @@ function areScopesEqual(
 }
 
 function getDesktopSessionStateSnapshot(): DesktopSessionState {
-  return {
-    ...desktopSessionState,
-  };
+  const base = { ...desktopSessionState };
+  if (base.recordingIDE && base.status === 'RUNNING' && base.sessionId) {
+    const now = Date.now();
+    const liveMs =
+      localEffectiveState.isIdeFocused &&
+      localEffectiveState.effectiveSegmentStartedAt != null
+        ? localEffectiveState.effectiveDurationMsBase +
+          Math.max(0, now - localEffectiveState.effectiveSegmentStartedAt)
+        : localEffectiveState.effectiveDurationMsBase;
+    base.effectiveDurationMs = Math.max(
+      base.effectiveDurationMs,
+      Math.trunc(liveMs)
+    );
+  }
+  return base;
 }
 
 function getAuthenticatedDesktopScope(): DesktopSettingsScope | null {
@@ -1495,6 +1544,11 @@ function setDesktopScope(nextScope: DesktopSettingsScope | null): void {
     desktopSessionState = createDefaultDesktopSessionState();
     strictPolicyState = createDefaultStrictPolicyState();
     lastEffectiveDurationBySessionId.clear();
+    resetLocalEffectiveState();
+    if (effectiveDurationTickTimer) {
+      clearInterval(effectiveDurationTickTimer);
+      effectiveDurationTickTimer = null;
+    }
     pendingNotificationActions.length = 0;
     processEventLog = [];
     policyAuditLog = [];
@@ -2227,6 +2281,17 @@ function registerIpcHandlers(): void {
         );
       } else if (incomingState.status === 'IDLE') {
         lastEffectiveDurationBySessionId.clear();
+        resetLocalEffectiveState();
+      }
+
+      if (incomingState.recordingIDE && incomingState.status === 'RUNNING') {
+        const backendMs = normalizedState.effectiveDurationMs;
+        localEffectiveState.effectiveDurationMsBase = Math.max(
+          localEffectiveState.effectiveDurationMsBase,
+          backendMs
+        );
+      } else {
+        resetLocalEffectiveState();
       }
 
       desktopSessionState = normalizedState;
@@ -2252,6 +2317,114 @@ function registerIpcHandlers(): void {
           );
         }
       }
+
+      if (process.platform === 'win32') {
+        const shouldRunTracker =
+          desktopSessionState.status === 'RUNNING' &&
+          desktopSessionState.recordingIDE &&
+          desktopSessionState.sessionId;
+        const nextRecordingIDE = desktopSessionState.recordingIDE ?? null;
+        const needsRestart = foregroundTrackerRecordingIDE !== nextRecordingIDE;
+        if (shouldRunTracker && nextRecordingIDE) {
+          if (!foregroundWindowTrackerRef || needsRestart) {
+            foregroundWindowTrackerRef?.stop();
+            foregroundTrackerRecordingIDE = nextRecordingIDE;
+            foregroundWindowTrackerRef = new ForegroundWindowTracker({
+              recordingIDE: nextRecordingIDE,
+              onFocusChange: (focused, _payload: IdeFocusPayload) => {
+                const now = Date.now();
+                if (focused) {
+                  localEffectiveState.isIdeFocused = true;
+                  localEffectiveState.effectiveSegmentStartedAt = now;
+                  lastIdeFocusAt = now;
+                  staleWarningShown = false;
+                } else {
+                  if (localEffectiveState.effectiveSegmentStartedAt != null) {
+                    localEffectiveState.effectiveDurationMsBase += Math.max(
+                      0,
+                      now - localEffectiveState.effectiveSegmentStartedAt
+                    );
+                  }
+                  localEffectiveState.isIdeFocused = false;
+                  localEffectiveState.effectiveSegmentStartedAt = null;
+                }
+                const type = focused ? 'IDE_FOCUS_GAINED' : 'IDE_FOCUS_LOST';
+                for (const win of BrowserWindow.getAllWindows()) {
+                  if (!win.isDestroyed()) {
+                    win.webContents.send(IDE_FOCUS_EVENTS_CHANNEL, {
+                      type,
+                      payload: _payload,
+                      clientTimestamp: now,
+                    });
+                  }
+                }
+                broadcastDesktopSessionState();
+              },
+            });
+            lastIdeFocusAt = Date.now();
+            foregroundWindowTrackerRef.start();
+            void foregroundWindowTrackerRef.triggerImmediatePoll();
+            if (!effectiveDurationTickTimer) {
+              effectiveDurationTickTimer = setInterval(() => {
+                if (
+                  !desktopSessionState.recordingIDE ||
+                  desktopSessionState.status !== 'RUNNING'
+                ) {
+                  return;
+                }
+                const now = Date.now();
+                if (localEffectiveState.isIdeFocused) {
+                  lastIdeFocusAt = now;
+                }
+                const inactiveMs = now - lastIdeFocusAt;
+                if (inactiveMs >= STALE_IDE_FOCUS_MS) {
+                  lastIdeFocusAt = 0;
+                  staleWarningShown = false;
+                  const scope = desktopSessionScope;
+                  const sessionId = desktopSessionState.sessionId;
+                  if (scope && sessionId) {
+                    for (const win of BrowserWindow.getAllWindows()) {
+                      if (!win.isDestroyed()) {
+                        win.webContents.send(STALE_AUTO_END_CHANNEL, {
+                          companyId: scope.companyId,
+                          sessionId,
+                        });
+                      }
+                    }
+                  }
+                } else if (
+                  inactiveMs >= STALE_WARNING_MS &&
+                  !staleWarningShown &&
+                  desktopSessionScope
+                ) {
+                  staleWarningShown = true;
+                  void emitDesktopNotification({
+                    scope: desktopSessionScope,
+                    action: 'open_sessions',
+                    route: '/sessions',
+                    kind: 'ide_session_required',
+                    title: 'Session will auto-end soon',
+                    body: 'Session will auto-end in 2 minutes due to inactivity.',
+                    throttleKey: `stale_warning_${desktopSessionState.sessionId}`,
+                    throttleMs: 60_000,
+                  }).catch(() => {});
+                }
+                broadcastDesktopSessionState();
+              }, 1000);
+            }
+          }
+        } else {
+          foregroundWindowTrackerRef?.stop();
+          foregroundWindowTrackerRef = null;
+          foregroundTrackerRecordingIDE = null;
+          resetLocalEffectiveState();
+          if (effectiveDurationTickTimer) {
+            clearInterval(effectiveDurationTickTimer);
+            effectiveDurationTickTimer = null;
+          }
+        }
+      }
+
       rebuildTrayMenu();
       broadcastDesktopSessionState();
       await evaluateAndRunStrictPolicy();
@@ -2606,6 +2779,15 @@ if (hasHostsWriteHelperArg(process.argv)) {
           await ensureMainWindow({ show: true });
         }
       });
+
+      if (process.platform === 'win32') {
+        powerMonitor.on('suspend', () => {
+          foregroundWindowTrackerRef?.onSuspend();
+        });
+        powerMonitor.on('resume', () => {
+          void foregroundWindowTrackerRef?.onResume();
+        });
+      }
     });
 
     app.on('will-quit', () => {
@@ -2615,6 +2797,8 @@ if (hasHostsWriteHelperArg(process.argv)) {
 
   app.on('before-quit', () => {
     isAppQuitting = true;
+    foregroundWindowTrackerRef?.stop();
+    foregroundWindowTrackerRef = null;
     processMonitor.stop();
     if (policyTickTimer) {
       clearInterval(policyTickTimer);

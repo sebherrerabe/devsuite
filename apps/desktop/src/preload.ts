@@ -48,6 +48,18 @@ type DesktopCompanyApi = {
   ) => () => void;
 };
 
+type IdeFocusEventPayload = {
+  executable: string;
+  processId?: number;
+  path?: string;
+};
+
+type IdeFocusEvent = {
+  type: 'IDE_FOCUS_GAINED' | 'IDE_FOCUS_LOST';
+  payload: IdeFocusEventPayload;
+  clientTimestamp: number;
+};
+
 type DesktopSessionApi = {
   getState: (scope: DesktopSettingsScope) => Promise<DesktopSessionState>;
   publishState: (
@@ -67,6 +79,15 @@ type DesktopSessionApi = {
   ) => () => void;
   onStateChanged: (
     listener: (state: DesktopSessionState) => void | Promise<void>
+  ) => () => void;
+  onIdeFocusEvent: (
+    listener: (event: IdeFocusEvent) => void | Promise<void>
+  ) => () => void;
+  onStaleAutoEndRequested: (
+    listener: (payload: {
+      companyId: string;
+      sessionId: string;
+    }) => void | Promise<void>
   ) => () => void;
 };
 
@@ -222,9 +243,11 @@ const desktopAuthApi: DesktopAuthApi = {
 
 const SESSION_COMMAND_CHANNEL = 'desktop-session:command';
 const SESSION_STATE_CHANGED_CHANNEL = 'desktop-session:state-changed';
+const STALE_AUTO_END_CHANNEL = 'desktop-session:stale-auto-end';
 const COMPANY_SELECTION_CHANGED_CHANNEL = 'desktop-company:selection-changed';
 const NOTIFICATION_ACTION_CHANNEL = 'desktop-notification:action';
 const PROCESS_EVENTS_CHANNEL = 'desktop-process-monitor:events';
+const IDE_FOCUS_EVENTS_CHANNEL = 'desktop-ide-focus:events';
 const POLICY_AUDIT_CHANNEL = 'desktop-policy:audit-events';
 const WINDOW_MAXIMIZE_CHANGED_CHANNEL = 'desktop-window:maximize-changed';
 
@@ -296,6 +319,27 @@ const desktopSessionApi: DesktopSessionApi = {
     ipcRenderer.on(SESSION_STATE_CHANGED_CHANNEL, wrapped);
     return () => {
       ipcRenderer.removeListener(SESSION_STATE_CHANGED_CHANNEL, wrapped);
+    };
+  },
+  onIdeFocusEvent: listener => {
+    const wrapped = (_event: unknown, payload: IdeFocusEvent) => {
+      void listener(payload);
+    };
+    ipcRenderer.on(IDE_FOCUS_EVENTS_CHANNEL, wrapped);
+    return () => {
+      ipcRenderer.removeListener(IDE_FOCUS_EVENTS_CHANNEL, wrapped);
+    };
+  },
+  onStaleAutoEndRequested: listener => {
+    const wrapped = (
+      _event: unknown,
+      payload: { companyId: string; sessionId: string }
+    ) => {
+      void listener(payload);
+    };
+    ipcRenderer.on(STALE_AUTO_END_CHANNEL, wrapped);
+    return () => {
+      ipcRenderer.removeListener(STALE_AUTO_END_CHANNEL, wrapped);
     };
   },
 };

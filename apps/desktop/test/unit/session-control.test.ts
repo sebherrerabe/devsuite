@@ -28,6 +28,7 @@ test('parseDesktopSessionState accepts a valid payload', () => {
     lastError: null,
     updatedAt: 1739555000000,
     publishedAt: 1739555001000,
+    recordingIDE: null,
   });
 });
 
@@ -189,6 +190,7 @@ test('getDesktopSessionActionAvailability maps status to command availability', 
       connectionState: 'connected',
       lastError: null,
       updatedAt: 1,
+      recordingIDE: null,
     }),
     { start: true, pause: false, resume: false, end: false }
   );
@@ -201,6 +203,7 @@ test('getDesktopSessionActionAvailability maps status to command availability', 
       connectionState: 'connected',
       lastError: null,
       updatedAt: 1,
+      recordingIDE: null,
     }),
     { start: false, pause: true, resume: false, end: true }
   );
@@ -213,6 +216,7 @@ test('getDesktopSessionActionAvailability maps status to command availability', 
       connectionState: 'connected',
       lastError: null,
       updatedAt: 1,
+      recordingIDE: null,
     }),
     { start: false, pause: false, resume: true, end: true }
   );

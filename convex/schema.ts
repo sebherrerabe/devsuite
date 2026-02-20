@@ -423,6 +423,8 @@ export default defineSchema({
     summary: v.union(v.string(), v.null()),
     projectIds: v.array(v.id('projects')),
     isExcludedFromSummaries: v.boolean(),
+    /** User-selected IDE executable for strict-mode effective time tracking (e.g. "code.exe") */
+    recordingIDE: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
     deletedAt: v.union(v.number(), v.null()),
@@ -462,11 +464,15 @@ export default defineSchema({
       v.literal('TASK_RESET'),
       v.literal('STEP_LOGGED'),
       v.literal('PROJECT_ASSIGNED_TO_SESSION'),
-      v.literal('PROJECT_UNASSIGNED_FROM_SESSION')
+      v.literal('PROJECT_UNASSIGNED_FROM_SESSION'),
+      v.literal('IDE_FOCUS_GAINED'),
+      v.literal('IDE_FOCUS_LOST')
     ),
     taskId: v.optional(v.union(v.id('tasks'), v.null())),
     projectId: v.optional(v.union(v.id('projects'), v.null())),
     timestamp: v.number(),
+    /** Server timestamp for ordering; use for IDE focus events. Falls back to timestamp if absent. */
+    serverTimestamp: v.optional(v.number()),
     clientTimestamp: v.optional(v.union(v.number(), v.null())),
     payload: v.any(),
     createdAt: v.number(),

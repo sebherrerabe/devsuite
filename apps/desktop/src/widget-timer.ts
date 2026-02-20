@@ -26,6 +26,10 @@ export function calculateWidgetEffectiveDuration(params: {
     return base;
   }
 
+  if (params.state.recordingIDE) {
+    return base;
+  }
+
   const publishedAt = params.state.publishedAt ?? params.state.updatedAt;
   return base + Math.max(0, params.nowMs - publishedAt);
 }

@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { api } from '../../../../convex/_generated/api';
 import { authClient } from '@/lib/auth';
@@ -9,6 +9,14 @@ import { SessionWidget } from '@/components/session-widget';
 import { CompanySwitcher } from '@/components/company-switcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { showToast } from '@/lib/toast';
 import { formatDurationMs } from '@/lib/time';
 import { cn } from '@/lib/utils';
@@ -247,6 +255,8 @@ function SessionCompanionContent() {
   );
 }
 
+const DEFAULT_IDE_LIST = ['code.exe', 'cursor.exe', 'idea64.exe'];
+
 function MiniCompanionCard({
   scope,
   companyId,
@@ -257,7 +267,18 @@ function MiniCompanionCard({
   const [desktopState, setDesktopState] =
     useState<CompanionDesktopSessionState | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [selectedRecordingIDE, setSelectedRecordingIDE] = useState<string>(
+    DEFAULT_IDE_LIST[0] ?? 'code.exe'
+  );
 
+  const userSettings = useQuery(api.userSettings.get, { companyId });
+  const ideWatchList =
+    (userSettings?.desktopFocus?.ideWatchList?.length ?? 0) > 0
+      ? (userSettings?.desktopFocus?.ideWatchList ?? [])
+      : DEFAULT_IDE_LIST;
+  const isDesktop = typeof window !== 'undefined' && !!window.desktopSession;
+
+  const startSession = useMutation(api.sessions.startSession);
   const activeSession = useQuery(api.sessions.getActiveSession, { companyId });
   const sessionDetail = useQuery(
     api.sessions.getSession,
@@ -329,7 +350,15 @@ function MiniCompanionCard({
     }
 
     try {
-      await window.desktopSession.requestAction(scope, action);
+      if (action === 'start' && isDesktop) {
+        await startSession({
+          companyId,
+          recordingIDE: selectedRecordingIDE,
+        });
+        showToast.success('Session started');
+      } else {
+        await window.desktopSession.requestAction(scope, action);
+      }
     } catch (error) {
       showToast.error(
         error instanceof Error
@@ -358,6 +387,26 @@ function MiniCompanionCard({
         </Badge>
       </div>
 
+      {isDesktop && status === 'IDLE' && (
+        <div className="mb-3 space-y-1.5">
+          <Label className="text-xs">IDE for this session</Label>
+          <Select
+            value={selectedRecordingIDE}
+            onValueChange={setSelectedRecordingIDE}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="Select IDE" />
+            </SelectTrigger>
+            <SelectContent>
+              {ideWatchList.map(ide => (
+                <SelectItem key={ide} value={ide} className="text-xs">
+                  {ide}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <Button
           size="sm"
