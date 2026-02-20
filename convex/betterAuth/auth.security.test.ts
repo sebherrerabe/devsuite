@@ -8,7 +8,7 @@ let requireSiteUrl!: (siteUrl: string | undefined) => string;
 before(async () => {
   process.env.SITE_URL ??= 'http://localhost:5173';
   process.env.BETTER_AUTH_SECRET ??= 'x'.repeat(32);
-  const authModule = await import('./auth.js');
+  const authModule = await import('../auth.js');
   requireBetterAuthSecret = authModule.requireBetterAuthSecret;
   requireSiteUrl = authModule.requireSiteUrl;
 });

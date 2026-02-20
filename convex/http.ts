@@ -2,7 +2,7 @@ import { httpRouter, type FunctionReference } from 'convex/server';
 import { httpAction } from './_generated/server';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { authComponent, createAuth } from './betterAuth/auth';
+import { authComponent, createAuth } from './auth';
 
 const http = httpRouter();
 const GH_SERVICE_BACKEND_TOKEN_ENV = 'DEVSUITE_GH_SERVICE_BACKEND_TOKEN';
