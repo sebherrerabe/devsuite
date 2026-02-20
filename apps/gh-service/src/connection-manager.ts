@@ -523,7 +523,7 @@ export class ConnectionManager {
           ...base,
           state: 'connected',
           encryptedToken,
-          tokenVersion: 'v1',
+          tokenVersion: this.tokenCipher.version,
           githubUser: tokenStatus.githubUser,
           userCode: null,
           verificationUri: null,

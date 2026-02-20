@@ -6,6 +6,8 @@ Node.js service for GitHub integration workflows.
 
 - Service health and readiness endpoints
 - Request auth boundary (`Authorization: Bearer` + `x-devsuite-user-id`)
+- Optional signed user token auth (`x-devsuite-user-token`) when
+  `DEVSUITE_GH_SERVICE_USER_TOKEN_SECRET` is configured
 - Browser-first device flow endpoints:
 - `POST /github/connect/start`
 - `GET /github/connect/status`
@@ -21,10 +23,13 @@ Node.js service for GitHub integration workflows.
 
 - `DEVSUITE_GH_SERVICE_HOST` (default: `0.0.0.0`)
 - `DEVSUITE_GH_SERVICE_PORT` (default: `8790`)
-- `DEVSUITE_GH_SERVICE_TOKEN` (optional in dev, required in production)
+- `DEVSUITE_GH_SERVICE_TOKEN` (required in non-development environments)
+- `DEVSUITE_GH_SERVICE_USER_TOKEN_SECRET` (optional; enables signed user-token auth)
 - `DEVSUITE_GH_SERVICE_CORS_ORIGINS` (CSV, default: `http://localhost:5173`)
 - `DEVSUITE_GH_SERVICE_DATA_DIR` (default: `~/.devsuite/gh-service`)
 - `DEVSUITE_GH_SERVICE_ENCRYPTION_KEY` (required, base64 32-byte key)
+- `DEVSUITE_GH_SERVICE_ENCRYPTION_KEY_VERSION` (optional; default `v1`)
+- `DEVSUITE_GH_SERVICE_ENCRYPTION_LEGACY_KEYS` (optional JSON map for key rotation)
 - `DEVSUITE_GH_OAUTH_CLIENT_ID` (default: GitHub CLI OAuth app id)
 - `DEVSUITE_GH_OAUTH_SCOPES` (default: `repo,read:org,gist,notifications`)
 - `DEVSUITE_GH_SERVICE_BACKEND_TOKEN` (required for notification ingest/sync)
@@ -35,6 +40,12 @@ Node.js service for GitHub integration workflows.
 
 ```bash
 pnpm --filter @devsuite/gh-service dev
+```
+
+Rotate stored encrypted tokens to the active key version:
+
+```bash
+pnpm --filter @devsuite/gh-service rotate:keys
 ```
 
 The service auto-loads env files from repo root (`.env`, `.env.local`) and app root

@@ -794,7 +794,7 @@ export class NotionConnectionManager {
         encryptedRefreshToken: oauth.refreshToken
           ? this.tokenCipher.encrypt(oauth.refreshToken)
           : null,
-        tokenVersion: 'v1',
+        tokenVersion: this.tokenCipher.version,
         workspaceId: oauth.workspaceId,
         workspaceName: oauth.workspaceName,
         workspaceIcon: oauth.workspaceIcon,
@@ -1216,7 +1216,7 @@ export class NotionConnectionManager {
         encryptedRefreshToken: refreshed.refreshToken
           ? this.tokenCipher.encrypt(refreshed.refreshToken)
           : connection.encryptedRefreshToken,
-        tokenVersion: 'v1',
+        tokenVersion: this.tokenCipher.version,
         workspaceId: refreshed.workspaceId,
         workspaceName: refreshed.workspaceName,
         workspaceIcon: refreshed.workspaceIcon,

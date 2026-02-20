@@ -9,6 +9,7 @@ import {
 } from './convex-backend-client.js';
 import { GhRunnerError } from './gh-runner.js';
 import type { Logger } from './logger.js';
+import { maskUserId } from './logging-utils.js';
 import { syncUserNotifications } from './notification-sync.js';
 
 interface NotificationPollerOptions {
@@ -94,6 +95,7 @@ export class NotificationPoller {
   }
 
   private async pollOneUser(userId: string): Promise<void> {
+    const maskedUserId = maskUserId(userId);
     try {
       const result = await syncUserNotifications({
         connectionManager: this.options.connectionManager,
@@ -107,7 +109,7 @@ export class NotificationPoller {
         this.options.logger.debug(
           'notification poll skipped for user without org routes',
           {
-            userId,
+            userId: maskedUserId,
             githubUser: result.githubUser,
             companiesMatched: result.companiesMatched,
           }
@@ -116,7 +118,7 @@ export class NotificationPoller {
       }
 
       this.options.logger.info('notification poll synced', {
-        userId,
+        userId: maskedUserId,
         githubUser: result.githubUser,
         companiesMatched: result.companiesMatched,
         notificationsFetched: result.notificationsFetched,
@@ -133,7 +135,7 @@ export class NotificationPoller {
         this.options.logger.warn(
           'notification poll skipped for disconnected user',
           {
-            userId,
+            userId: maskedUserId,
             code: error.code,
             error: error.message,
           }
@@ -143,7 +145,7 @@ export class NotificationPoller {
 
       if (error instanceof ConvexBackendError) {
         this.options.logger.error('notification poll backend request failed', {
-          userId,
+          userId: maskedUserId,
           statusCode: error.statusCode,
           code: error.code,
           error: error.message,
@@ -156,7 +158,7 @@ export class NotificationPoller {
         this.options.logger.warn(
           'notification poll GitHub CLI request failed',
           {
-            userId,
+            userId: maskedUserId,
             code: error.code,
             error: error.message,
             needsScopeUpdate: is403NotificationScopeError(error.message),
@@ -171,7 +173,7 @@ export class NotificationPoller {
         error instanceof Error ? error.message : 'unknown error'
       );
       this.options.logger.error('notification poll failed for user', {
-        userId,
+        userId: maskedUserId,
         error: error instanceof Error ? error.message : 'unknown error',
       });
     }

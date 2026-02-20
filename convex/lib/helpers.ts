@@ -45,6 +45,49 @@ export function requireCompanyId(
   return companyId;
 }
 
+type CompanyAccessCtx = {
+  auth: { getUserIdentity: () => Promise<UserIdentity | null> };
+  db: {
+    get: (id: Id<'companies'>) => Promise<{
+      userId: string;
+      isDeleted: boolean;
+      deletedAt: number | null;
+    } | null>;
+  };
+};
+
+type UserIdentity = {
+  subject: string;
+};
+
+/**
+ * Require that the current authenticated user owns the provided company.
+ *
+ * Use this for all user-facing company-scoped queries/mutations to prevent
+ * IDOR via caller-supplied companyId values.
+ */
+export async function requireOwnedCompanyId(
+  ctx: CompanyAccessCtx,
+  companyId: Id<'companies'> | null | undefined
+): Promise<Id<'companies'>> {
+  const resolvedCompanyId = requireCompanyId(companyId);
+  const identity = (await ctx.auth.getUserIdentity()) as UserIdentity | null;
+  if (!identity) {
+    throw new Error('Unauthorized');
+  }
+
+  const company = await ctx.db.get(resolvedCompanyId);
+  if (!company || company.isDeleted || company.deletedAt !== null) {
+    throw new Error('Company not found');
+  }
+
+  if (company.userId !== identity.subject) {
+    throw new Error('Company not found or access denied');
+  }
+
+  return resolvedCompanyId;
+}
+
 /**
  * Assert that a record belongs to the specified company.
  *

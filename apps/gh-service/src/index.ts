@@ -11,7 +11,10 @@ const config = loadConfig();
 const logger = createLogger(
   config.nodeEnv === 'development' ? 'debug' : 'info'
 );
-const tokenCipher = TokenCipher.fromBase64(config.encryptionKey);
+const tokenCipher = TokenCipher.fromBase64(config.encryptionKey, {
+  keyVersion: config.encryptionKeyVersion,
+  legacyKeys: config.encryptionLegacyKeys,
+});
 const connectionManager = new ConnectionManager(
   config.dataDir,
   tokenCipher,

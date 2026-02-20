@@ -7,7 +7,7 @@
  * IMPORTANT: These functions use soft delete only - no hard deletes.
  */
 
-import { mutation } from './_generated/server';
+import { internalMutation } from './_generated/server';
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import { createSoftDeletePatch } from './lib/helpers';
@@ -65,7 +65,7 @@ function assertDevMode(): void {
  *
  * This is a minimal seed - feature modules can extend with more data.
  */
-export const seed = mutation({
+export const seed = internalMutation({
   args: {
     companyId: v.id('companies'),
   },
@@ -159,7 +159,7 @@ export const seed = mutation({
  *
  * Use this to reset a dev environment while preserving audit trails.
  */
-export const resetCompanyData = mutation({
+export const resetCompanyData = internalMutation({
   args: {
     companyId: v.id('companies'),
   },

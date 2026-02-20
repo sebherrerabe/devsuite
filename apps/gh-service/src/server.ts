@@ -38,6 +38,52 @@ interface JsonObject {
   [key: string]: unknown;
 }
 
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 120;
+const rateLimitBuckets = new Map<
+  string,
+  { windowStart: number; count: number }
+>();
+
+function getClientIdentifier(req: IncomingMessage): string {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  const forwarded = Array.isArray(forwardedFor)
+    ? forwardedFor[0]
+    : forwardedFor;
+  if (forwarded) {
+    const firstIp = forwarded.split(',')[0]?.trim();
+    if (firstIp) {
+      return firstIp;
+    }
+  }
+  return req.socket.remoteAddress ?? 'unknown';
+}
+
+function enforceRateLimit(req: IncomingMessage, path: string): void {
+  if (!path.startsWith('/github/')) {
+    return;
+  }
+  const now = Date.now();
+  const key = `${getClientIdentifier(req)}:${path}`;
+  const current = rateLimitBuckets.get(key);
+  if (!current || now - current.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    rateLimitBuckets.set(key, { windowStart: now, count: 1 });
+    return;
+  }
+
+  current.count += 1;
+  if (current.count > RATE_LIMIT_MAX_REQUESTS) {
+    throw new HttpError(429, 'RATE_LIMITED', 'Too many requests');
+  }
+}
+
+export const __rateLimitForTests = {
+  enforceRateLimit,
+  clear(): void {
+    rateLimitBuckets.clear();
+  },
+};
+
 const prDiscoverInputSchema = z.object({
   repo: z
     .string()
@@ -105,7 +151,7 @@ function setCorsHeaders(
   res.setHeader('access-control-allow-origin', origin);
   res.setHeader(
     'access-control-allow-headers',
-    'authorization, content-type, x-devsuite-user-id'
+    'authorization, content-type, x-devsuite-user-id, x-devsuite-user-token'
   );
   res.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS');
   res.setHeader('vary', 'Origin');
@@ -189,10 +235,14 @@ function sendError(
   }
 
   if (error instanceof ConvexBackendError) {
+    const safeMessage =
+      error.code === 'INVALID_RESPONSE'
+        ? 'Backend returned an invalid response'
+        : 'Backend request failed';
     const payload: ErrorBody = {
       error: {
         code: error.code,
-        message: error.message,
+        message: safeMessage,
         requestId,
       },
     };
@@ -232,6 +282,8 @@ export function createGhServiceServer(
       res.end();
       return;
     }
+
+    enforceRateLimit(req, url.pathname);
 
     try {
       if (method === 'GET' && url.pathname === '/health') {

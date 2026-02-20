@@ -4,7 +4,7 @@
  * These are intended to be run manually per company.
  */
 
-import { mutation } from './_generated/server';
+import { internalMutation } from './_generated/server';
 import type { MutationCtx } from './_generated/server';
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
@@ -161,7 +161,7 @@ async function backfillDefaultsForCompanyInternal(
   };
 }
 
-export const backfillDefaultsForCompany = mutation({
+export const backfillDefaultsForCompany = internalMutation({
   args: {
     companyId: v.id('companies'),
   },
@@ -171,7 +171,7 @@ export const backfillDefaultsForCompany = mutation({
   },
 });
 
-export const backfillDefaultsAllCompanies = mutation({
+export const backfillDefaultsAllCompanies = internalMutation({
   args: {},
   handler: async ctx => {
     if (process.env.MIGRATION_ALLOW_ALL !== 'true') {

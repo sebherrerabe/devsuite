@@ -33,6 +33,89 @@ interface JsonObject {
   [key: string]: unknown;
 }
 
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 120;
+const rateLimitBuckets = new Map<
+  string,
+  { windowStart: number; count: number }
+>();
+const WEBHOOK_REPLAY_WINDOW_MS = 5 * 60 * 1000;
+const seenWebhookEvents = new Map<string, number>();
+
+function getClientIdentifier(req: IncomingMessage): string {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  const forwarded = Array.isArray(forwardedFor)
+    ? forwardedFor[0]
+    : forwardedFor;
+  if (forwarded) {
+    const firstIp = forwarded.split(',')[0]?.trim();
+    if (firstIp) {
+      return firstIp;
+    }
+  }
+  return req.socket.remoteAddress ?? 'unknown';
+}
+
+function enforceRateLimit(req: IncomingMessage, path: string): void {
+  if (!path.startsWith('/notion/')) {
+    return;
+  }
+  const now = Date.now();
+  const key = `${getClientIdentifier(req)}:${path}`;
+  const current = rateLimitBuckets.get(key);
+  if (!current || now - current.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    rateLimitBuckets.set(key, { windowStart: now, count: 1 });
+    return;
+  }
+
+  current.count += 1;
+  if (current.count > RATE_LIMIT_MAX_REQUESTS) {
+    throw new HttpError(429, 'RATE_LIMITED', 'Too many requests');
+  }
+}
+
+function enforceWebhookReplayProtection(
+  event: NotionWebhookEventPayload
+): void {
+  const now = Date.now();
+
+  for (const [eventId, seenAt] of seenWebhookEvents.entries()) {
+    if (now - seenAt > WEBHOOK_REPLAY_WINDOW_MS) {
+      seenWebhookEvents.delete(eventId);
+    }
+  }
+
+  if (seenWebhookEvents.has(event.eventId)) {
+    throw new HttpError(
+      409,
+      'WEBHOOK_REPLAY_DETECTED',
+      'Duplicate webhook event received'
+    );
+  }
+
+  if (
+    event.eventTimestamp !== null &&
+    Math.abs(now - event.eventTimestamp) > WEBHOOK_REPLAY_WINDOW_MS
+  ) {
+    throw new HttpError(
+      400,
+      'WEBHOOK_TIMESTAMP_OUT_OF_WINDOW',
+      'Webhook event timestamp is outside the allowed window'
+    );
+  }
+
+  seenWebhookEvents.set(event.eventId, now);
+}
+
+export const __securityGuardsForTests = {
+  enforceRateLimit,
+  enforceWebhookReplayProtection,
+  clear(): void {
+    rateLimitBuckets.clear();
+    seenWebhookEvents.clear();
+  },
+};
+
 const notionCompanyInputSchema = z.object({
   companyId: z.string().trim().min(1, 'companyId is required'),
 });
@@ -99,7 +182,7 @@ function setCorsHeaders(
   res.setHeader('access-control-allow-origin', origin);
   res.setHeader(
     'access-control-allow-headers',
-    'authorization, content-type, x-devsuite-user-id'
+    'authorization, content-type, x-devsuite-user-id, x-devsuite-user-token'
   );
   res.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS');
   res.setHeader('vary', 'Origin');
@@ -440,6 +523,8 @@ export function createNotionServiceServer(
       return;
     }
 
+    enforceRateLimit(req, url.pathname);
+
     try {
       if (method === 'GET' && url.pathname === '/health') {
         sendJson(res, 200, {
@@ -715,12 +800,6 @@ export function createNotionServiceServer(
           logger.info('notion webhook verification received', {
             requestId,
             verified: Boolean(config.notionWebhookVerificationToken),
-            ...(config.notionWebhookVerificationToken
-              ? {}
-              : {
-                  // Surface the initial token once so local dev can copy it into env.
-                  verificationToken,
-                }),
           });
           sendJson(res, 200, {
             ok: true,
@@ -756,6 +835,7 @@ export function createNotionServiceServer(
             'Invalid Notion webhook event'
           );
         }
+        enforceWebhookReplayProtection(event);
 
         const routingDecision =
           await notionConnectionManager.shouldRouteWebhookEvent(event);

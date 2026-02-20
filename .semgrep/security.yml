@@ -1,0 +1,28 @@
+rules:
+  - id: devsuite-company-id-without-ownership-check
+    languages: [typescript]
+    message: >-
+      companyId is user-supplied. Ensure ownership is verified via
+      requireOwnedCompanyId(), assertCompanyAccess(), or assertModuleEnabled().
+    severity: WARNING
+    patterns:
+      - pattern: const $COMPANY_ID = requireCompanyId($ARG);
+      - pattern-not-inside: |
+          const $COMPANY_ID = requireCompanyId($ARG);
+          await requireOwnedCompanyId(...)
+      - pattern-not-inside: |
+          const $COMPANY_ID = requireCompanyId($ARG);
+          await assertCompanyAccess(...)
+      - pattern-not-inside: |
+          const $COMPANY_ID = requireCompanyId($ARG);
+          await assertModuleEnabled(...)
+
+  - id: devsuite-process-env-without-validation
+    languages: [typescript]
+    message: >-
+      process.env access should be validated via config schema or explicit
+      runtime checks before use.
+    severity: INFO
+    patterns:
+      - pattern: process.env.$VAR
+      - pattern-not: process.env.NODE_ENV

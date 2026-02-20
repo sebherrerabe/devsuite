@@ -13,11 +13,21 @@ const envSchema = z.object({
     .positive()
     .default(8791),
   DEVSUITE_NOTION_SERVICE_TOKEN: z.string().trim().min(16).optional(),
+  DEVSUITE_NOTION_SERVICE_USER_TOKEN_SECRET: z
+    .string()
+    .trim()
+    .min(16)
+    .optional(),
   DEVSUITE_NOTION_SERVICE_CORS_ORIGINS: z
     .string()
     .default('http://localhost:5173'),
   DEVSUITE_NOTION_SERVICE_DATA_DIR: z.string().trim().min(1).optional(),
   DEVSUITE_NOTION_SERVICE_ENCRYPTION_KEY: z.string().trim().min(1),
+  DEVSUITE_NOTION_SERVICE_ENCRYPTION_KEY_VERSION: z
+    .string()
+    .trim()
+    .default('v1'),
+  DEVSUITE_NOTION_SERVICE_ENCRYPTION_LEGACY_KEYS: z.string().trim().optional(),
   DEVSUITE_NOTION_SERVICE_BACKEND_TOKEN: z.string().trim().min(16).optional(),
   DEVSUITE_NOTION_OAUTH_CLIENT_ID: z.string().trim().min(1).optional(),
   DEVSUITE_NOTION_OAUTH_CLIENT_SECRET: z.string().trim().min(1).optional(),
@@ -36,9 +46,12 @@ export interface NotionServiceConfig {
   host: string;
   port: number;
   serviceToken: string | null;
+  userTokenSecret: string | null;
   corsOrigins: string[];
   dataDir: string;
   encryptionKey: string;
+  encryptionKeyVersion: string;
+  encryptionLegacyKeys: Record<string, string>;
   backendToken: string | null;
   notionOauthClientId: string | null;
   notionOauthClientSecret: string | null;
@@ -54,10 +67,20 @@ export function loadConfig(
   const parsed = envSchema.parse(rawEnv);
 
   if (
-    parsed.NODE_ENV === 'production' &&
+    parsed.NODE_ENV !== 'development' &&
     !parsed.DEVSUITE_NOTION_SERVICE_TOKEN
   ) {
-    throw new Error('Missing DEVSUITE_NOTION_SERVICE_TOKEN in production');
+    throw new Error(
+      'Missing DEVSUITE_NOTION_SERVICE_TOKEN in non-development environments'
+    );
+  }
+  if (
+    parsed.NODE_ENV === 'production' &&
+    !parsed.DEVSUITE_NOTION_WEBHOOK_VERIFICATION_TOKEN
+  ) {
+    throw new Error(
+      'Missing DEVSUITE_NOTION_WEBHOOK_VERIFICATION_TOKEN in production'
+    );
   }
 
   const corsOrigins = parsed.DEVSUITE_NOTION_SERVICE_CORS_ORIGINS.split(',')
@@ -67,15 +90,47 @@ export function loadConfig(
   const dataDir =
     parsed.DEVSUITE_NOTION_SERVICE_DATA_DIR ??
     path.join(os.homedir(), '.devsuite', 'notion-service');
+  let encryptionLegacyKeys: Record<string, string> = {};
+  if (parsed.DEVSUITE_NOTION_SERVICE_ENCRYPTION_LEGACY_KEYS) {
+    let parsedLegacy: unknown;
+    try {
+      parsedLegacy = JSON.parse(
+        parsed.DEVSUITE_NOTION_SERVICE_ENCRYPTION_LEGACY_KEYS
+      );
+    } catch {
+      throw new Error(
+        'DEVSUITE_NOTION_SERVICE_ENCRYPTION_LEGACY_KEYS must be valid JSON'
+      );
+    }
+    if (
+      !parsedLegacy ||
+      typeof parsedLegacy !== 'object' ||
+      Array.isArray(parsedLegacy)
+    ) {
+      throw new Error(
+        'DEVSUITE_NOTION_SERVICE_ENCRYPTION_LEGACY_KEYS must be an object map'
+      );
+    }
+
+    encryptionLegacyKeys = Object.fromEntries(
+      Object.entries(parsedLegacy).filter(
+        (entry): entry is [string, string] =>
+          typeof entry[0] === 'string' && typeof entry[1] === 'string'
+      )
+    );
+  }
 
   return {
     nodeEnv: parsed.NODE_ENV,
     host: parsed.DEVSUITE_NOTION_SERVICE_HOST,
     port: parsed.DEVSUITE_NOTION_SERVICE_PORT,
     serviceToken: parsed.DEVSUITE_NOTION_SERVICE_TOKEN ?? null,
+    userTokenSecret: parsed.DEVSUITE_NOTION_SERVICE_USER_TOKEN_SECRET ?? null,
     corsOrigins,
     dataDir,
     encryptionKey: parsed.DEVSUITE_NOTION_SERVICE_ENCRYPTION_KEY,
+    encryptionKeyVersion: parsed.DEVSUITE_NOTION_SERVICE_ENCRYPTION_KEY_VERSION,
+    encryptionLegacyKeys,
     backendToken: parsed.DEVSUITE_NOTION_SERVICE_BACKEND_TOKEN ?? null,
     notionOauthClientId: parsed.DEVSUITE_NOTION_OAUTH_CLIENT_ID ?? null,
     notionOauthClientSecret: parsed.DEVSUITE_NOTION_OAUTH_CLIENT_SECRET ?? null,

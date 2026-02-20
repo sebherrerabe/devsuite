@@ -8,7 +8,7 @@
 import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import {
-  requireCompanyId,
+  requireOwnedCompanyId,
   assertCompanyScoped,
   createSoftDeletePatch,
 } from './lib/helpers';
@@ -25,7 +25,7 @@ export const listTagsByCompany = query({
     companyId: v.id('companies'),
   },
   handler: async (ctx, args) => {
-    const companyId = requireCompanyId(args.companyId);
+    const companyId = await requireOwnedCompanyId(ctx, args.companyId);
 
     return await ctx.db
       .query('tags')
@@ -45,7 +45,7 @@ export const get = query({
     tagId: v.id('tags'),
   },
   handler: async (ctx, args) => {
-    const companyId = requireCompanyId(args.companyId);
+    const companyId = await requireOwnedCompanyId(ctx, args.companyId);
     const tag = await ctx.db.get(args.tagId);
     assertCompanyScoped(tag, companyId, 'tags');
     return tag;
@@ -66,7 +66,7 @@ export const createTag = mutation({
     color: v.union(v.string(), v.null()),
   },
   handler: async (ctx, args) => {
-    const companyId = requireCompanyId(args.companyId);
+    const companyId = await requireOwnedCompanyId(ctx, args.companyId);
 
     // Validate name is not empty
     const trimmedName = args.name.trim();
@@ -117,7 +117,7 @@ export const updateTag = mutation({
     color: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
-    const companyId = requireCompanyId(args.companyId);
+    const companyId = await requireOwnedCompanyId(ctx, args.companyId);
     const tag = await ctx.db.get(args.tagId);
     assertCompanyScoped(tag, companyId, 'tags');
 
@@ -172,7 +172,7 @@ export const softDeleteTag = mutation({
     tagId: v.id('tags'),
   },
   handler: async (ctx, args) => {
-    const companyId = requireCompanyId(args.companyId);
+    const companyId = await requireOwnedCompanyId(ctx, args.companyId);
     const tag = await ctx.db.get(args.tagId);
     assertCompanyScoped(tag, companyId, 'tags');
 

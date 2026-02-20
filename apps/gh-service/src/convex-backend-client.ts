@@ -61,7 +61,16 @@ export class ConvexBackendClient {
   constructor(
     private readonly convexSiteUrl: string,
     private readonly backendToken: string
-  ) {}
+  ) {
+    if (
+      process.env.NODE_ENV === 'production' &&
+      !this.convexSiteUrl.startsWith('https://')
+    ) {
+      throw new Error(
+        'DEVSUITE_CONVEX_SITE_URL must use https:// in production'
+      );
+    }
+  }
 
   async listCompanyRoutes(userId: string): Promise<CompanyRoute[]> {
     const payload = await this.post('/github/service/company-routes', {
@@ -144,7 +153,7 @@ export class ConvexBackendClient {
         throw new ConvexBackendError(
           response.status,
           'INVALID_RESPONSE',
-          `Convex response is not valid JSON for ${path}`
+          'Convex response is not valid JSON'
         );
       }
     }
@@ -155,7 +164,7 @@ export class ConvexBackendClient {
         typeof body === 'object' &&
         typeof (body as { error?: unknown }).error === 'string'
           ? (body as { error: string }).error
-          : `Convex request failed for ${path}`;
+          : 'Convex request failed';
       throw new ConvexBackendError(response.status, 'HTTP_ERROR', message);
     }
 

@@ -121,6 +121,13 @@ export class NotionConnectionStore {
       );
   }
 
+  async list(): Promise<StoredNotionConnection[]> {
+    const store = (await this.readStore()) ?? EMPTY_STORE;
+    return Object.values(store.connections).map(connection =>
+      this.normalize(connection.userId, connection.companyId, connection)
+    );
+  }
+
   async findConnectedByWorkspace(
     workspaceId: string
   ): Promise<StoredNotionConnection | null> {

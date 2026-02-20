@@ -9,7 +9,7 @@ import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import {
-  requireCompanyId,
+  requireOwnedCompanyId,
   assertCompanyScoped,
   createSoftDeletePatch,
 } from './lib/helpers';
@@ -27,7 +27,7 @@ export const listExternalLinksByTask = query({
     taskId: v.id('tasks'),
   },
   handler: async (ctx, args) => {
-    const companyId = requireCompanyId(args.companyId);
+    const companyId = await requireOwnedCompanyId(ctx, args.companyId);
 
     // Verify task belongs to company
     const task = await ctx.db.get(args.taskId);
@@ -54,7 +54,7 @@ export const get = query({
     linkId: v.id('external_links'),
   },
   handler: async (ctx, args) => {
-    const companyId = requireCompanyId(args.companyId);
+    const companyId = await requireOwnedCompanyId(ctx, args.companyId);
     const link = await ctx.db.get(args.linkId);
     assertCompanyScoped(link, companyId, 'external_links');
     return link;
@@ -84,7 +84,7 @@ export const addExternalLink = mutation({
     identifier: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const companyId = requireCompanyId(args.companyId);
+    const companyId = await requireOwnedCompanyId(ctx, args.companyId);
 
     // Verify task belongs to company
     const task = await ctx.db.get(args.taskId);
@@ -149,7 +149,7 @@ export const updateExternalLink = mutation({
     identifier: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const companyId = requireCompanyId(args.companyId);
+    const companyId = await requireOwnedCompanyId(ctx, args.companyId);
     const link = await ctx.db.get(args.linkId);
     assertCompanyScoped(link, companyId, 'external_links');
 
@@ -199,7 +199,7 @@ export const removeExternalLink = mutation({
     linkId: v.id('external_links'),
   },
   handler: async (ctx, args) => {
-    const companyId = requireCompanyId(args.companyId);
+    const companyId = await requireOwnedCompanyId(ctx, args.companyId);
     const link = await ctx.db.get(args.linkId);
     assertCompanyScoped(link, companyId, 'external_links');
 

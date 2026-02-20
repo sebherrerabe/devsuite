@@ -1,1 +1,6 @@
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact
+else
+  echo "gitleaks not found in PATH; skipping local secret scan"
+fi
 pnpm exec lint-staged

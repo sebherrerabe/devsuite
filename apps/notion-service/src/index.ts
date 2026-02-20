@@ -10,7 +10,10 @@ const config = loadConfig();
 const logger = createLogger(
   config.nodeEnv === 'development' ? 'debug' : 'info'
 );
-const tokenCipher = TokenCipher.fromBase64(config.encryptionKey);
+const tokenCipher = TokenCipher.fromBase64(config.encryptionKey, {
+  keyVersion: config.encryptionKeyVersion,
+  legacyKeys: config.encryptionLegacyKeys,
+});
 const backendClient =
   config.convexSiteUrl && config.backendToken
     ? new ConvexBackendClient(config.convexSiteUrl, config.backendToken)

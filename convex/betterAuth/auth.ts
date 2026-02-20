@@ -7,7 +7,24 @@ import type { DataModel } from '../_generated/dataModel';
 import authConfig from '../auth.config';
 import schema from './schema';
 
-const siteUrl = process.env.SITE_URL!;
+export function requireSiteUrl(siteUrl: string | undefined): string {
+  if (!siteUrl) {
+    throw new Error('SITE_URL is required for Better Auth');
+  }
+  return siteUrl;
+}
+
+export function requireBetterAuthSecret(secret: string | undefined): string {
+  if (!secret || secret.length < 32) {
+    throw new Error('BETTER_AUTH_SECRET must be at least 32 characters');
+  }
+  return secret;
+}
+
+const siteUrl = requireSiteUrl(process.env.SITE_URL);
+const betterAuthSecret = requireBetterAuthSecret(
+  process.env.BETTER_AUTH_SECRET
+);
 
 // Better Auth Component
 export const authComponent = createClient<DataModel, typeof schema>(
@@ -24,7 +41,7 @@ export const authComponent = createClient<DataModel, typeof schema>(
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
   return {
     appName: 'DevSuite',
-    secret: process.env.BETTER_AUTH_SECRET!,
+    secret: betterAuthSecret,
     trustedOrigins: [siteUrl],
     database: authComponent.adapter(ctx),
     emailAndPassword: {

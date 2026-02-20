@@ -8,6 +8,27 @@ const http = httpRouter();
 const GH_SERVICE_BACKEND_TOKEN_ENV = 'DEVSUITE_GH_SERVICE_BACKEND_TOKEN';
 const NOTION_SERVICE_BACKEND_TOKEN_ENV =
   'DEVSUITE_NOTION_SERVICE_BACKEND_TOKEN';
+const MAX_INGEST_BATCH_ITEMS = 1000;
+const MAX_INGEST_STRING_LENGTH = 4096;
+
+export function assertServiceBackendTokensConfigured(
+  env: Record<string, string | undefined> = process.env
+): void {
+  if (env.NODE_ENV !== 'production') {
+    return;
+  }
+  if (!env[GH_SERVICE_BACKEND_TOKEN_ENV]) {
+    throw new Error(
+      `${GH_SERVICE_BACKEND_TOKEN_ENV} is required in production`
+    );
+  }
+  if (!env[NOTION_SERVICE_BACKEND_TOKEN_ENV]) {
+    throw new Error(
+      `${NOTION_SERVICE_BACKEND_TOKEN_ENV} is required in production`
+    );
+  }
+}
+assertServiceBackendTokensConfigured();
 
 // CORS handling is required for client-side frameworks (e.g. React SPA).
 authComponent.registerRoutes(http, createAuth, { cors: true });
@@ -135,10 +156,37 @@ interface NotionWebhookEventPayload {
   updatedPropertyNames?: string[] | null;
 }
 
+function isBoundedString(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= MAX_INGEST_STRING_LENGTH;
+}
+
+function isBoundedOptionalString(value: unknown): value is string | null {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === 'string' && value.length <= MAX_INGEST_STRING_LENGTH)
+  );
+}
+
+function isBoundedOptionalStringArray(
+  value: unknown
+): value is string[] | null {
+  return (
+    value === undefined ||
+    value === null ||
+    (Array.isArray(value) &&
+      value.length <= MAX_INGEST_BATCH_ITEMS &&
+      value.every(isBoundedString))
+  );
+}
+
 function parseNotificationsPayload(
   value: unknown
 ): GithubNotificationPayload[] | null {
   if (!Array.isArray(value)) {
+    return null;
+  }
+  if (value.length > MAX_INGEST_BATCH_ITEMS) {
     return null;
   }
 
@@ -162,40 +210,24 @@ function parseNotificationsPayload(
     };
 
     if (
-      typeof item.threadId !== 'string' ||
-      typeof item.reason !== 'string' ||
-      typeof item.title !== 'string' ||
+      !isBoundedString(item.threadId) ||
+      !isBoundedString(item.reason) ||
+      !isBoundedString(item.title) ||
       typeof item.unread !== 'boolean'
     ) {
       return null;
     }
 
-    if (
-      item.url !== undefined &&
-      item.url !== null &&
-      typeof item.url !== 'string'
-    ) {
+    if (!isBoundedOptionalString(item.url)) {
       return null;
     }
-    if (
-      item.repoFullName !== undefined &&
-      item.repoFullName !== null &&
-      typeof item.repoFullName !== 'string'
-    ) {
+    if (!isBoundedOptionalString(item.repoFullName)) {
       return null;
     }
-    if (
-      item.orgLogin !== undefined &&
-      item.orgLogin !== null &&
-      typeof item.orgLogin !== 'string'
-    ) {
+    if (!isBoundedOptionalString(item.orgLogin)) {
       return null;
     }
-    if (
-      item.subjectType !== undefined &&
-      item.subjectType !== null &&
-      typeof item.subjectType !== 'string'
-    ) {
+    if (!isBoundedOptionalString(item.subjectType)) {
       return null;
     }
     if (
@@ -205,11 +237,7 @@ function parseNotificationsPayload(
     ) {
       return null;
     }
-    if (
-      item.apiUrl !== undefined &&
-      item.apiUrl !== null &&
-      typeof item.apiUrl !== 'string'
-    ) {
+    if (!isBoundedOptionalString(item.apiUrl)) {
       return null;
     }
 
@@ -396,6 +424,9 @@ function parseNotionWebhookEventsPayload(
   if (!Array.isArray(value)) {
     return null;
   }
+  if (value.length > MAX_INGEST_BATCH_ITEMS) {
+    return null;
+  }
 
   const parsed: NotionWebhookEventPayload[] = [];
   for (const raw of value) {
@@ -421,9 +452,9 @@ function parseNotionWebhookEventsPayload(
     };
 
     if (
-      typeof item.eventId !== 'string' ||
-      typeof item.workspaceId !== 'string' ||
-      typeof item.eventType !== 'string'
+      !isBoundedString(item.eventId) ||
+      !isBoundedString(item.workspaceId) ||
+      !isBoundedString(item.eventType)
     ) {
       return null;
     }
@@ -440,10 +471,7 @@ function parseNotionWebhookEventsPayload(
     ];
     if (
       optionalStringOrNullFields.some(
-        candidate =>
-          candidate !== undefined &&
-          candidate !== null &&
-          typeof candidate !== 'string'
+        candidate => !isBoundedOptionalString(candidate)
       )
     ) {
       return null;
@@ -463,11 +491,7 @@ function parseNotionWebhookEventsPayload(
     ];
     if (
       optionalStringArrayOrNullFields.some(
-        candidate =>
-          candidate !== undefined &&
-          candidate !== null &&
-          (!Array.isArray(candidate) ||
-            candidate.some(entry => typeof entry !== 'string'))
+        candidate => !isBoundedOptionalStringArray(candidate)
       )
     ) {
       return null;
@@ -515,6 +539,11 @@ function parseNotionWebhookEventsPayload(
 
   return parsed;
 }
+
+export const __ingestParsersForTests = {
+  parseNotificationsPayload,
+  parseNotionWebhookEventsPayload,
+};
 
 const ghServiceListCompanyRoutes = httpAction(async (ctx, request) => {
   if (request.method !== 'POST') {
