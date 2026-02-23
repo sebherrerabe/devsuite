@@ -270,8 +270,9 @@ If you want **$0/mo**, the only option is:
 
 - [ ] Create Cloudflare account
 - [ ] Connect GitHub repo to Cloudflare Pages
-- [ ] Set build command: `pnpm install && pnpm run build:web`
+- [ ] Set build command: `pnpm run build:web:ci`
 - [ ] Set build output directory: `apps/web/dist`
+- [ ] Add env var `SKIP_DEPENDENCY_INSTALL=1` (so our filtered install runs instead of full install; avoids desktop/active-win on Linux)
 - [ ] Set environment variables (Convex URL, service URLs)
 - [ ] Configure custom domain (optional)
 - [ ] Verify SPA fallback routing works (single-page app)
@@ -322,6 +323,13 @@ If you want **$0/mo**, the only option is:
 - [ ] Test webhook delivery (Notion)
 - [ ] Monitor Railway usage to ensure it stays within $5 budget
 - [ ] Set up Railway usage alerts
+
+### Cloudflare Pages Troubleshooting
+
+| Error                                        | Fix                                                                                                                                                   |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Could not resolve convex/_generated/api`    | Ensure the commit with `convex/_generated/` files is pushed (`git push`). The commit message is "chore: commit Convex generated files for CI builds". |
+| `active-win` 404 / node-gyp compile on Linux | Use `build:web:ci` and `SKIP_DEPENDENCY_INSTALL=1`. The desktop app (Windows-only) pulls in `active-win`; the filtered install skips it.              |
 
 ---
 

@@ -8,6 +8,7 @@
     "dev": "pnpm -r --parallel --filter=!@devsuite/desktop run dev",
     "build": "pnpm -r run build",
     "build:web": "pnpm --filter @devsuite/shared build && pnpm --filter @devsuite/web build",
+    "build:web:ci": "pnpm install --filter @devsuite/web... && pnpm run build:web",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
