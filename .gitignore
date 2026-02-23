@@ -57,9 +57,8 @@ Thumbs.db
 
 # Convex
 .convex/
-convex/_generated/
 convex/convex/
-convex/betterAuth/_generated/
+# convex/_generated/ and convex/betterAuth/_generated/ are committed for CI builds (Cloudflare Pages, etc.)
 
 # Temporary files
 *.tmp
