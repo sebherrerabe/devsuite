@@ -270,7 +270,7 @@ If you want **$0/mo**, the only option is:
 
 - [ ] Create Cloudflare account
 - [ ] Connect GitHub repo to Cloudflare Pages
-- [ ] Set build command: `cd apps/web && pnpm install && pnpm build`
+- [ ] Set build command: `pnpm install && pnpm run build:web`
 - [ ] Set build output directory: `apps/web/dist`
 - [ ] Set environment variables (Convex URL, service URLs)
 - [ ] Configure custom domain (optional)
