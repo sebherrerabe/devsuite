@@ -1,5 +1,6 @@
 import { createFileRoute, Link, Outlet } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
+import { isWindowsUserAgent } from '@/lib/platform-detection';
 import { User, Building2, Settings2, Monitor } from 'lucide-react';
 
 export const Route = createFileRoute('/_app/settings')({
@@ -7,14 +8,13 @@ export const Route = createFileRoute('/_app/settings')({
 });
 
 function SettingsLayout() {
-  const isDesktopRuntime =
-    typeof window !== 'undefined' && typeof window.desktopFocus !== 'undefined';
+  const isWindows = typeof window !== 'undefined' && isWindowsUserAgent();
 
   const settingsNavItems = [
     { label: 'Profile', icon: User, to: '/settings/profile' },
     { label: 'Company', icon: Building2, to: '/settings/company' },
     { label: 'Integrations', icon: Settings2, to: '/settings/integrations' },
-    ...(isDesktopRuntime
+    ...(isWindows
       ? [{ label: 'Desktop', icon: Monitor, to: '/settings/desktop' }]
       : []),
   ];

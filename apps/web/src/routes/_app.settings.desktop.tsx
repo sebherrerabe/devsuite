@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, Navigate } from '@tanstack/react-router';
+import { isWindowsUserAgent } from '@/lib/platform-detection';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { useCurrentCompany } from '@/lib/company-context';
@@ -578,7 +579,12 @@ function DesktopSettingsPage() {
     }
   };
 
+  if (typeof window !== 'undefined' && !isWindowsUserAgent()) {
+    return <Navigate to="/settings/profile" />;
+  }
+
   if (!isDesktopRuntime) {
+    const installerUrl = import.meta.env.VITE_DESKTOP_INSTALLER_URL?.trim();
     return (
       <div className="space-y-4">
         <h3 className="text-lg font-medium">Desktop</h3>
@@ -590,9 +596,18 @@ function DesktopSettingsPage() {
           Open DevSuite Desktop, then return to this tab to edit focus controls,
           app/website block rules, and runtime preferences.
         </div>
-        <Link to="/settings/profile" className="inline-flex">
-          <Button variant="outline">Back to Profile</Button>
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          {installerUrl ? (
+            <Button asChild>
+              <a href={installerUrl} target="_blank" rel="noopener noreferrer">
+                Download DevSuite for Windows
+              </a>
+            </Button>
+          ) : null}
+          <Link to="/settings/profile" className="inline-flex">
+            <Button variant="outline">Back to Profile</Button>
+          </Link>
+        </div>
       </div>
     );
   }
