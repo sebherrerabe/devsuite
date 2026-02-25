@@ -5,7 +5,9 @@ interface ImportMetaEnv {
   readonly VITE_CONVEX_SITE_URL?: string;
   readonly VITE_SITE_URL?: string;
   readonly VITE_GH_SERVICE_URL?: string;
+  readonly VITE_GH_SERVICE_TOKEN?: string;
   readonly VITE_NOTION_SERVICE_URL?: string;
+  readonly VITE_NOTION_SERVICE_TOKEN?: string;
   readonly VITE_WEB_PUSH_VAPID_PUBLIC_KEY?: string;
   readonly VITE_DESKTOP_INSTALLER_URL?: string;
 }

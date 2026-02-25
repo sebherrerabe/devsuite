@@ -100,6 +100,11 @@ function parseJson(text: string): unknown {
   }
 }
 
+function getNotionServiceToken(): string | null {
+  const token = import.meta.env.VITE_NOTION_SERVICE_TOKEN?.trim();
+  return token || null;
+}
+
 async function request<TResponse>(
   path: string,
   params: {
@@ -109,14 +114,19 @@ async function request<TResponse>(
   }
 ): Promise<TResponse> {
   const url = new URL(path, getNotionServiceBaseUrl()).toString();
+  const token = getNotionServiceToken();
+  const headers: Record<string, string> = {
+    'x-devsuite-user-id': params.userId,
+    ...(params.body
+      ? { 'content-type': 'application/json; charset=utf-8' }
+      : {}),
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
   const response = await fetch(url, {
     method: params.method,
-    headers: {
-      'x-devsuite-user-id': params.userId,
-      ...(params.body
-        ? { 'content-type': 'application/json; charset=utf-8' }
-        : {}),
-    },
+    headers,
     body: params.body ? JSON.stringify(params.body) : undefined,
   });
 
