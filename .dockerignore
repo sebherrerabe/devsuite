@@ -1,0 +1,35 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build outputs (we build fresh)
+**/dist
+.next
+.turbo
+
+# Git and IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.swp
+*.swo
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+
+# Tests and docs (not needed for gh-service runtime)
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+coverage
+.nyc_output
+
+# Misc
+*.md
+!apps/gh-service/README.md
+.DS_Store
+Thumbs.db

@@ -42,6 +42,14 @@ Node.js service for GitHub integration workflows.
 pnpm --filter @devsuite/gh-service dev
 ```
 
+## Railway Deployment (Dockerfile)
+
+The service requires the GitHub CLI (`gh`) binary. Use the included Dockerfile:
+
+1. In Railway, set **Dockerfile Path** to `apps/gh-service/Dockerfile`
+2. Keep **Root Directory** as the repo root (or unset) so the build context includes workspace files
+3. Deploy — the image installs `gh` and builds the service
+
 Rotate stored encrypted tokens to the active key version:
 
 ```bash
