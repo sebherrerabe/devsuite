@@ -801,6 +801,15 @@ export function createNotionServiceServer(
             requestId,
             verified: Boolean(config.notionWebhookVerificationToken),
           });
+          // One-time setup: when no token is configured, log it so you can set DEVSUITE_NOTION_WEBHOOK_VERIFICATION_TOKEN
+          if (!config.notionWebhookVerificationToken) {
+            logger.info(
+              'notion webhook setup: copy this token to DEVSUITE_NOTION_WEBHOOK_VERIFICATION_TOKEN',
+              {
+                verificationToken,
+              }
+            );
+          }
           sendJson(res, 200, {
             ok: true,
             requestId,
