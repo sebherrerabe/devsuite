@@ -1,9 +1,10 @@
 import { ConnectionManager } from './connection-manager.js';
 import { ConvexBackendClient } from './convex-backend-client.js';
-import { fetchNotifications } from './gh-runner.js';
+import { fetchNotifications, type GhNotification } from './gh-runner.js';
 import type { Logger } from './logger.js';
 
 const SYNC_SINCE_OVERLAP_MS = 60_000;
+const inFlightSyncByUser = new Map<string, Promise<NotificationSyncResult>>();
 
 export interface NotificationSyncResult {
   githubUser: string | null;
@@ -27,6 +28,17 @@ export interface NotificationSyncResult {
   errorMessage: string | null;
 }
 
+interface SyncUserNotificationsOptions {
+  connectionManager: ConnectionManager;
+  backendClient: ConvexBackendClient;
+  userId: string;
+  batchSize: number;
+  sinceOverrideMs?: number | null;
+  backfillDays?: number;
+  logger?: Logger;
+  fetchNotificationsImpl?: typeof fetchNotifications;
+}
+
 function buildAllowedOrgSet(
   routes: Array<{ githubOrgLogins: string[] }>
 ): Set<string> {
@@ -42,27 +54,59 @@ function buildAllowedOrgSet(
   return orgs;
 }
 
-export async function syncUserNotifications(options: {
-  connectionManager: ConnectionManager;
-  backendClient: ConvexBackendClient;
-  userId: string;
-  batchSize: number;
-  sinceOverrideMs?: number | null;
-  backfillDays?: number;
-  logger?: Logger;
-}): Promise<NotificationSyncResult> {
-  const normalizedBackfillDays =
-    typeof options.backfillDays === 'number' &&
-    Number.isFinite(options.backfillDays) &&
-    options.backfillDays > 0
-      ? Math.floor(options.backfillDays)
-      : null;
+function normalizeBackfillDays(value: number | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return Math.floor(value);
+}
+
+function getMaxGithubUpdatedAt(notifications: GhNotification[]): number | null {
+  let maxUpdatedAt: number | null = null;
+  for (const notification of notifications) {
+    if (
+      typeof notification.updatedAt !== 'number' ||
+      !Number.isFinite(notification.updatedAt)
+    ) {
+      continue;
+    }
+    if (maxUpdatedAt === null || notification.updatedAt > maxUpdatedAt) {
+      maxUpdatedAt = notification.updatedAt;
+    }
+  }
+  return maxUpdatedAt;
+}
+
+export async function syncUserNotifications(
+  options: SyncUserNotificationsOptions
+): Promise<NotificationSyncResult> {
+  const existing = inFlightSyncByUser.get(options.userId);
+  if (existing) {
+    return existing;
+  }
+
+  const runPromise = syncUserNotificationsUnlocked(options).finally(() => {
+    if (inFlightSyncByUser.get(options.userId) === runPromise) {
+      inFlightSyncByUser.delete(options.userId);
+    }
+  });
+
+  inFlightSyncByUser.set(options.userId, runPromise);
+  return runPromise;
+}
+
+async function syncUserNotificationsUnlocked(
+  options: SyncUserNotificationsOptions
+): Promise<NotificationSyncResult> {
+  const normalizedBackfillDays = normalizeBackfillDays(options.backfillDays);
+  const fetchNotificationsImpl =
+    options.fetchNotificationsImpl ?? fetchNotifications;
   const attemptedAt = Date.now();
   const routes = await options.backendClient.listCompanyRoutes(options.userId);
   const allowedOrgLogins = buildAllowedOrgSet(routes);
 
   if (allowedOrgLogins.size === 0) {
-    const telemetry: NotificationSyncResult = {
+    const result: NotificationSyncResult = {
       githubUser: null,
       backfillDays: normalizedBackfillDays,
       status: 'skipped_no_routes',
@@ -83,12 +127,12 @@ export async function syncUserNotifications(options: {
       errorCode: null,
       errorMessage: null,
     };
-    const { backfillDays, ...telemetryBase } = telemetry;
+    const { backfillDays, ...telemetryBase } = result;
     await options.backendClient.recordSyncTelemetry(options.userId, {
       ...telemetryBase,
       ...(backfillDays !== null ? { backfillDays } : {}),
     });
-    return telemetry;
+    return result;
   }
 
   const session = await options.connectionManager.getAuthenticatedToken(
@@ -97,9 +141,13 @@ export async function syncUserNotifications(options: {
   const syncCursor = await options.backendClient.getNotificationSyncCursor(
     options.userId
   );
+  const cursorMs =
+    typeof syncCursor.lastSuccessGithubUpdatedAt === 'number'
+      ? syncCursor.lastSuccessGithubUpdatedAt
+      : syncCursor.lastSuccessAt;
   const autoSince =
-    typeof syncCursor.lastSuccessAt === 'number'
-      ? Math.max(0, syncCursor.lastSuccessAt - SYNC_SINCE_OVERLAP_MS)
+    typeof cursorMs === 'number'
+      ? Math.max(0, cursorMs - SYNC_SINCE_OVERLAP_MS)
       : null;
   const since =
     typeof options.sinceOverrideMs === 'number' &&
@@ -107,7 +155,7 @@ export async function syncUserNotifications(options: {
       ? Math.max(0, options.sinceOverrideMs)
       : autoSince;
 
-  const fetched = await fetchNotifications({
+  const fetched = await fetchNotificationsImpl({
     token: session.token,
     limit: options.batchSize,
     ...(since !== null ? { since } : {}),
@@ -139,8 +187,9 @@ export async function syncUserNotifications(options: {
     options.userId,
     notifications
   );
+  const maxProcessedGithubUpdatedAt = getMaxGithubUpdatedAt(notifications);
 
-  const telemetry: NotificationSyncResult = {
+  const syncResult: NotificationSyncResult = {
     githubUser: session.githubUser,
     backfillDays: normalizedBackfillDays,
     status: 'success',
@@ -162,10 +211,13 @@ export async function syncUserNotifications(options: {
     errorMessage: null,
   };
 
-  const { backfillDays, ...telemetryBase } = telemetry;
+  const { backfillDays, ...telemetryBase } = syncResult;
   await options.backendClient.recordSyncTelemetry(options.userId, {
     ...telemetryBase,
     ...(backfillDays !== null ? { backfillDays } : {}),
+    ...(maxProcessedGithubUpdatedAt !== null
+      ? { maxProcessedGithubUpdatedAt }
+      : {}),
   });
-  return telemetry;
+  return syncResult;
 }

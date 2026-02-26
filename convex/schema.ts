@@ -104,6 +104,7 @@ export default defineSchema({
     lastBackfillDays: v.optional(v.number()),
     lastAttemptAt: v.number(),
     lastSuccessAt: v.union(v.number(), v.null()),
+    lastSuccessGithubUpdatedAt: v.optional(v.union(v.number(), v.null())),
     errorCode: v.union(v.string(), v.null()),
     errorMessage: v.union(v.string(), v.null()),
     updatedAt: v.number(),

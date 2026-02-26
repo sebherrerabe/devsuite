@@ -17,7 +17,7 @@
     "clean": "pnpm -r run clean",
     "test": "echo 'Tests will be implemented in future projects'",
     "test:performance": "tsx --test convex/lib/performanceMetrics.test.ts convex/lib/performanceDashboard.test.ts",
-    "test:gh-notification": "tsx --test convex/lib/githubIngestDecision.test.ts convex/lib/inboxPushEligibility.test.ts convex/lib/githubThreadSelection.test.ts apps/gh-service/src/gh-runner.test.ts apps/web/src/lib/inbox-desktop-notifications-context.test.ts",
+    "test:gh-notification": "tsx --test convex/lib/githubIngestDecision.test.ts convex/lib/inboxPushEligibility.test.ts convex/lib/githubThreadSelection.test.ts apps/gh-service/src/gh-runner.test.ts apps/gh-service/src/notification-sync.test.ts apps/web/src/lib/inbox-desktop-notifications-context.test.ts",
     "test:security": "tsx --test convex/lib/helpers.security.test.ts convex/http.security.test.ts convex/betterAuth/auth.security.test.ts apps/gh-service/src/auth.security.test.ts apps/gh-service/src/config.security.test.ts apps/gh-service/src/token-cipher.security.test.ts apps/gh-service/src/server.security.test.ts apps/notion-service/src/auth.security.test.ts apps/notion-service/src/config.security.test.ts apps/notion-service/src/token-cipher.security.test.ts apps/notion-service/src/server.security.test.ts",
     "prepare": "husky"
   },

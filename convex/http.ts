@@ -129,6 +129,7 @@ interface GithubSyncTelemetryPayload {
   droppedNoRouteMatch?: number;
   droppedStaleThread?: number;
   backfillDays?: number;
+  maxProcessedGithubUpdatedAt?: number;
   attemptedAt: number;
   errorCode?: string | null;
   errorMessage?: string | null;
@@ -291,6 +292,7 @@ function parseSyncTelemetryPayload(
     droppedNoRouteMatch?: unknown;
     droppedStaleThread?: unknown;
     backfillDays?: unknown;
+    maxProcessedGithubUpdatedAt?: unknown;
     attemptedAt?: unknown;
     errorCode?: unknown;
     errorMessage?: unknown;
@@ -329,6 +331,7 @@ function parseSyncTelemetryPayload(
     payload.droppedNoRouteMatch,
     payload.droppedStaleThread,
     payload.backfillDays,
+    payload.maxProcessedGithubUpdatedAt,
   ];
   if (
     optionalNumericFields.some(
@@ -385,6 +388,12 @@ function parseSyncTelemetryPayload(
       : {}),
     ...(payload.backfillDays !== undefined
       ? { backfillDays: payload.backfillDays as number }
+      : {}),
+    ...(payload.maxProcessedGithubUpdatedAt !== undefined
+      ? {
+          maxProcessedGithubUpdatedAt:
+            payload.maxProcessedGithubUpdatedAt as number,
+        }
       : {}),
     attemptedAt: payload.attemptedAt as number,
     ...(payload.githubUser !== undefined
@@ -751,8 +760,15 @@ const ghServiceGetSyncCursor = httpAction(async (ctx, request) => {
     telemetry && typeof telemetry.lastSuccessAt === 'number'
       ? telemetry.lastSuccessAt
       : null;
+  const lastSuccessGithubUpdatedAt =
+    telemetry && typeof telemetry.lastSuccessGithubUpdatedAt === 'number'
+      ? telemetry.lastSuccessGithubUpdatedAt
+      : null;
 
-  return jsonResponse(200, { lastSuccessAt });
+  return jsonResponse(200, {
+    lastSuccessAt,
+    lastSuccessGithubUpdatedAt,
+  });
 });
 
 const notionServiceUpsertConnection = httpAction(async (ctx, request) => {

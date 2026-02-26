@@ -44,6 +44,7 @@ export interface GithubNotificationSyncTelemetry {
   droppedNoRouteMatch: number;
   droppedStaleThread: number;
   backfillDays?: number;
+  maxProcessedGithubUpdatedAt?: number;
   attemptedAt: number;
   errorCode?: string | null;
   errorMessage?: string | null;
@@ -51,6 +52,7 @@ export interface GithubNotificationSyncTelemetry {
 
 export interface GithubNotificationSyncCursor {
   lastSuccessAt: number | null;
+  lastSuccessGithubUpdatedAt: number | null;
 }
 
 export class ConvexBackendError extends Error {
@@ -132,8 +134,16 @@ export class ConvexBackendClient {
       Number.isFinite(payload.lastSuccessAt)
         ? payload.lastSuccessAt
         : null;
+    const lastSuccessGithubUpdatedAt =
+      typeof payload.lastSuccessGithubUpdatedAt === 'number' &&
+      Number.isFinite(payload.lastSuccessGithubUpdatedAt)
+        ? payload.lastSuccessGithubUpdatedAt
+        : null;
 
-    return { lastSuccessAt };
+    return {
+      lastSuccessAt,
+      lastSuccessGithubUpdatedAt,
+    };
   }
 
   private async post(

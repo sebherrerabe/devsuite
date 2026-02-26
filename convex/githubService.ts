@@ -309,6 +309,7 @@ const notificationSyncTelemetryInput = v.object({
   droppedNoRouteMatch: v.optional(v.number()),
   droppedStaleThread: v.optional(v.number()),
   backfillDays: v.optional(v.number()),
+  maxProcessedGithubUpdatedAt: v.optional(v.number()),
   attemptedAt: v.number(),
   errorCode: v.optional(v.union(v.string(), v.null())),
   errorMessage: v.optional(v.union(v.string(), v.null())),
@@ -330,6 +331,26 @@ export const recordNotificationSyncTelemetry = internalMutation({
       args.telemetry.status === 'success'
         ? args.telemetry.attemptedAt
         : (existing?.lastSuccessAt ?? null);
+    const existingLastSuccessGithubUpdatedAt =
+      existing && typeof existing.lastSuccessGithubUpdatedAt === 'number'
+        ? existing.lastSuccessGithubUpdatedAt
+        : null;
+    const incomingMaxProcessedGithubUpdatedAt =
+      typeof args.telemetry.maxProcessedGithubUpdatedAt === 'number' &&
+      Number.isFinite(args.telemetry.maxProcessedGithubUpdatedAt)
+        ? args.telemetry.maxProcessedGithubUpdatedAt
+        : null;
+    const nextLastSuccessGithubUpdatedAt =
+      args.telemetry.status === 'success'
+        ? incomingMaxProcessedGithubUpdatedAt !== null
+          ? existingLastSuccessGithubUpdatedAt !== null
+            ? Math.max(
+                existingLastSuccessGithubUpdatedAt,
+                incomingMaxProcessedGithubUpdatedAt
+              )
+            : incomingMaxProcessedGithubUpdatedAt
+          : existingLastSuccessGithubUpdatedAt
+        : existingLastSuccessGithubUpdatedAt;
     const isBackfillAttempt =
       typeof args.telemetry.backfillDays === 'number' &&
       Number.isFinite(args.telemetry.backfillDays) &&
@@ -367,6 +388,7 @@ export const recordNotificationSyncTelemetry = internalMutation({
           }),
       lastAttemptAt: args.telemetry.attemptedAt,
       lastSuccessAt: nextLastSuccessAt,
+      lastSuccessGithubUpdatedAt: nextLastSuccessGithubUpdatedAt,
       errorCode: args.telemetry.errorCode ?? null,
       errorMessage: args.telemetry.errorMessage ?? null,
       updatedAt: now,
