@@ -17,6 +17,10 @@ export interface NotificationSyncResult {
   notificationsUnmatched: number;
   deliveriesCreated: number;
   deliveriesUpdated: number;
+  droppedMissingOrg: number;
+  droppedOutOfScope: number;
+  droppedNoRouteMatch: number;
+  droppedStaleThread: number;
   attemptedAt: number;
   errorCode: string | null;
   errorMessage: string | null;
@@ -61,6 +65,10 @@ export async function syncUserNotifications(options: {
       notificationsUnmatched: 0,
       deliveriesCreated: 0,
       deliveriesUpdated: 0,
+      droppedMissingOrg: 0,
+      droppedOutOfScope: 0,
+      droppedNoRouteMatch: 0,
+      droppedStaleThread: 0,
       attemptedAt,
       errorCode: null,
       errorMessage: null,
@@ -94,11 +102,18 @@ export async function syncUserNotifications(options: {
       : {}),
   });
 
+  let droppedMissingOrg = 0;
+  let droppedOutOfScope = 0;
   const notifications = fetched.filter(item => {
     if (!item.orgLogin) {
+      droppedMissingOrg += 1;
       return false;
     }
-    return allowedOrgLogins.has(item.orgLogin.toLowerCase());
+    if (!allowedOrgLogins.has(item.orgLogin.toLowerCase())) {
+      droppedOutOfScope += 1;
+      return false;
+    }
+    return true;
   });
 
   const result = await options.backendClient.ingestNotifications(
@@ -118,6 +133,10 @@ export async function syncUserNotifications(options: {
     notificationsUnmatched: result.notificationsUnmatched,
     deliveriesCreated: result.deliveriesCreated,
     deliveriesUpdated: result.deliveriesUpdated,
+    droppedMissingOrg,
+    droppedOutOfScope,
+    droppedNoRouteMatch: result.notificationsUnmatched,
+    droppedStaleThread: result.deliveriesSkippedStale,
     attemptedAt,
     errorCode: null,
     errorMessage: null,

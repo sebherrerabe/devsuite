@@ -51,6 +51,10 @@ export interface GhNotificationSyncResult {
   notificationsUnmatched: number;
   deliveriesCreated: number;
   deliveriesUpdated: number;
+  droppedMissingOrg: number;
+  droppedOutOfScope: number;
+  droppedNoRouteMatch: number;
+  droppedStaleThread: number;
   attemptedAt: number;
   errorCode: string | null;
   errorMessage: string | null;

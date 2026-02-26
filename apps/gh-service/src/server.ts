@@ -506,6 +506,10 @@ export function createGhServiceServer(
                 notificationsUnmatched: 0,
                 deliveriesCreated: 0,
                 deliveriesUpdated: 0,
+                droppedMissingOrg: 0,
+                droppedOutOfScope: 0,
+                droppedNoRouteMatch: 0,
+                droppedStaleThread: 0,
                 attemptedAt: Date.now(),
                 errorCode: error.code,
                 errorMessage: error.message,
@@ -530,6 +534,10 @@ export function createGhServiceServer(
           notificationsUnmatched: syncResult.notificationsUnmatched,
           deliveriesCreated: syncResult.deliveriesCreated,
           deliveriesUpdated: syncResult.deliveriesUpdated,
+          droppedMissingOrg: syncResult.droppedMissingOrg,
+          droppedOutOfScope: syncResult.droppedOutOfScope,
+          droppedNoRouteMatch: syncResult.droppedNoRouteMatch,
+          droppedStaleThread: syncResult.droppedStaleThread,
         });
 
         sendJson(res, 200, {

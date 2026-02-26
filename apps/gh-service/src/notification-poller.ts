@@ -128,6 +128,10 @@ export class NotificationPoller {
         notificationsUnmatched: result.notificationsUnmatched,
         deliveriesCreated: result.deliveriesCreated,
         deliveriesUpdated: result.deliveriesUpdated,
+        droppedMissingOrg: result.droppedMissingOrg,
+        droppedOutOfScope: result.droppedOutOfScope,
+        droppedNoRouteMatch: result.droppedNoRouteMatch,
+        droppedStaleThread: result.droppedStaleThread,
       });
     } catch (error) {
       if (error instanceof ConnectionManagerError) {
@@ -197,6 +201,10 @@ export class NotificationPoller {
         notificationsUnmatched: 0,
         deliveriesCreated: 0,
         deliveriesUpdated: 0,
+        droppedMissingOrg: 0,
+        droppedOutOfScope: 0,
+        droppedNoRouteMatch: 0,
+        droppedStaleThread: 0,
         attemptedAt: Date.now(),
         errorCode,
         errorMessage,

@@ -311,6 +311,23 @@ function isHostGhAuthStatusWarning(message: string): boolean {
   );
 }
 
+function readOptionalNumberField(source: unknown, key: string): number | null {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return null;
+  }
+
+  const value = (source as Record<string, unknown>)[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return value;
+}
+
+function formatDropDiagnostics(sync: GhNotificationSyncResult): string {
+  return `missing org ${sync.droppedMissingOrg}, out of scope ${sync.droppedOutOfScope}, no route ${sync.droppedNoRouteMatch}, stale ${sync.droppedStaleThread}`;
+}
+
 function IntegrationsSettingsPage() {
   const { currentCompany } = useCurrentCompany();
   const companyId = currentCompany?._id ?? null;
@@ -625,6 +642,20 @@ function IntegrationsSettingsPage() {
       notificationsUnmatched: persistedSyncTelemetry.notificationsUnmatched,
       deliveriesCreated: persistedSyncTelemetry.deliveriesCreated,
       deliveriesUpdated: persistedSyncTelemetry.deliveriesUpdated,
+      droppedMissingOrg:
+        readOptionalNumberField(persistedSyncTelemetry, 'droppedMissingOrg') ??
+        0,
+      droppedOutOfScope:
+        readOptionalNumberField(persistedSyncTelemetry, 'droppedOutOfScope') ??
+        0,
+      droppedNoRouteMatch:
+        readOptionalNumberField(
+          persistedSyncTelemetry,
+          'droppedNoRouteMatch'
+        ) ?? 0,
+      droppedStaleThread:
+        readOptionalNumberField(persistedSyncTelemetry, 'droppedStaleThread') ??
+        0,
       attemptedAt: persistedSyncTelemetry.lastAttemptAt,
       errorCode: persistedSyncTelemetry.errorCode,
       errorMessage: persistedSyncTelemetry.errorMessage,
@@ -731,7 +762,7 @@ function IntegrationsSettingsPage() {
       }
 
       showToast.success(
-        `Synced ${payload.sync.notificationsFiltered} in-scope GitHub notifications (${payload.sync.notificationsRouted} routed, ${payload.sync.deliveriesCreated} new, ${payload.sync.deliveriesUpdated} updated)`
+        `Synced ${payload.sync.notificationsFiltered} in-scope GitHub notifications (${payload.sync.notificationsRouted} routed, ${payload.sync.deliveriesCreated} new, ${payload.sync.deliveriesUpdated} updated, dropped: ${formatDropDiagnostics(payload.sync)})`
       );
     } catch (error) {
       const message = formatServiceError(error);
@@ -1233,7 +1264,8 @@ function IntegrationsSettingsPage() {
                       scope {displayedSyncResult.notificationsFiltered}, routed{' '}
                       {displayedSyncResult.notificationsRouted}, created{' '}
                       {displayedSyncResult.deliveriesCreated}, updated{' '}
-                      {displayedSyncResult.deliveriesUpdated}.
+                      {displayedSyncResult.deliveriesUpdated}, dropped{' '}
+                      {formatDropDiagnostics(displayedSyncResult)}.
                       {lastSuccessfulSyncAt
                         ? ` Last successful sync: ${formatTimestamp(lastSuccessfulSyncAt)}.`
                         : ''}

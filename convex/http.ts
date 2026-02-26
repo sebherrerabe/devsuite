@@ -124,6 +124,10 @@ interface GithubSyncTelemetryPayload {
   notificationsUnmatched: number;
   deliveriesCreated: number;
   deliveriesUpdated: number;
+  droppedMissingOrg?: number;
+  droppedOutOfScope?: number;
+  droppedNoRouteMatch?: number;
+  droppedStaleThread?: number;
   attemptedAt: number;
   errorCode?: string | null;
   errorMessage?: string | null;
@@ -281,6 +285,10 @@ function parseSyncTelemetryPayload(
     notificationsUnmatched?: unknown;
     deliveriesCreated?: unknown;
     deliveriesUpdated?: unknown;
+    droppedMissingOrg?: unknown;
+    droppedOutOfScope?: unknown;
+    droppedNoRouteMatch?: unknown;
+    droppedStaleThread?: unknown;
     attemptedAt?: unknown;
     errorCode?: unknown;
     errorMessage?: unknown;
@@ -309,6 +317,20 @@ function parseSyncTelemetryPayload(
   if (
     typeof payload.hasRouteMappings !== 'boolean' ||
     numericFields.some(value => typeof value !== 'number')
+  ) {
+    return null;
+  }
+
+  const optionalNumericFields = [
+    payload.droppedMissingOrg,
+    payload.droppedOutOfScope,
+    payload.droppedNoRouteMatch,
+    payload.droppedStaleThread,
+  ];
+  if (
+    optionalNumericFields.some(
+      value => value !== undefined && typeof value !== 'number'
+    )
   ) {
     return null;
   }
@@ -346,6 +368,18 @@ function parseSyncTelemetryPayload(
     notificationsUnmatched: payload.notificationsUnmatched as number,
     deliveriesCreated: payload.deliveriesCreated as number,
     deliveriesUpdated: payload.deliveriesUpdated as number,
+    ...(payload.droppedMissingOrg !== undefined
+      ? { droppedMissingOrg: payload.droppedMissingOrg as number }
+      : {}),
+    ...(payload.droppedOutOfScope !== undefined
+      ? { droppedOutOfScope: payload.droppedOutOfScope as number }
+      : {}),
+    ...(payload.droppedNoRouteMatch !== undefined
+      ? { droppedNoRouteMatch: payload.droppedNoRouteMatch as number }
+      : {}),
+    ...(payload.droppedStaleThread !== undefined
+      ? { droppedStaleThread: payload.droppedStaleThread as number }
+      : {}),
     attemptedAt: payload.attemptedAt as number,
     ...(payload.githubUser !== undefined
       ? { githubUser: payload.githubUser }

@@ -38,6 +38,7 @@ import { useInboxDesktopNotifications } from '@/lib/inbox-desktop-notifications-
 import { resolveGithubRouteScope } from '@/lib/github-route-scope';
 import {
   GhServiceRequestError,
+  type GhNotificationSyncResult,
   syncGithubNotifications,
 } from '@/lib/gh-service-client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -108,6 +109,10 @@ function formatSyncError(error: unknown): string {
     return error.message;
   }
   return 'Failed to refresh GitHub notifications';
+}
+
+function formatDropDiagnostics(sync: GhNotificationSyncResult): string {
+  return `missing org ${sync.droppedMissingOrg}, out of scope ${sync.droppedOutOfScope}, no route ${sync.droppedNoRouteMatch}, stale ${sync.droppedStaleThread}`;
 }
 
 function getSourceLabel(source: InboxItemSource): string {
@@ -423,7 +428,7 @@ function InboxPage() {
       const payload = await syncGithubNotifications(userId);
       const sync = payload.sync;
       showToast.success(
-        `GitHub sync complete. fetched ${sync.notificationsFetched}, in scope ${sync.notificationsFiltered}, routed ${sync.notificationsRouted}, created ${sync.deliveriesCreated}, updated ${sync.deliveriesUpdated}, unmatched ${sync.notificationsUnmatched}.`
+        `GitHub sync complete. fetched ${sync.notificationsFetched}, in scope ${sync.notificationsFiltered}, routed ${sync.notificationsRouted}, created ${sync.deliveriesCreated}, updated ${sync.deliveriesUpdated}, dropped: ${formatDropDiagnostics(sync)}.`
       );
     } catch (error) {
       showToast.error(formatSyncError(error));

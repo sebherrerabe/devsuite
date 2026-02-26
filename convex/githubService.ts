@@ -304,6 +304,10 @@ const notificationSyncTelemetryInput = v.object({
   notificationsUnmatched: v.number(),
   deliveriesCreated: v.number(),
   deliveriesUpdated: v.number(),
+  droppedMissingOrg: v.optional(v.number()),
+  droppedOutOfScope: v.optional(v.number()),
+  droppedNoRouteMatch: v.optional(v.number()),
+  droppedStaleThread: v.optional(v.number()),
   attemptedAt: v.number(),
   errorCode: v.optional(v.union(v.string(), v.null())),
   errorMessage: v.optional(v.union(v.string(), v.null())),
@@ -339,6 +343,10 @@ export const recordNotificationSyncTelemetry = internalMutation({
       notificationsUnmatched: args.telemetry.notificationsUnmatched,
       deliveriesCreated: args.telemetry.deliveriesCreated,
       deliveriesUpdated: args.telemetry.deliveriesUpdated,
+      droppedMissingOrg: args.telemetry.droppedMissingOrg ?? 0,
+      droppedOutOfScope: args.telemetry.droppedOutOfScope ?? 0,
+      droppedNoRouteMatch: args.telemetry.droppedNoRouteMatch ?? 0,
+      droppedStaleThread: args.telemetry.droppedStaleThread ?? 0,
       lastAttemptAt: args.telemetry.attemptedAt,
       lastSuccessAt: nextLastSuccessAt,
       errorCode: args.telemetry.errorCode ?? null,
@@ -393,6 +401,7 @@ export const ingestNotifications = internalMutation({
         notificationsUnmatched: args.notifications.length,
         deliveriesCreated: 0,
         deliveriesUpdated: 0,
+        deliveriesSkippedStale: 0,
       };
     }
 
@@ -501,6 +510,7 @@ export const ingestNotifications = internalMutation({
     let unmatched = 0;
     let created = 0;
     let updated = 0;
+    let staleSkipped = 0;
 
     for (const notification of args.notifications) {
       const orgLogin = notification.orgLogin
@@ -588,6 +598,7 @@ export const ingestNotifications = internalMutation({
             (existing.ghUpdatedAt !== null &&
               incomingUpdatedAt <= existing.ghUpdatedAt)
           ) {
+            staleSkipped += 1;
             console.log('[gh-ingest] skipped', {
               threadId: notification.threadId,
               reason: !incomingUpdatedAt
@@ -665,6 +676,7 @@ export const ingestNotifications = internalMutation({
       notificationsUnmatched: unmatched,
       deliveriesCreated: created,
       deliveriesUpdated: updated,
+      deliveriesSkippedStale: staleSkipped,
     };
   },
 });

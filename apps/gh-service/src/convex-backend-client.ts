@@ -18,6 +18,7 @@ export interface IngestNotificationsResult {
   notificationsUnmatched: number;
   deliveriesCreated: number;
   deliveriesUpdated: number;
+  deliveriesSkippedStale: number;
 }
 
 export interface CompanyRoute {
@@ -38,6 +39,10 @@ export interface GithubNotificationSyncTelemetry {
   notificationsUnmatched: number;
   deliveriesCreated: number;
   deliveriesUpdated: number;
+  droppedMissingOrg: number;
+  droppedOutOfScope: number;
+  droppedNoRouteMatch: number;
+  droppedStaleThread: number;
   attemptedAt: number;
   errorCode?: string | null;
   errorMessage?: string | null;
@@ -182,6 +187,7 @@ function parseIngestNotificationsResult(
     'notificationsUnmatched',
     'deliveriesCreated',
     'deliveriesUpdated',
+    'deliveriesSkippedStale',
   ] as const;
 
   for (const key of keys) {
@@ -201,5 +207,6 @@ function parseIngestNotificationsResult(
     notificationsUnmatched: payload.notificationsUnmatched as number,
     deliveriesCreated: payload.deliveriesCreated as number,
     deliveriesUpdated: payload.deliveriesUpdated as number,
+    deliveriesSkippedStale: payload.deliveriesSkippedStale as number,
   };
 }
