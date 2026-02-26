@@ -84,4 +84,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: devsuite-desktop-windows-${{ steps.desktop_version.outputs.build_version }}
-          path: apps/desktop/out/make/**
+          if-no-files-found: error
+          path: |
+            apps/desktop/out/*.exe
+            apps/desktop/out/*.blockmap
+            apps/desktop/out/latest*.yml
