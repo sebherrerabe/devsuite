@@ -65,6 +65,16 @@ jobs:
         run: pnpm --filter @devsuite/desktop test:e2e
 
       - name: Build Windows installer artifacts
+        env:
+          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+          VITE_CONVEX_SITE_URL: ${{ vars.VITE_CONVEX_SITE_URL }}
+          VITE_SITE_URL: ${{ vars.VITE_SITE_URL }}
+          VITE_GH_SERVICE_URL: ${{ vars.VITE_GH_SERVICE_URL }}
+          VITE_GH_SERVICE_TOKEN: ${{ secrets.VITE_GH_SERVICE_TOKEN }}
+          VITE_NOTION_SERVICE_URL: ${{ vars.VITE_NOTION_SERVICE_URL }}
+          VITE_NOTION_SERVICE_TOKEN: ${{ secrets.VITE_NOTION_SERVICE_TOKEN }}
+          VITE_WEB_PUSH_VAPID_PUBLIC_KEY: ${{ secrets.VITE_WEB_PUSH_VAPID_PUBLIC_KEY }}
+          VITE_DESKTOP_INSTALLER_URL: ${{ vars.VITE_DESKTOP_INSTALLER_URL }}
         run: pnpm --filter @devsuite/desktop make:win
 
       - name: Installer smoke test (install/uninstall)
