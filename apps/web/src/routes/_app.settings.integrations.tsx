@@ -328,6 +328,19 @@ function formatDropDiagnostics(sync: GhNotificationSyncResult): string {
   return `missing org ${sync.droppedMissingOrg}, out of scope ${sync.droppedOutOfScope}, no route ${sync.droppedNoRouteMatch}, stale ${sync.droppedStaleThread}`;
 }
 
+function buildDropHint(sync: GhNotificationSyncResult): string | null {
+  if (sync.droppedOutOfScope > 0) {
+    return 'Some notifications were out of your configured company scope. Add missing GitHub org mappings or repositories to include them.';
+  }
+  if (sync.droppedMissingOrg > 0) {
+    return 'Some notifications did not expose a routeable repository owner/org, so they could not be scoped to a company.';
+  }
+  if (sync.droppedNoRouteMatch > 0) {
+    return 'Some in-scope notifications did not match an active enabled company route. Verify GitHub integration is enabled for the intended company.';
+  }
+  return null;
+}
+
 function IntegrationsSettingsPage() {
   const { currentCompany } = useCurrentCompany();
   const companyId = currentCompany?._id ?? null;
@@ -675,6 +688,9 @@ function IntegrationsSettingsPage() {
   const showRuntimeAsError = runtime?.error
     ? !isHostGhAuthStatusWarning(runtime.error)
     : false;
+  const syncDropHint = displayedSyncResult
+    ? buildDropHint(displayedSyncResult)
+    : null;
 
   const handleStartLogin = async () => {
     if (!userId) {
@@ -1272,6 +1288,11 @@ function IntegrationsSettingsPage() {
                     </AlertDescription>
                   </Alert>
                 )}
+              {syncDropHint && (
+                <Alert>
+                  <AlertDescription>{syncDropHint}</AlertDescription>
+                </Alert>
+              )}
 
               {runtimeStatusMessage && (
                 <Alert variant={showRuntimeAsError ? 'destructive' : undefined}>
