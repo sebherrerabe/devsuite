@@ -127,9 +127,23 @@ export const upsertConnection = internalMutation({
       existingForWorkspace &&
       existingForWorkspace.companyId !== args.companyId
     ) {
-      throw new Error(
-        'This Notion workspace is already linked to a different company'
-      );
+      // A workspace link can become orphaned if its company is later soft-deleted.
+      // Soft-delete the stale link so the workspace can be re-linked.
+      const linkedCompany = await ctx.db.get(existingForWorkspace.companyId);
+      if (
+        !linkedCompany ||
+        linkedCompany.isDeleted ||
+        linkedCompany.deletedAt !== null
+      ) {
+        await ctx.db.patch(existingForWorkspace._id, {
+          updatedAt: Date.now(),
+          deletedAt: Date.now(),
+        });
+      } else {
+        throw new Error(
+          'This Notion workspace is already linked to a different company'
+        );
+      }
     }
 
     const existingForCompany = await ctx.db

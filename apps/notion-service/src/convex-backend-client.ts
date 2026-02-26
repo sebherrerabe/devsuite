@@ -136,12 +136,24 @@ export class ConvexBackendClient {
     }
 
     if (!response.ok) {
-      const message =
+      const messageFromErrorField =
         body &&
         typeof body === 'object' &&
         typeof (body as { error?: unknown }).error === 'string'
           ? (body as { error: string }).error
-          : 'Convex request failed';
+          : null;
+      const messageFromCodeField =
+        body &&
+        typeof body === 'object' &&
+        typeof (body as { code?: unknown }).code === 'string'
+          ? (body as { code: string }).code
+              .replace(/^\[Request ID:[^\]]+\]\s*/i, '')
+              .trim()
+          : null;
+      const message =
+        messageFromErrorField ??
+        messageFromCodeField ??
+        'Convex request failed';
       throw new ConvexBackendError(
         response.status,
         'HTTP_ERROR',
