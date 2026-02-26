@@ -153,20 +153,81 @@ function Invoke-BoundedProcess {
   Write-Host "[desktop:install-smoke][$Phase] Completed successfully."
 }
 
+function Get-InstallSearchRoots {
+  $roots = @()
+  if (-not [string]::IsNullOrWhiteSpace($env:PROGRAMFILES)) {
+    $roots += Join-Path $env:PROGRAMFILES 'DevSuite'
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($env:'PROGRAMFILES(X86)')) {
+    $roots += Join-Path $env:'PROGRAMFILES(X86)' 'DevSuite'
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    $roots += Join-Path $env:LOCALAPPDATA 'Programs\DevSuite'
+  }
+
+  return @(
+    $roots |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+      Select-Object -Unique
+  )
+}
+
+function Get-DevSuiteExecutables {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]] $SearchRoots
+  )
+
+  $matches = @()
+
+  foreach ($root in $SearchRoots) {
+    if (-not (Test-Path -Path $root)) {
+      continue
+    }
+
+    $matches += @(Get-ChildItem -Path $root -Recurse -Filter 'DevSuite.exe' -ErrorAction SilentlyContinue)
+  }
+
+  return @(
+    $matches |
+      Sort-Object LastWriteTimeUtc -Descending
+  )
+}
+
+function Resolve-InstallState {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]] $SearchRoots
+  )
+
+  $appCandidates = @(Get-DevSuiteExecutables -SearchRoots $SearchRoots)
+  if ($appCandidates.Count -lt 1) {
+    return $null
+  }
+
+  $appExePath = $appCandidates[0].FullName
+  $installRoot = Split-Path -Parent $appExePath
+
+  return [pscustomobject]@{
+    AppExePath   = $appExePath
+    InstallRoot  = $installRoot
+    UninstallExe = Join-Path $installRoot 'Uninstall DevSuite.exe'
+  }
+}
+
 function Wait-ForDevSuiteRemoval {
   param(
     [Parameter(Mandatory = $true)]
-    [string] $InstallRoot,
+    [string[]] $SearchRoots,
     [Parameter(Mandatory = $true)]
     [int] $TimeoutSeconds
   )
 
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   do {
-    $matches = @()
-    if (Test-Path -Path $InstallRoot) {
-      $matches = @(Get-ChildItem -Path $InstallRoot -Recurse -Filter 'DevSuite.exe' -ErrorAction SilentlyContinue)
-    }
+    $matches = @(Get-DevSuiteExecutables -SearchRoots $SearchRoots)
 
     if ($matches.Count -eq 0) {
       return $true
@@ -202,55 +263,48 @@ $uninstallSettleTimeoutSeconds = Get-PositiveIntFromEnv -Name 'DEVSUITE_INSTALL_
 Write-Host "[desktop:install-smoke] Using installer: $($setupCandidate.FullName)"
 Write-Host "[desktop:install-smoke] Timeouts (s): install=$installTimeoutSeconds upgrade=$upgradeTimeoutSeconds uninstall=$uninstallTimeoutSeconds uninstall_settle=$uninstallSettleTimeoutSeconds"
 
-$installRoot = Join-Path $env:PROGRAMFILES 'DevSuite'
-$uninstallExe = Join-Path $installRoot 'Uninstall DevSuite.exe'
+$installSearchRoots = @(Get-InstallSearchRoots)
+Write-Host "[desktop:install-smoke] Install search roots: $($installSearchRoots -join '; ')"
+$installState = $null
 
 try {
   Invoke-BoundedProcess -Phase 'install' -FilePath $setupCandidate.FullName -Arguments @('/S') -TimeoutSeconds $installTimeoutSeconds
   Start-Sleep -Seconds 4
 
-  $appCandidates = @()
-  if (Test-Path -Path $installRoot) {
-    $appCandidates = @(Get-ChildItem -Path $installRoot -Recurse -Filter 'DevSuite.exe')
+  $installState = Resolve-InstallState -SearchRoots $installSearchRoots
+  if ($null -eq $installState) {
+    throw "Installer did not produce DevSuite.exe under expected roots: $($installSearchRoots -join '; ')"
   }
 
-  if ($appCandidates.Count -lt 1) {
-    throw "Installer did not produce DevSuite.exe under $installRoot"
-  }
-
+  Write-Host "[desktop:install-smoke] Detected app binary: $($installState.AppExePath)"
+  Write-Host "[desktop:install-smoke] Detected install root: $($installState.InstallRoot)"
   Write-Host '[desktop:install-smoke] Install check passed.'
 
   Invoke-BoundedProcess -Phase 'upgrade' -FilePath $setupCandidate.FullName -Arguments @('/S') -TimeoutSeconds $upgradeTimeoutSeconds
   Start-Sleep -Seconds 4
 
-  $appCandidatesAfterUpgrade = @()
-  if (Test-Path -Path $installRoot) {
-    $appCandidatesAfterUpgrade = @(Get-ChildItem -Path $installRoot -Recurse -Filter 'DevSuite.exe')
+  $installState = Resolve-InstallState -SearchRoots $installSearchRoots
+  if ($null -eq $installState) {
+    throw "Upgrade check failed: DevSuite.exe missing under expected roots after second install pass"
   }
 
-  if ($appCandidatesAfterUpgrade.Count -lt 1) {
-    throw "Upgrade check failed: DevSuite.exe missing under $installRoot after second install pass"
-  }
-
+  Write-Host "[desktop:install-smoke] Upgrade binary path: $($installState.AppExePath)"
   Write-Host '[desktop:install-smoke] Upgrade check passed.'
 
-  if (-not (Test-Path -Path $uninstallExe)) {
-    throw "Uninstall executable not found at $uninstallExe"
+  if (-not (Test-Path -Path $installState.UninstallExe)) {
+    throw "Uninstall executable not found at $($installState.UninstallExe)"
   }
 
-  Invoke-BoundedProcess -Phase 'uninstall' -FilePath $uninstallExe -Arguments @('/S') -TimeoutSeconds $uninstallTimeoutSeconds
+  Invoke-BoundedProcess -Phase 'uninstall' -FilePath $installState.UninstallExe -Arguments @('/S') -TimeoutSeconds $uninstallTimeoutSeconds
   Start-Sleep -Seconds 2
 
-  $appCandidatesAfterUninstall = @()
-  if (Test-Path -Path $installRoot) {
-    $appCandidatesAfterUninstall = @(Get-ChildItem -Path $installRoot -Recurse -Filter 'DevSuite.exe')
-  }
+  $appCandidatesAfterUninstall = @(Get-DevSuiteExecutables -SearchRoots $installSearchRoots)
 
-  if ($appCandidatesAfterUninstall.Count -gt 0 -and -not (Wait-ForDevSuiteRemoval -InstallRoot $installRoot -TimeoutSeconds $uninstallSettleTimeoutSeconds)) {
-    $appCandidatesAfterUninstall = @(Get-ChildItem -Path $installRoot -Recurse -Filter 'DevSuite.exe' -ErrorAction SilentlyContinue)
+  if ($appCandidatesAfterUninstall.Count -gt 0 -and -not (Wait-ForDevSuiteRemoval -SearchRoots $installSearchRoots -TimeoutSeconds $uninstallSettleTimeoutSeconds)) {
+    $appCandidatesAfterUninstall = @(Get-DevSuiteExecutables -SearchRoots $installSearchRoots)
     $paths = @($appCandidatesAfterUninstall | Select-Object -ExpandProperty FullName)
     $pathDetails = if ($paths.Count -gt 0) { $paths -join '; ' } else { '(none)' }
-    throw "Uninstall check failed: DevSuite.exe still present under $installRoot. Remaining files: $pathDetails"
+    throw "Uninstall check failed: DevSuite.exe still present under expected install roots. Remaining files: $pathDetails"
   }
 
   Write-Host '[desktop:install-smoke] Uninstall check passed.'
