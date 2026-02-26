@@ -109,7 +109,8 @@ const prBundleInputSchema = z.object({
 });
 
 const notificationSyncInputSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  backfillDays: z.coerce.number().int().min(1).max(30).optional(),
 });
 
 function sendJson(
@@ -487,6 +488,13 @@ export function createGhServiceServer(
           backendClient,
           userId: auth.userId,
           batchSize: parsedBody.data.limit ?? config.notificationBatchSize,
+          ...(parsedBody.data.backfillDays !== undefined
+            ? {
+                sinceOverrideMs:
+                  Date.now() -
+                  parsedBody.data.backfillDays * 24 * 60 * 60 * 1000,
+              }
+            : {}),
           logger,
         }).catch(async (error: unknown) => {
           if (
@@ -534,6 +542,7 @@ export function createGhServiceServer(
           notificationsUnmatched: syncResult.notificationsUnmatched,
           deliveriesCreated: syncResult.deliveriesCreated,
           deliveriesUpdated: syncResult.deliveriesUpdated,
+          backfillDays: parsedBody.data.backfillDays ?? null,
           droppedMissingOrg: syncResult.droppedMissingOrg,
           droppedOutOfScope: syncResult.droppedOutOfScope,
           droppedNoRouteMatch: syncResult.droppedNoRouteMatch,

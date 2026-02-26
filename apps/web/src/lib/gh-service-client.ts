@@ -169,11 +169,19 @@ export async function disconnectGithub(
 
 export async function syncGithubNotifications(
   userId: string,
-  options?: { limit?: number }
+  options?: { limit?: number; backfillDays?: number }
 ): Promise<GhNotificationSyncEnvelope> {
+  const body: Record<string, unknown> = {};
+  if (options?.limit !== undefined) {
+    body.limit = options.limit;
+  }
+  if (options?.backfillDays !== undefined) {
+    body.backfillDays = options.backfillDays;
+  }
+
   return request<GhNotificationSyncEnvelope>('/github/notifications/sync', {
     userId,
     method: 'POST',
-    body: options?.limit ? { limit: options.limit } : {},
+    body,
   });
 }

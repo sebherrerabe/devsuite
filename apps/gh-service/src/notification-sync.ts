@@ -46,6 +46,7 @@ export async function syncUserNotifications(options: {
   backendClient: ConvexBackendClient;
   userId: string;
   batchSize: number;
+  sinceOverrideMs?: number | null;
   logger?: Logger;
 }): Promise<NotificationSyncResult> {
   const attemptedAt = Date.now();
@@ -83,10 +84,15 @@ export async function syncUserNotifications(options: {
   const syncCursor = await options.backendClient.getNotificationSyncCursor(
     options.userId
   );
-  const since =
+  const autoSince =
     typeof syncCursor.lastSuccessAt === 'number'
       ? Math.max(0, syncCursor.lastSuccessAt - SYNC_SINCE_OVERLAP_MS)
       : null;
+  const since =
+    typeof options.sinceOverrideMs === 'number' &&
+    Number.isFinite(options.sinceOverrideMs)
+      ? Math.max(0, options.sinceOverrideMs)
+      : autoSince;
 
   const fetched = await fetchNotifications({
     token: session.token,

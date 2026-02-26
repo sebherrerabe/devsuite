@@ -301,14 +301,23 @@ export interface FetchNotificationsParams {
 }
 
 export function buildNotificationsApiPath(params: {
-  limit: number;
+  perPage: number;
+  page?: number;
   since?: number | null;
 }): string {
   const query = new globalThis.URLSearchParams({
     all: 'true',
     participating: 'false',
-    per_page: `${params.limit}`,
+    per_page: `${params.perPage}`,
   });
+
+  if (
+    typeof params.page === 'number' &&
+    Number.isFinite(params.page) &&
+    params.page > 1
+  ) {
+    query.set('page', `${Math.floor(params.page)}`);
+  }
 
   if (
     typeof params.since === 'number' &&
@@ -688,78 +697,98 @@ export async function fetchPullRequestBundleData(
 export async function fetchNotifications(
   params: FetchNotificationsParams
 ): Promise<GhNotification[]> {
-  const apiPath = buildNotificationsApiPath({
-    limit: params.limit,
-    ...(params.since !== undefined ? { since: params.since } : {}),
-  });
-  const raw = await runJsonCommand(
-    'notifications-list',
-    params.token,
-    ['api', apiPath],
-    'GitHub CLI returned invalid notifications JSON',
-    params.audit
-  );
-
-  if (!Array.isArray(raw)) {
-    throw new GhRunnerError(
-      'INVALID_OUTPUT',
-      'GitHub CLI notifications payload is not an array'
-    );
-  }
-
+  const maxItems = Math.max(1, Math.floor(params.limit));
   const notifications: GhNotification[] = [];
-  for (const rawItem of raw) {
-    if (!rawItem || typeof rawItem !== 'object') {
-      continue;
-    }
+  let page = 1;
 
-    const row = rawItem as GhNotificationItem;
-    const threadId = typeof row.id === 'string' ? row.id : null;
-    if (!threadId) {
-      continue;
-    }
-
-    const reason = typeof row.reason === 'string' ? row.reason : 'unknown';
-    const subjectTitle =
-      row.subject && typeof row.subject.title === 'string'
-        ? row.subject.title
-        : null;
-    const subjectType =
-      row.subject && typeof row.subject.type === 'string'
-        ? row.subject.type
-        : null;
-    const subjectApiUrl =
-      row.subject && typeof row.subject.url === 'string'
-        ? row.subject.url
-        : null;
-    const repoFullName =
-      row.repository && typeof row.repository.full_name === 'string'
-        ? row.repository.full_name
-        : null;
-    const ownerLogin =
-      row.repository &&
-      row.repository.owner &&
-      typeof row.repository.owner.login === 'string'
-        ? row.repository.owner.login
-        : null;
-    const apiUrl = typeof row.url === 'string' ? row.url : subjectApiUrl;
-    const url = mapSubjectApiUrlToWebUrl(subjectApiUrl);
-    const orgLogin = resolveOrgLogin(ownerLogin, repoFullName);
-    const unread = row.unread === true;
-    const updatedAt = parseUpdatedAt(row.updated_at);
-
-    notifications.push({
-      threadId,
-      reason,
-      title: subjectTitle ?? `GitHub notification (${reason})`,
-      url,
-      repoFullName,
-      orgLogin,
-      subjectType,
-      updatedAt,
-      unread,
-      apiUrl,
+  while (notifications.length < maxItems) {
+    const remaining = maxItems - notifications.length;
+    const perPage = Math.min(100, remaining);
+    const apiPath = buildNotificationsApiPath({
+      perPage,
+      ...(page > 1 ? { page } : {}),
+      ...(params.since !== undefined ? { since: params.since } : {}),
     });
+    const raw = await runJsonCommand(
+      'notifications-list',
+      params.token,
+      ['api', apiPath],
+      'GitHub CLI returned invalid notifications JSON',
+      params.audit
+    );
+
+    if (!Array.isArray(raw)) {
+      throw new GhRunnerError(
+        'INVALID_OUTPUT',
+        'GitHub CLI notifications payload is not an array'
+      );
+    }
+
+    if (raw.length === 0) {
+      break;
+    }
+
+    for (const rawItem of raw) {
+      if (notifications.length >= maxItems) {
+        break;
+      }
+      if (!rawItem || typeof rawItem !== 'object') {
+        continue;
+      }
+
+      const row = rawItem as GhNotificationItem;
+      const threadId = typeof row.id === 'string' ? row.id : null;
+      if (!threadId) {
+        continue;
+      }
+
+      const reason = typeof row.reason === 'string' ? row.reason : 'unknown';
+      const subjectTitle =
+        row.subject && typeof row.subject.title === 'string'
+          ? row.subject.title
+          : null;
+      const subjectType =
+        row.subject && typeof row.subject.type === 'string'
+          ? row.subject.type
+          : null;
+      const subjectApiUrl =
+        row.subject && typeof row.subject.url === 'string'
+          ? row.subject.url
+          : null;
+      const repoFullName =
+        row.repository && typeof row.repository.full_name === 'string'
+          ? row.repository.full_name
+          : null;
+      const ownerLogin =
+        row.repository &&
+        row.repository.owner &&
+        typeof row.repository.owner.login === 'string'
+          ? row.repository.owner.login
+          : null;
+      const apiUrl = typeof row.url === 'string' ? row.url : subjectApiUrl;
+      const url = mapSubjectApiUrlToWebUrl(subjectApiUrl);
+      const orgLogin = resolveOrgLogin(ownerLogin, repoFullName);
+      const unread = row.unread === true;
+      const updatedAt = parseUpdatedAt(row.updated_at);
+
+      notifications.push({
+        threadId,
+        reason,
+        title: subjectTitle ?? `GitHub notification (${reason})`,
+        url,
+        repoFullName,
+        orgLogin,
+        subjectType,
+        updatedAt,
+        unread,
+        apiUrl,
+      });
+    }
+
+    if (raw.length < perPage) {
+      break;
+    }
+    page += 1;
   }
 
   return notifications;

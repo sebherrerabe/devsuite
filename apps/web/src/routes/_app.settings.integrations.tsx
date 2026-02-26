@@ -68,6 +68,8 @@ const PENDING_POLL_INTERVAL_MS = 3000;
 const LOGIN_SLOWDOWN_COOLDOWN_MS = 5 * 60 * 1000;
 const LOGIN_COOLDOWN_STORAGE_PREFIX = 'devsuite-gh-login-cooldown-until';
 const ANY_PEOPLE_PROPERTY_VALUE = '__any_people__';
+const SYNC_BACKFILL_DAYS = 7;
+const SYNC_BACKFILL_LIMIT = 500;
 
 interface IntegrationSettingsResponse {
   companyId: Id<'companies'>;
@@ -404,6 +406,8 @@ function IntegrationsSettingsPage() {
   const [isSavingNotionAssigneeFilter, setIsSavingNotionAssigneeFilter] =
     useState(false);
   const [isSyncingNotifications, setIsSyncingNotifications] = useState(false);
+  const [isBackfillingNotifications, setIsBackfillingNotifications] =
+    useState(false);
   const [lastSyncResult, setLastSyncResult] =
     useState<GhNotificationSyncResult | null>(null);
   const [isUpdatingGithubEnabled, setIsUpdatingGithubEnabled] = useState(false);
@@ -754,7 +758,12 @@ function IntegrationsSettingsPage() {
     }
   };
 
-  const handleSyncNotifications = async () => {
+  const runGithubSync = async (options?: {
+    backfillDays?: number;
+    limit?: number;
+    setLoading: (value: boolean) => void;
+    modeLabel: string;
+  }) => {
     if (!userId) {
       showToast.error('Unable to resolve your user identity');
       return;
@@ -764,9 +773,14 @@ function IntegrationsSettingsPage() {
       return;
     }
 
-    setIsSyncingNotifications(true);
+    options?.setLoading(true);
     try {
-      const payload = await syncGithubNotifications(userId);
+      const payload = await syncGithubNotifications(userId, {
+        ...(options?.backfillDays !== undefined
+          ? { backfillDays: options.backfillDays }
+          : {}),
+        ...(options?.limit !== undefined ? { limit: options.limit } : {}),
+      });
       setLastSyncResult(payload.sync);
       setStatusError(null);
 
@@ -778,15 +792,31 @@ function IntegrationsSettingsPage() {
       }
 
       showToast.success(
-        `Synced ${payload.sync.notificationsFiltered} in-scope GitHub notifications (${payload.sync.notificationsRouted} routed, ${payload.sync.deliveriesCreated} new, ${payload.sync.deliveriesUpdated} updated, dropped: ${formatDropDiagnostics(payload.sync)})`
+        `${options?.modeLabel ?? 'Sync'} completed: ${payload.sync.notificationsFiltered} in-scope GitHub notifications (${payload.sync.notificationsRouted} routed, ${payload.sync.deliveriesCreated} new, ${payload.sync.deliveriesUpdated} updated, dropped: ${formatDropDiagnostics(payload.sync)})`
       );
     } catch (error) {
       const message = formatServiceError(error);
       setStatusError(message);
       showToast.error(message);
     } finally {
-      setIsSyncingNotifications(false);
+      options?.setLoading(false);
     }
+  };
+
+  const handleSyncNotifications = async () => {
+    await runGithubSync({
+      setLoading: setIsSyncingNotifications,
+      modeLabel: 'Sync',
+    });
+  };
+
+  const handleBackfillNotifications = async () => {
+    await runGithubSync({
+      setLoading: setIsBackfillingNotifications,
+      modeLabel: `Backfill ${SYNC_BACKFILL_DAYS}d`,
+      backfillDays: SYNC_BACKFILL_DAYS,
+      limit: SYNC_BACKFILL_LIMIT,
+    });
   };
 
   const handleLoadNotionAssigneeOptions = async () => {
@@ -1364,6 +1394,7 @@ function IntegrationsSettingsPage() {
                   !githubEnabled ||
                   !userId ||
                   isSyncingNotifications ||
+                  isBackfillingNotifications ||
                   isDisconnecting ||
                   isStartingLogin
                 }
@@ -1372,6 +1403,25 @@ function IntegrationsSettingsPage() {
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
                 Sync notifications now
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleBackfillNotifications}
+                disabled={
+                  !isConnected ||
+                  !githubEnabled ||
+                  !userId ||
+                  isSyncingNotifications ||
+                  isBackfillingNotifications ||
+                  isDisconnecting ||
+                  isStartingLogin
+                }
+              >
+                {isBackfillingNotifications && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Backfill last {SYNC_BACKFILL_DAYS} days
               </Button>
 
               <p className="w-full text-xs text-muted-foreground">
