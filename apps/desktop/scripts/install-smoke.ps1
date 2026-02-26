@@ -159,8 +159,9 @@ function Get-InstallSearchRoots {
     $roots += Join-Path $env:PROGRAMFILES 'DevSuite'
   }
 
-  if (-not [string]::IsNullOrWhiteSpace($env:'PROGRAMFILES(X86)')) {
-    $roots += Join-Path $env:'PROGRAMFILES(X86)' 'DevSuite'
+  $programFilesX86 = ${env:PROGRAMFILES(X86)}
+  if (-not [string]::IsNullOrWhiteSpace($programFilesX86)) {
+    $roots += Join-Path $programFilesX86 'DevSuite'
   }
 
   if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
