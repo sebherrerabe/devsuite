@@ -7,6 +7,7 @@ const SYNC_SINCE_OVERLAP_MS = 60_000;
 
 export interface NotificationSyncResult {
   githubUser: string | null;
+  backfillDays: number | null;
   status: 'success' | 'skipped_no_routes' | 'error';
   companiesMatched: number;
   hasRouteMappings: boolean;
@@ -47,16 +48,24 @@ export async function syncUserNotifications(options: {
   userId: string;
   batchSize: number;
   sinceOverrideMs?: number | null;
+  backfillDays?: number;
   logger?: Logger;
 }): Promise<NotificationSyncResult> {
+  const normalizedBackfillDays =
+    typeof options.backfillDays === 'number' &&
+    Number.isFinite(options.backfillDays) &&
+    options.backfillDays > 0
+      ? Math.floor(options.backfillDays)
+      : null;
   const attemptedAt = Date.now();
   const routes = await options.backendClient.listCompanyRoutes(options.userId);
   const allowedOrgLogins = buildAllowedOrgSet(routes);
 
   if (allowedOrgLogins.size === 0) {
-    const telemetry = {
+    const telemetry: NotificationSyncResult = {
       githubUser: null,
-      status: 'skipped_no_routes' as const,
+      backfillDays: normalizedBackfillDays,
+      status: 'skipped_no_routes',
       hasRouteMappings: false,
       companiesMatched: routes.length,
       notificationsFetched: 0,
@@ -74,7 +83,11 @@ export async function syncUserNotifications(options: {
       errorCode: null,
       errorMessage: null,
     };
-    await options.backendClient.recordSyncTelemetry(options.userId, telemetry);
+    const { backfillDays, ...telemetryBase } = telemetry;
+    await options.backendClient.recordSyncTelemetry(options.userId, {
+      ...telemetryBase,
+      ...(backfillDays !== null ? { backfillDays } : {}),
+    });
     return telemetry;
   }
 
@@ -127,9 +140,10 @@ export async function syncUserNotifications(options: {
     notifications
   );
 
-  const telemetry = {
+  const telemetry: NotificationSyncResult = {
     githubUser: session.githubUser,
-    status: 'success' as const,
+    backfillDays: normalizedBackfillDays,
+    status: 'success',
     hasRouteMappings: true,
     companiesMatched: routes.length,
     notificationsFetched: fetched.length,
@@ -148,6 +162,10 @@ export async function syncUserNotifications(options: {
     errorMessage: null,
   };
 
-  await options.backendClient.recordSyncTelemetry(options.userId, telemetry);
+  const { backfillDays, ...telemetryBase } = telemetry;
+  await options.backendClient.recordSyncTelemetry(options.userId, {
+    ...telemetryBase,
+    ...(backfillDays !== null ? { backfillDays } : {}),
+  });
   return telemetry;
 }

@@ -43,6 +43,7 @@ export interface GithubNotificationSyncTelemetry {
   droppedOutOfScope: number;
   droppedNoRouteMatch: number;
   droppedStaleThread: number;
+  backfillDays?: number;
   attemptedAt: number;
   errorCode?: string | null;
   errorMessage?: string | null;

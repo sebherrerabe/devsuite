@@ -308,6 +308,7 @@ const notificationSyncTelemetryInput = v.object({
   droppedOutOfScope: v.optional(v.number()),
   droppedNoRouteMatch: v.optional(v.number()),
   droppedStaleThread: v.optional(v.number()),
+  backfillDays: v.optional(v.number()),
   attemptedAt: v.number(),
   errorCode: v.optional(v.union(v.string(), v.null())),
   errorMessage: v.optional(v.union(v.string(), v.null())),
@@ -329,6 +330,10 @@ export const recordNotificationSyncTelemetry = internalMutation({
       args.telemetry.status === 'success'
         ? args.telemetry.attemptedAt
         : (existing?.lastSuccessAt ?? null);
+    const isBackfillAttempt =
+      typeof args.telemetry.backfillDays === 'number' &&
+      Number.isFinite(args.telemetry.backfillDays) &&
+      args.telemetry.backfillDays > 0;
 
     const patch = {
       userId: args.userId,
@@ -347,6 +352,19 @@ export const recordNotificationSyncTelemetry = internalMutation({
       droppedOutOfScope: args.telemetry.droppedOutOfScope ?? 0,
       droppedNoRouteMatch: args.telemetry.droppedNoRouteMatch ?? 0,
       droppedStaleThread: args.telemetry.droppedStaleThread ?? 0,
+      ...(isBackfillAttempt
+        ? {
+            lastBackfillAt: args.telemetry.attemptedAt,
+            lastBackfillDays: Math.floor(args.telemetry.backfillDays as number),
+          }
+        : {
+            ...(typeof existing?.lastBackfillAt === 'number'
+              ? { lastBackfillAt: existing.lastBackfillAt }
+              : {}),
+            ...(typeof existing?.lastBackfillDays === 'number'
+              ? { lastBackfillDays: existing.lastBackfillDays }
+              : {}),
+          }),
       lastAttemptAt: args.telemetry.attemptedAt,
       lastSuccessAt: nextLastSuccessAt,
       errorCode: args.telemetry.errorCode ?? null,

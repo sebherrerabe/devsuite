@@ -649,6 +649,7 @@ function IntegrationsSettingsPage() {
     }
     return {
       githubUser: persistedSyncTelemetry.githubUser,
+      backfillDays: null,
       status: persistedSyncTelemetry.status,
       companiesMatched: persistedSyncTelemetry.companiesMatched,
       hasRouteMappings: persistedSyncTelemetry.hasRouteMappings,
@@ -680,6 +681,10 @@ function IntegrationsSettingsPage() {
   }, [lastSyncResult, persistedSyncTelemetry]);
 
   const lastSuccessfulSyncAt = persistedSyncTelemetry?.lastSuccessAt ?? null;
+  const lastBackfillAt =
+    readOptionalNumberField(persistedSyncTelemetry, 'lastBackfillAt') ?? null;
+  const lastBackfillDays =
+    readOptionalNumberField(persistedSyncTelemetry, 'lastBackfillDays') ?? null;
   const runtimeStatusMessage = useMemo(() => {
     if (!runtime?.error) {
       return null;
@@ -1247,6 +1252,21 @@ function IntegrationsSettingsPage() {
                         ? `Installed${runtime.ghVersion ? ` (${runtime.ghVersion})` : ''}`
                         : 'Missing'
                       : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Last backfill</p>
+                  <p className="flex items-center gap-2">
+                    {lastBackfillAt ? (
+                      <>
+                        <Badge variant="secondary">
+                          {lastBackfillDays ?? SYNC_BACKFILL_DAYS}d
+                        </Badge>
+                        <span>{formatTimestamp(lastBackfillAt)}</span>
+                      </>
+                    ) : (
+                      '—'
+                    )}
                   </p>
                 </div>
               </div>

@@ -489,6 +489,9 @@ export function createGhServiceServer(
           userId: auth.userId,
           batchSize: parsedBody.data.limit ?? config.notificationBatchSize,
           ...(parsedBody.data.backfillDays !== undefined
+            ? { backfillDays: parsedBody.data.backfillDays }
+            : {}),
+          ...(parsedBody.data.backfillDays !== undefined
             ? {
                 sinceOverrideMs:
                   Date.now() -
@@ -518,6 +521,9 @@ export function createGhServiceServer(
                 droppedOutOfScope: 0,
                 droppedNoRouteMatch: 0,
                 droppedStaleThread: 0,
+                ...(parsedBody.data.backfillDays !== undefined
+                  ? { backfillDays: parsedBody.data.backfillDays }
+                  : {}),
                 attemptedAt: Date.now(),
                 errorCode: error.code,
                 errorMessage: error.message,
@@ -542,7 +548,7 @@ export function createGhServiceServer(
           notificationsUnmatched: syncResult.notificationsUnmatched,
           deliveriesCreated: syncResult.deliveriesCreated,
           deliveriesUpdated: syncResult.deliveriesUpdated,
-          backfillDays: parsedBody.data.backfillDays ?? null,
+          backfillDays: syncResult.backfillDays,
           droppedMissingOrg: syncResult.droppedMissingOrg,
           droppedOutOfScope: syncResult.droppedOutOfScope,
           droppedNoRouteMatch: syncResult.droppedNoRouteMatch,

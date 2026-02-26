@@ -128,6 +128,7 @@ interface GithubSyncTelemetryPayload {
   droppedOutOfScope?: number;
   droppedNoRouteMatch?: number;
   droppedStaleThread?: number;
+  backfillDays?: number;
   attemptedAt: number;
   errorCode?: string | null;
   errorMessage?: string | null;
@@ -289,6 +290,7 @@ function parseSyncTelemetryPayload(
     droppedOutOfScope?: unknown;
     droppedNoRouteMatch?: unknown;
     droppedStaleThread?: unknown;
+    backfillDays?: unknown;
     attemptedAt?: unknown;
     errorCode?: unknown;
     errorMessage?: unknown;
@@ -326,6 +328,7 @@ function parseSyncTelemetryPayload(
     payload.droppedOutOfScope,
     payload.droppedNoRouteMatch,
     payload.droppedStaleThread,
+    payload.backfillDays,
   ];
   if (
     optionalNumericFields.some(
@@ -379,6 +382,9 @@ function parseSyncTelemetryPayload(
       : {}),
     ...(payload.droppedStaleThread !== undefined
       ? { droppedStaleThread: payload.droppedStaleThread as number }
+      : {}),
+    ...(payload.backfillDays !== undefined
+      ? { backfillDays: payload.backfillDays as number }
       : {}),
     attemptedAt: payload.attemptedAt as number,
     ...(payload.githubUser !== undefined

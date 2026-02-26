@@ -100,6 +100,8 @@ export default defineSchema({
     droppedOutOfScope: v.optional(v.number()),
     droppedNoRouteMatch: v.optional(v.number()),
     droppedStaleThread: v.optional(v.number()),
+    lastBackfillAt: v.optional(v.number()),
+    lastBackfillDays: v.optional(v.number()),
     lastAttemptAt: v.number(),
     lastSuccessAt: v.union(v.number(), v.null()),
     errorCode: v.union(v.string(), v.null()),
