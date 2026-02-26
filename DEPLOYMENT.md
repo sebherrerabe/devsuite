@@ -302,6 +302,7 @@ If you want **$0/mo**, the only option is:
 - [ ] Configure environment variables:
   - `NODE_ENV=production`
   - `DEVSUITE_NOTION_SERVICE_TOKEN=<generate>`
+  - `DEVSUITE_NOTION_SERVICE_BACKEND_TOKEN=<generate-and-share-with-convex>`
   - `DEVSUITE_NOTION_SERVICE_ENCRYPTION_KEY=<generate>`
   - `DEVSUITE_NOTION_SERVICE_CORS_ORIGINS=<cloudflare-pages-url>`
   - `DEVSUITE_CONVEX_SITE_URL=<convex-url>`
@@ -314,6 +315,7 @@ If you want **$0/mo**, the only option is:
 
 - [ ] Run `npx convex deploy` from the repo root
 - [ ] Set production environment variables in Convex dashboard
+  - `DEVSUITE_NOTION_SERVICE_BACKEND_TOKEN=<same-value-as-notion-service>`
 - [ ] Verify deployment via Convex dashboard
 
 ### Post-Deploy

@@ -17,6 +17,7 @@ import type {
   ConvexBackendClient,
   NotionWebhookEventPayload,
 } from './convex-backend-client.js';
+import { ConvexBackendError } from './convex-backend-client.js';
 import { maskUserId, sanitizeLogMessage } from './logging-utils.js';
 import {
   NotionApiError,
@@ -837,10 +838,14 @@ export class NotionConnectionManager {
         ownerType: oauth.ownerType,
       });
     } catch (error) {
-      const message =
+      let message =
         error instanceof Error
           ? error.message
           : 'Failed to sync Notion connection to backend';
+      if (error instanceof ConvexBackendError && error.statusCode === 401) {
+        message =
+          'Notion backend routing rejected the request. Verify DEVSUITE_NOTION_SERVICE_BACKEND_TOKEN matches between notion-service and Convex.';
+      }
       await this.markConnectionError(connection, message, {
         clearCredentials: true,
       });

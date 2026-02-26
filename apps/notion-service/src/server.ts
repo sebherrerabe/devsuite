@@ -597,6 +597,9 @@ export function createNotionServiceServer(
             ? maskUserId(callbackResult.userId)
             : null,
           companyId: callbackResult.companyId,
+          ...(callbackResult.ok
+            ? {}
+            : { error: sanitizeLogMessage(callbackResult.message) }),
         });
 
         res.statusCode = 302;
