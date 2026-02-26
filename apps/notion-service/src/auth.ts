@@ -99,8 +99,19 @@ function assertServiceAuth(
   }
 
   const token = parseBearerToken(req);
-  if (!token || token !== config.serviceToken) {
-    throw new HttpError(401, 'UNAUTHORIZED', 'Invalid service token');
+  if (!token) {
+    throw new HttpError(
+      401,
+      'UNAUTHORIZED',
+      'Invalid service token: Authorization Bearer header missing or malformed'
+    );
+  }
+  if (token !== config.serviceToken) {
+    throw new HttpError(
+      401,
+      'UNAUTHORIZED',
+      'Invalid service token: token mismatch (check VITE_NOTION_SERVICE_TOKEN vs DEVSUITE_NOTION_SERVICE_TOKEN)'
+    );
   }
 }
 

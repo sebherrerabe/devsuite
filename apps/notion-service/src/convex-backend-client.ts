@@ -37,7 +37,8 @@ export class ConvexBackendError extends Error {
   constructor(
     readonly statusCode: number,
     readonly code: 'HTTP_ERROR' | 'INVALID_RESPONSE',
-    message: string
+    message: string,
+    readonly path?: string
   ) {
     super(message);
   }
@@ -141,7 +142,12 @@ export class ConvexBackendClient {
         typeof (body as { error?: unknown }).error === 'string'
           ? (body as { error: string }).error
           : 'Convex request failed';
-      throw new ConvexBackendError(response.status, 'HTTP_ERROR', message);
+      throw new ConvexBackendError(
+        response.status,
+        'HTTP_ERROR',
+        message,
+        path
+      );
     }
 
     return (body ?? {}) as Record<string, unknown>;

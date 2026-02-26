@@ -138,6 +138,17 @@ async function request<TResponse>(
     const message = envelope.error?.message ?? 'Notion service request failed';
     const code = envelope.error?.code ?? 'REQUEST_FAILED';
     const requestId = envelope.error?.requestId ?? null;
+    console.error('[Notion] request failed', {
+      statusCode: response.status,
+      code,
+      message,
+      requestId,
+      path,
+      baseUrl: getNotionServiceBaseUrl(),
+      tokenConfigured: Boolean(
+        import.meta.env.VITE_NOTION_SERVICE_TOKEN?.trim()
+      ),
+    });
     throw new NotionServiceRequestError(
       response.status,
       code,

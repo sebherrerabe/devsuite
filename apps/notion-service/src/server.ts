@@ -927,7 +927,7 @@ export function createNotionServiceServer(
       throw new HttpError(404, 'NOT_FOUND', 'Route not found');
     } catch (error) {
       const elapsedMs = Date.now() - startedAt;
-      logger.warn('request failed', {
+      const logPayload: Record<string, unknown> = {
         requestId,
         method,
         path: url.pathname,
@@ -936,7 +936,19 @@ export function createNotionServiceServer(
           error instanceof Error
             ? sanitizeLogMessage(error.message)
             : 'unknown',
-      });
+      };
+      if (error instanceof HttpError && error.code === 'UNAUTHORIZED') {
+        logPayload.authHeaderPresent = Boolean(
+          req.headers.authorization?.trim()
+        );
+        logPayload.origin = req.headers.origin ?? null;
+        logPayload.serviceTokenConfigured = Boolean(config.serviceToken);
+      }
+      if (error instanceof ConvexBackendError) {
+        logPayload.convexPath = error.path ?? null;
+        logPayload.convexStatus = error.statusCode;
+      }
+      logger.warn('request failed', logPayload);
       sendError(res, requestId, error);
       return;
     }

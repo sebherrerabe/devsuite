@@ -230,7 +230,10 @@ function formatNotionServiceError(error: unknown): string {
       return 'The selected assignee filter is invalid. Reload the page properties and try again.';
     }
     if (error.code === 'UNAUTHORIZED') {
-      return 'Request was rejected by notion-service. Verify DEVSUITE_NOTION_SERVICE_TOKEN matches between client and service.';
+      return (
+        error.message ||
+        'Request was rejected by notion-service. Verify VITE_NOTION_SERVICE_TOKEN matches DEVSUITE_NOTION_SERVICE_TOKEN.'
+      );
     }
     return error.requestId
       ? `${error.message} (request ${error.requestId})`
