@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/select';
 import { authClient } from '@/lib/auth';
 import { showToast } from '@/lib/toast';
+import { resolveGithubRouteScope } from '@/lib/github-route-scope';
 import {
   disconnectGithub,
   getGhServiceBaseUrl,
@@ -302,6 +303,14 @@ function clearLoginCooldown(userId: string): void {
   window.localStorage.removeItem(getCooldownStorageKey(userId));
 }
 
+function isHostGhAuthStatusWarning(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('not logged into any github hosts') ||
+    normalized.includes('gh auth login')
+  );
+}
+
 function IntegrationsSettingsPage() {
   const { currentCompany } = useCurrentCompany();
   const companyId = currentCompany?._id ?? null;
@@ -317,6 +326,10 @@ function IntegrationsSettingsPage() {
   ).integrationSettings;
   const integrationSettings = useQuery(
     integrationSettingsApi.getForCompany,
+    companyId ? { companyId } : 'skip'
+  );
+  const repositories = useQuery(
+    api.repositories.getByCompany,
     companyId ? { companyId } : 'skip'
   );
   const setIntegrationEnabled = useMutation(integrationSettingsApi.setEnabled);
@@ -374,6 +387,14 @@ function IntegrationsSettingsPage() {
   const [clockMs, setClockMs] = useState<number>(() => Date.now());
   const githubEnabled = integrationSettings?.github ?? false;
   const notionEnabled = integrationSettings?.notion ?? false;
+  const githubRouteScope = useMemo(
+    () =>
+      resolveGithubRouteScope({
+        companyMetadata: currentCompany?.metadata,
+        repositories,
+      }),
+    [currentCompany?.metadata, repositories]
+  );
 
   const registerSlowDownCooldown = useCallback(
     (baseTimeMs: number) => {
@@ -611,6 +632,18 @@ function IntegrationsSettingsPage() {
   }, [lastSyncResult, persistedSyncTelemetry]);
 
   const lastSuccessfulSyncAt = persistedSyncTelemetry?.lastSuccessAt ?? null;
+  const runtimeStatusMessage = useMemo(() => {
+    if (!runtime?.error) {
+      return null;
+    }
+    if (isHostGhAuthStatusWarning(runtime.error)) {
+      return 'GitHub CLI is not signed in at the service host. DevSuite uses your encrypted per-user token for sync, so this is informational when your connection is connected.';
+    }
+    return runtime.error;
+  }, [runtime?.error]);
+  const showRuntimeAsError = runtime?.error
+    ? !isHostGhAuthStatusWarning(runtime.error)
+    : false;
 
   const handleStartLogin = async () => {
     if (!userId) {
@@ -698,7 +731,7 @@ function IntegrationsSettingsPage() {
       }
 
       showToast.success(
-        `Synced ${payload.sync.notificationsFiltered} GitHub notifications (${payload.sync.deliveriesCreated} new, ${payload.sync.deliveriesUpdated} updated)`
+        `Synced ${payload.sync.notificationsFiltered} in-scope GitHub notifications (${payload.sync.notificationsRouted} routed, ${payload.sync.deliveriesCreated} new, ${payload.sync.deliveriesUpdated} updated)`
       );
     } catch (error) {
       const message = formatServiceError(error);
@@ -1056,6 +1089,30 @@ function IntegrationsSettingsPage() {
                   </AlertDescription>
                 </Alert>
               )}
+              <Alert
+                variant={
+                  githubRouteScope.length === 0 ? 'destructive' : undefined
+                }
+              >
+                <AlertDescription>
+                  {githubRouteScope.length === 0 ? (
+                    <>
+                      No GitHub route scope is configured for this company. Add
+                      GitHub org logins in Company settings or add GitHub
+                      repositories so notifications can be routed.
+                    </>
+                  ) : (
+                    <>
+                      Active GitHub scope for this company:{' '}
+                      <span className="font-medium">
+                        {githubRouteScope.join(', ')}
+                      </span>
+                      . DevSuite only routes notifications whose repository
+                      owner matches this scope.
+                    </>
+                  )}
+                </AlertDescription>
+              </Alert>
 
               <div className="flex items-center justify-between">
                 <div className="space-y-1">
@@ -1172,8 +1229,9 @@ function IntegrationsSettingsPage() {
                     <AlertDescription>
                       Last sync (
                       {formatTimestamp(displayedSyncResult.attemptedAt)}):
-                      fetched {displayedSyncResult.notificationsFetched}, routed{' '}
-                      {displayedSyncResult.notificationsFiltered}, created{' '}
+                      fetched {displayedSyncResult.notificationsFetched}, in
+                      scope {displayedSyncResult.notificationsFiltered}, routed{' '}
+                      {displayedSyncResult.notificationsRouted}, created{' '}
                       {displayedSyncResult.deliveriesCreated}, updated{' '}
                       {displayedSyncResult.deliveriesUpdated}.
                       {lastSuccessfulSyncAt
@@ -1183,9 +1241,9 @@ function IntegrationsSettingsPage() {
                   </Alert>
                 )}
 
-              {runtime?.error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{runtime.error}</AlertDescription>
+              {runtimeStatusMessage && (
+                <Alert variant={showRuntimeAsError ? 'destructive' : undefined}>
+                  <AlertDescription>{runtimeStatusMessage}</AlertDescription>
                 </Alert>
               )}
             </CardContent>

@@ -35,6 +35,7 @@ import {
 import { showToast } from '@/lib/toast';
 import { formatShortDateTime } from '@/lib/time';
 import { useInboxDesktopNotifications } from '@/lib/inbox-desktop-notifications-context';
+import { resolveGithubRouteScope } from '@/lib/github-route-scope';
 import {
   GhServiceRequestError,
   syncGithubNotifications,
@@ -176,6 +177,18 @@ function InboxPage() {
   const [includeArchived, setIncludeArchived] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const userId = useMemo(() => getSessionUserId(authSession), [authSession]);
+  const repositories = useQuery(
+    api.repositories.getByCompany,
+    companyId ? { companyId } : 'skip'
+  );
+  const githubRouteScope = useMemo(
+    () =>
+      resolveGithubRouteScope({
+        companyMetadata: currentCompany?.metadata,
+        repositories,
+      }),
+    [currentCompany?.metadata, repositories]
+  );
 
   const queryArgs = useMemo(() => {
     if (!companyId) return 'skip' as const;
@@ -410,7 +423,7 @@ function InboxPage() {
       const payload = await syncGithubNotifications(userId);
       const sync = payload.sync;
       showToast.success(
-        `GitHub sync complete. fetched ${sync.notificationsFetched}, filtered ${sync.notificationsFiltered}, created ${sync.deliveriesCreated}, updated ${sync.deliveriesUpdated}, unmatched ${sync.notificationsUnmatched}.`
+        `GitHub sync complete. fetched ${sync.notificationsFetched}, in scope ${sync.notificationsFiltered}, routed ${sync.notificationsRouted}, created ${sync.deliveriesCreated}, updated ${sync.deliveriesUpdated}, unmatched ${sync.notificationsUnmatched}.`
       );
     } catch (error) {
       showToast.error(formatSyncError(error));
@@ -523,6 +536,26 @@ function InboxPage() {
                   Enable desktop notifications
                 </Button>
               ) : null)}
+        </AlertDescription>
+      </Alert>
+
+      <Alert
+        variant={githubRouteScope.length === 0 ? 'destructive' : undefined}
+      >
+        <AlertDescription>
+          {githubRouteScope.length === 0 ? (
+            <>
+              No GitHub route scope is configured for this company. Only
+              notifications whose repository owner matches configured scope are
+              shown here.
+            </>
+          ) : (
+            <>
+              Active GitHub scope for this inbox:{' '}
+              <span className="font-medium">{githubRouteScope.join(', ')}</span>
+              . Notifications outside this scope are intentionally excluded.
+            </>
+          )}
         </AlertDescription>
       </Alert>
 
