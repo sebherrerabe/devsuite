@@ -457,7 +457,6 @@ export const ingestNotifications = internalMutation({
         enabledCompanyIds.has(company._id)
     );
 
-    const companyOrgMap = new Map<Id<'companies'>, string[]>();
     const orgToCompanyIds = new Map<string, Id<'companies'>[]>();
 
     for (const company of activeCompanies) {
@@ -472,7 +471,9 @@ export const ingestNotifications = internalMutation({
         extractGithubOrgLogins(company.metadata),
         extractGithubOrgLoginsFromRepositories(repositories)
       );
-      companyOrgMap.set(company._id, orgLogins);
+      if (orgLogins.length === 0) {
+        continue;
+      }
 
       for (const orgLogin of orgLogins) {
         const existing = orgToCompanyIds.get(orgLogin) ?? [];
@@ -481,67 +482,53 @@ export const ingestNotifications = internalMutation({
       }
     }
 
-    const existingByCompany = new Map<
-      Id<'companies'>,
-      Map<
-        string,
-        {
-          id: Id<'inboxItems'>;
-          ghUpdatedAt: number | null;
-          updatedAt: number;
-        }
-      >
-    >();
-    for (const company of activeCompanies) {
-      if ((companyOrgMap.get(company._id) ?? []).length === 0) {
-        continue;
+    type ExistingThreadRef = {
+      id: Id<'inboxItems'>;
+      ghUpdatedAt: number | null;
+      updatedAt: number;
+    };
+    const existingByThreadKey = new Map<string, ExistingThreadRef | null>();
+
+    const getExistingThread = async (
+      companyId: Id<'companies'>,
+      threadId: string
+    ): Promise<ExistingThreadRef | null> => {
+      const cacheKey = `${companyId}:${threadId}`;
+      if (existingByThreadKey.has(cacheKey)) {
+        return existingByThreadKey.get(cacheKey) ?? null;
       }
 
-      const items = await ctx.db
+      const candidates = await ctx.db
         .query('inboxItems')
-        .withIndex('by_companyId', q => q.eq('companyId', company._id))
+        .withIndex('by_companyId_source_externalId', q =>
+          q
+            .eq('companyId', companyId)
+            .eq('source', 'github')
+            .eq('content.externalId', threadId)
+        )
         .collect();
 
-      const indexed = new Map<
-        string,
-        {
-          id: Id<'inboxItems'>;
-          ghUpdatedAt: number | null;
-          updatedAt: number;
-        }
-      >();
-      for (const item of items) {
-        if (item.deletedAt !== null || item.source !== 'github') {
+      let preferred: ExistingThreadRef | null = null;
+      for (const candidate of candidates) {
+        if (candidate.deletedAt !== null) {
           continue;
         }
 
-        const externalId = item.content.externalId;
-        if (!externalId) {
-          continue;
-        }
-
-        const ghMeta = item.content.metadata?.github as
+        const ghMeta = candidate.content.metadata?.github as
           | Record<string, unknown>
           | undefined;
         const ghUpdatedAt =
           typeof ghMeta?.updatedAt === 'number' ? ghMeta.updatedAt : null;
-        const next = selectPreferredGithubThreadEntry(
-          indexed.get(externalId) ?? null,
-          {
-            id: item._id,
-            ghUpdatedAt,
-            updatedAt: item.updatedAt,
-          }
-        );
-        indexed.set(externalId, {
-          id: next.id,
-          ghUpdatedAt: next.ghUpdatedAt,
-          updatedAt: next.updatedAt,
+        preferred = selectPreferredGithubThreadEntry(preferred, {
+          id: candidate._id,
+          ghUpdatedAt,
+          updatedAt: candidate.updatedAt,
         });
       }
 
-      existingByCompany.set(company._id, indexed);
-    }
+      existingByThreadKey.set(cacheKey, preferred);
+      return preferred;
+    };
 
     const seenDeliveries = new Set<string>();
     const now = Date.now();
@@ -618,19 +605,10 @@ export const ingestNotifications = internalMutation({
           ...(notification.url !== null ? { url: notification.url } : {}),
         };
 
-        const companyItems =
-          existingByCompany.get(companyId) ??
-          new Map<
-            string,
-            {
-              id: Id<'inboxItems'>;
-              ghUpdatedAt: number | null;
-              updatedAt: number;
-            }
-          >();
-        existingByCompany.set(companyId, companyItems);
-
-        const existing = companyItems.get(notification.threadId);
+        const existing = await getExistingThread(
+          companyId,
+          notification.threadId
+        );
         if (existing) {
           const incomingUpdatedAt = notification.updatedAt;
           if (
@@ -657,7 +635,7 @@ export const ingestNotifications = internalMutation({
             updatedAt: now,
             deletedAt: null,
           });
-          companyItems.set(notification.threadId, {
+          existingByThreadKey.set(dedupeKey, {
             id: existing.id,
             ghUpdatedAt: incomingUpdatedAt,
             updatedAt: now,
@@ -700,7 +678,7 @@ export const ingestNotifications = internalMutation({
           }
         );
 
-        companyItems.set(notification.threadId, {
+        existingByThreadKey.set(dedupeKey, {
           id: insertedId,
           ghUpdatedAt: notification.updatedAt ?? null,
           updatedAt: now,

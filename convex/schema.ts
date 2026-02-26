@@ -533,6 +533,11 @@ export default defineSchema({
   })
     .index('by_companyId', ['companyId'])
     .index('by_companyId_deletedAt', ['companyId', 'deletedAt'])
+    .index('by_companyId_source_externalId', [
+      'companyId',
+      'source',
+      'content.externalId',
+    ])
     .index('by_companyId_isRead', ['companyId', 'isRead'])
     .index('by_companyId_isArchived', ['companyId', 'isArchived'])
     .index('by_companyId_isPrivate', ['companyId', 'isPrivate']),
