@@ -17,6 +17,27 @@ async function renderSvgToPng(svgBuffer, size) {
   return sharp(svgBuffer, { density: 512 }).resize(size, size).png().toBuffer();
 }
 
+function toBottomUpBmp(encodedBuffer, width, height) {
+  const headerSize = 54;
+  const rowPaddingBytes = width % 4;
+  const rowSize = width * 3 + rowPaddingBytes;
+  const pixelDataSize = rowSize * height;
+
+  if (encodedBuffer.length < headerSize + pixelDataSize) {
+    throw new Error('Encoded BMP is too small for expected dimensions.');
+  }
+
+  const output = Buffer.from(encodedBuffer);
+  for (let y = 0; y < height; y += 1) {
+    const sourceStart = headerSize + y * rowSize;
+    const targetStart = headerSize + (height - 1 - y) * rowSize;
+    encodedBuffer.copy(output, targetStart, sourceStart, sourceStart + rowSize);
+  }
+
+  output.writeInt32LE(height, 22);
+  return output;
+}
+
 async function createHeaderBmp(svgBuffer) {
   const width = 150;
   const height = 57;
@@ -38,7 +59,10 @@ async function createHeaderBmp(svgBuffer) {
     .toBuffer({ resolveWithObject: true });
 
   const encoded = bmp.encode({ data, width, height });
-  await writeFile(join(assetsDir, 'installer-header.bmp'), encoded.data);
+  await writeFile(
+    join(assetsDir, 'installer-header.bmp'),
+    toBottomUpBmp(encoded.data, width, height)
+  );
 }
 
 async function createSidebarBmp(svgBuffer) {
@@ -62,7 +86,10 @@ async function createSidebarBmp(svgBuffer) {
     .toBuffer({ resolveWithObject: true });
 
   const encoded = bmp.encode({ data, width, height });
-  await writeFile(join(assetsDir, 'installer-sidebar.bmp'), encoded.data);
+  await writeFile(
+    join(assetsDir, 'installer-sidebar.bmp'),
+    toBottomUpBmp(encoded.data, width, height)
+  );
 }
 
 export async function generateIcons() {

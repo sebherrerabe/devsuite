@@ -27,8 +27,9 @@ async function readBmpDimensions(filePath: string) {
   const buf = await readFile(filePath);
   if (buf.length < 26) throw new Error('BMP too small');
   const width = buf.readInt32LE(18);
-  const height = Math.abs(buf.readInt32LE(22));
-  return { width, height };
+  const rawHeight = buf.readInt32LE(22);
+  const height = Math.abs(rawHeight);
+  return { width, height, rawHeight };
 }
 
 test('generateIcons writes desktop icon and installer bitmap assets', async () => {
@@ -48,10 +49,12 @@ test('generateIcons writes desktop icon and installer bitmap assets', async () =
   const header = await readBmpDimensions(headerPath);
   assert.equal(header.width, 150);
   assert.equal(header.height, 57);
+  assert.ok(header.rawHeight > 0);
 
   const sidebar = await readBmpDimensions(sidebarPath);
   assert.equal(sidebar.width, 164);
   assert.equal(sidebar.height, 314);
+  assert.ok(sidebar.rawHeight > 0);
 
   const iconIco = await stat(iconIcoPath);
   assert.ok(iconIco.isFile());
