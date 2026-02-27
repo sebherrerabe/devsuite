@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { isElectronDesktopContext } from './desktop-context-detection';
+import { resolveDesktopNotificationsEnabledPreference } from './inbox-notification-preferences';
 
 test('isElectronDesktopContext: returns false when window is undefined', () => {
   const g = globalThis as { window?: unknown };
@@ -38,4 +39,38 @@ test('isElectronDesktopContext: returns true when desktopNotification is present
   } finally {
     g.window = orig;
   }
+});
+
+test('resolveDesktopNotificationsEnabledPreference: honors explicit persisted values', () => {
+  assert.equal(
+    resolveDesktopNotificationsEnabledPreference({
+      storedValue: 'true',
+      isElectronContext: false,
+    }),
+    true
+  );
+  assert.equal(
+    resolveDesktopNotificationsEnabledPreference({
+      storedValue: 'false',
+      isElectronContext: true,
+    }),
+    false
+  );
+});
+
+test('resolveDesktopNotificationsEnabledPreference: defaults desktop runtime to enabled when unset', () => {
+  assert.equal(
+    resolveDesktopNotificationsEnabledPreference({
+      storedValue: null,
+      isElectronContext: true,
+    }),
+    true
+  );
+  assert.equal(
+    resolveDesktopNotificationsEnabledPreference({
+      storedValue: null,
+      isElectronContext: false,
+    }),
+    false
+  );
 });

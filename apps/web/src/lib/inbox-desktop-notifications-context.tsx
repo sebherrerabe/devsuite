@@ -16,6 +16,7 @@ import { useCurrentCompany } from '@/lib/company-context';
 import { authClient } from '@/lib/auth';
 import { resolveInboxNotificationRoute } from '@devsuite/shared';
 import { isElectronDesktopContext } from './desktop-context-detection';
+import { resolveDesktopNotificationsEnabledPreference } from './inbox-notification-preferences';
 
 type InboxItem = Doc<'inboxItems'>;
 type DesktopNotificationPermission =
@@ -51,7 +52,10 @@ function getPermissionState(): DesktopNotificationPermission {
 
 function readEnabledPreference(): boolean {
   if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem(ENABLED_STORAGE_KEY) === 'true';
+  return resolveDesktopNotificationsEnabledPreference({
+    storedValue: window.localStorage.getItem(ENABLED_STORAGE_KEY),
+    isElectronContext: isElectronDesktopContext(),
+  });
 }
 
 function writeEnabledPreference(next: boolean) {
