@@ -64,6 +64,29 @@ jobs:
           DEVSUITE_E2E_ALLOW_NON_WINDOWS: '1'
         run: pnpm --filter @devsuite/desktop test:e2e
 
+      - name: Configure Windows code signing
+        if: ${{ secrets.DEVSUITE_WINDOWS_CERT_PFX_BASE64 != '' }}
+        shell: pwsh
+        env:
+          DEVSUITE_WINDOWS_CERT_PFX_BASE64: ${{ secrets.DEVSUITE_WINDOWS_CERT_PFX_BASE64 }}
+          DEVSUITE_WINDOWS_CERT_PASSWORD: ${{ secrets.DEVSUITE_WINDOWS_CERT_PASSWORD }}
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "devsuite-authenticode.pfx"
+          [System.IO.File]::WriteAllBytes(
+            $certPath,
+            [System.Convert]::FromBase64String($env:DEVSUITE_WINDOWS_CERT_PFX_BASE64)
+          )
+          "WIN_CSC_LINK=$certPath" >> $env:GITHUB_ENV
+          "CSC_LINK=$certPath" >> $env:GITHUB_ENV
+          if (-not [string]::IsNullOrWhiteSpace($env:DEVSUITE_WINDOWS_CERT_PASSWORD)) {
+            "WIN_CSC_KEY_PASSWORD=$env:DEVSUITE_WINDOWS_CERT_PASSWORD" >> $env:GITHUB_ENV
+            "CSC_KEY_PASSWORD=$env:DEVSUITE_WINDOWS_CERT_PASSWORD" >> $env:GITHUB_ENV
+          }
+
+      - name: Code signing not configured
+        if: ${{ secrets.DEVSUITE_WINDOWS_CERT_PFX_BASE64 == '' }}
+        run: echo "No Windows signing cert configured. Producing unsigned installer (SmartScreen warning expected)."
+
       - name: Build Windows installer artifacts
         env:
           VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
