@@ -198,7 +198,6 @@ function parseIngestNotificationsResult(
     'notificationsUnmatched',
     'deliveriesCreated',
     'deliveriesUpdated',
-    'deliveriesSkippedStale',
   ] as const;
 
   for (const key of keys) {
@@ -218,6 +217,9 @@ function parseIngestNotificationsResult(
     notificationsUnmatched: payload.notificationsUnmatched as number,
     deliveriesCreated: payload.deliveriesCreated as number,
     deliveriesUpdated: payload.deliveriesUpdated as number,
-    deliveriesSkippedStale: payload.deliveriesSkippedStale as number,
+    deliveriesSkippedStale:
+      typeof payload.deliveriesSkippedStale === 'number'
+        ? payload.deliveriesSkippedStale
+        : 0,
   };
 }
