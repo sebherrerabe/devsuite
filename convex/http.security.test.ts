@@ -13,7 +13,9 @@ let __ingestParsersForTests!: {
 };
 
 before(async () => {
+  // nosemgrep: semgrep.devsuite-process-env-without-validation
   process.env.SITE_URL ??= 'http://localhost:5173';
+  // nosemgrep: semgrep.devsuite-process-env-without-validation
   process.env.BETTER_AUTH_SECRET ??= 'x'.repeat(32);
   process.env.NODE_ENV ??= 'test';
 

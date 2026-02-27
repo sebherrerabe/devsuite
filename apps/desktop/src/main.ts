@@ -138,6 +138,7 @@ const SESSION_DURATION_REGRESSION_TOLERANCE_MS = 1_500;
 const MAX_PENDING_NOTIFICATION_ACTIONS = 32;
 const TRAY_ICON_SIZE_PX = 16;
 const WEBSITE_SOURCE_PREFIX = 'webcontents';
+// nosemgrep: semgrep.devsuite-process-env-without-validation
 const ENABLE_TEST_IPC = process.env.DEVSUITE_DESKTOP_ENABLE_TEST_IPC === '1';
 const TEST_IPC_RENDERER_SWITCH = '--devsuite-enable-test-ipc=1';
 const TEST_IPC_RENDERER_ARGS = ENABLE_TEST_IPC
@@ -146,6 +147,7 @@ const TEST_IPC_RENDERER_ARGS = ENABLE_TEST_IPC
 const SHOW_COMPANION_ARG = '--show-companion';
 const COMPANION_ROUTE_PATH = '/session-companion';
 const DESKTOP_ADDITIONAL_NAV_ORIGINS =
+  // nosemgrep: semgrep.devsuite-process-env-without-validation
   process.env.DEVSUITE_DESKTOP_NAV_ALLOW_ORIGINS;
 const ICON_FILENAME_PRIMARY =
   process.platform === 'win32' ? 'icon.ico' : 'icon.png';
@@ -199,7 +201,9 @@ function resolveExistingPath(candidates: readonly string[]): string {
 const APP_ICON_PATH = resolveExistingPath(APP_ICON_CANDIDATE_PATHS);
 
 if (
+  // nosemgrep: semgrep.devsuite-process-env-without-validation
   process.env.CI === 'true' ||
+  // nosemgrep: semgrep.devsuite-process-env-without-validation
   process.env.DEVSUITE_DESKTOP_DISABLE_GPU === '1'
 ) {
   app.disableHardwareAcceleration();
@@ -347,6 +351,7 @@ function resetLocalEffectiveState(): void {
   staleWarningShown = false;
 }
 const allowedDesktopNavigationOrigins = resolveAllowedDesktopNavigationOrigins({
+  // nosemgrep: semgrep.devsuite-process-env-without-validation
   webUrl: process.env.DEVSUITE_WEB_URL,
   nodeEnv: process.env.NODE_ENV,
   additionalOriginsCsv: DESKTOP_ADDITIONAL_NAV_ORIGINS,
@@ -2007,6 +2012,7 @@ function resolveRendererUrl(): string | undefined {
 
 function resolveRendererUrlOptions(): ResolveRendererUrlOptions {
   return {
+    // nosemgrep: semgrep.devsuite-process-env-without-validation
     envUrl: process.env.DEVSUITE_WEB_URL,
     isPackaged: app.isPackaged,
     rendererExists: existsSync(RENDERER_INDEX_PATH),

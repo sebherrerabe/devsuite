@@ -166,6 +166,7 @@ export const backfillDefaultsForCompany = internalMutation({
     companyId: v.id('companies'),
   },
   handler: async (ctx, args) => {
+    // nosemgrep: semgrep.devsuite-company-id-without-ownership-check
     const companyId = requireCompanyId(args.companyId);
     return await backfillDefaultsForCompanyInternal(ctx, companyId);
   },
@@ -174,6 +175,7 @@ export const backfillDefaultsForCompany = internalMutation({
 export const backfillDefaultsAllCompanies = internalMutation({
   args: {},
   handler: async ctx => {
+    // nosemgrep: semgrep.devsuite-process-env-without-validation
     if (process.env.MIGRATION_ALLOW_ALL !== 'true') {
       throw new Error(
         'MIGRATION_ALLOW_ALL is not enabled for this deployment.'

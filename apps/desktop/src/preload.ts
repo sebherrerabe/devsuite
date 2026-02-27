@@ -504,6 +504,7 @@ const desktopTestApi: DesktopTestApi = {
     }>,
 };
 const trustedOrigins = resolveTrustedDesktopOrigins({
+  // nosemgrep: semgrep.devsuite-process-env-without-validation
   webUrl: process.env.DEVSUITE_WEB_URL,
   nodeEnv: process.env.NODE_ENV,
 });

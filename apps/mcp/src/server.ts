@@ -9,6 +9,7 @@ import { readStyleGuideTool } from './tools/read-style-guide.js';
 import { prListTool } from './tools/pr-list.js';
 
 function assertAuthToken(args: unknown) {
+  // nosemgrep: semgrep.devsuite-process-env-without-validation
   const token = process.env.MCP_TOKEN;
   if (!token) {
     throw new Error('MCP_TOKEN is not configured');

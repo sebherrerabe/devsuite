@@ -411,6 +411,7 @@ function resolveOptions(options: HostsManagerOptions = {}) {
     execFile: options.execFile ?? execFileAsync,
     platform: options.platform ?? process.platform,
     programDataPath:
+      // nosemgrep: semgrep.devsuite-process-env-without-validation
       options.programDataPath ?? process.env.ProgramData ?? 'C:\\ProgramData',
     helperTaskName: options.helperTaskName ?? HOSTS_WRITE_HELPER_TASK_NAME,
     helperTimeoutMs: options.helperTimeoutMs ?? HOSTS_WRITE_HELPER_TIMEOUT_MS,

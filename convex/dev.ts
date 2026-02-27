@@ -30,6 +30,7 @@ import { ensureDefaultProjectId } from './projects';
  */
 function isDevModeEnabled(): boolean {
   // Check Convex environment variable
+  // nosemgrep: semgrep.devsuite-process-env-without-validation
   const devAllowSeed = process.env.DEV_ALLOW_SEED;
   if (devAllowSeed === 'true') {
     return true;

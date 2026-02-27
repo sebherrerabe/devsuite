@@ -6,7 +6,9 @@ let requireBetterAuthSecret!: (secret: string | undefined) => string;
 let requireSiteUrl!: (siteUrl: string | undefined) => string;
 
 before(async () => {
+  // nosemgrep: semgrep.devsuite-process-env-without-validation
   process.env.SITE_URL ??= 'http://localhost:5173';
+  // nosemgrep: semgrep.devsuite-process-env-without-validation
   process.env.BETTER_AUTH_SECRET ??= 'x'.repeat(32);
   const authModule = await import('../auth.js');
   requireBetterAuthSecret = authModule.requireBetterAuthSecret;

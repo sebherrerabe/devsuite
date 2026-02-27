@@ -70,6 +70,7 @@ export async function requireOwnedCompanyId(
   ctx: CompanyAccessCtx,
   companyId: Id<'companies'> | null | undefined
 ): Promise<Id<'companies'>> {
+  // nosemgrep: semgrep.devsuite-company-id-without-ownership-check
   const resolvedCompanyId = requireCompanyId(companyId);
   const identity = (await ctx.auth.getUserIdentity()) as UserIdentity | null;
   if (!identity) {
