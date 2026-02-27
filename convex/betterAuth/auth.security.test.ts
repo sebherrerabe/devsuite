@@ -13,8 +13,12 @@ before(async () => {
   requireSiteUrl = authModule.requireSiteUrl;
 });
 
-test('requireSiteUrl: rejects empty site url', () => {
-  assert.throws(() => requireSiteUrl(undefined), /SITE_URL is required/);
+test('requireSiteUrl: rejects explicit empty site url', () => {
+  assert.throws(() => requireSiteUrl(''), /SITE_URL is required/);
+});
+
+test('requireSiteUrl: falls back to local site url when undefined', () => {
+  assert.equal(requireSiteUrl(undefined), 'http://localhost:5173');
 });
 
 test('requireSiteUrl: accepts configured site url', () => {
