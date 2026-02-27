@@ -31,7 +31,9 @@ jobs:
         run: pnpm test:security
 
       - name: Dependency vulnerability audit
-        run: pnpm audit --audit-level=high
+        run: |
+          pnpm audit --audit-level=high --json > audit-report.json || true
+          node .github/scripts/security-audit-gate.mjs audit-report.json
 
       - name: Semgrep scan
         uses: returntocorp/semgrep-action@v1
