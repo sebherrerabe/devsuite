@@ -53,6 +53,30 @@ test('parseDesktopNotificationRequest applies defaults', () => {
   assert.equal(parsed.throttleKey, 'user-1:company-1:session_ended:open_app');
 });
 
+test('parseDesktopNotificationRequest accepts new activity tracking notification kinds', () => {
+  const kinds: import('../../src/notifications.js').DesktopNotificationKind[] =
+    [
+      'inactivity_paused',
+      'inactivity_resumed',
+      'auto_session_started',
+      'auto_session_review',
+    ];
+
+  for (const kind of kinds) {
+    const parsed = parseDesktopNotificationRequest({
+      scope: { userId: 'user-1', companyId: 'company-1' },
+      kind,
+      title: 'Title',
+      body: 'Body',
+      action: 'open_app',
+      throttleKey: `user-1:company-1:${kind}`,
+    });
+
+    assert.equal(parsed.kind, kind);
+    assert.equal(parsed.throttleKey, `user-1:company-1:${kind}`);
+  }
+});
+
 test('parseDesktopNotificationRequest rejects invalid payloads', () => {
   assert.throws(
     () => parseDesktopNotificationRequest(null),

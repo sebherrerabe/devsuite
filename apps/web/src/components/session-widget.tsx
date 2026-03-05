@@ -90,9 +90,11 @@ export function SessionWidget({
     hasCompanion && companyId ? { companyId } : 'skip'
   );
   const ideWatchList =
-    (userSettings?.desktopFocus?.ideWatchList?.length ?? 0) > 0
-      ? (userSettings?.desktopFocus?.ideWatchList ?? [])
-      : DEFAULT_IDE_LIST;
+    (userSettings?.desktopFocus?.devCoreList?.length ?? 0) > 0
+      ? (userSettings?.desktopFocus?.devCoreList ?? [])
+      : (userSettings?.desktopFocus?.ideWatchList?.length ?? 0) > 0
+        ? (userSettings?.desktopFocus?.ideWatchList ?? [])
+        : DEFAULT_IDE_LIST;
 
   const sessionDetail = useQuery(
     api.sessions.getSession,

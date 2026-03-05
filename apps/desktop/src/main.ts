@@ -61,6 +61,8 @@ import {
   ForegroundWindowTracker,
   type IdeFocusPayload,
 } from './foreground-window-tracker.js';
+import { InactivityTracker } from './inactivity-tracker.js';
+import { AutoSessionManager } from './auto-session-manager.js';
 import {
   blockDomains,
   cleanupStaleBlocks,
@@ -302,6 +304,10 @@ let desktopFocusSettings: DesktopFocusSettings =
   createDefaultDesktopFocusSettings();
 let foregroundWindowTrackerRef: ForegroundWindowTracker | null = null;
 let foregroundTrackerRecordingIDE: string | null = null;
+let foregroundTrackerWatchListSignature = '';
+let inactivityTrackerRef: InactivityTracker | null = null;
+let autoSessionManagerRef: AutoSessionManager | null = null;
+let sessionWasAutoPaused = false;
 let effectiveDurationTickTimer: ReturnType<typeof setInterval> | null = null;
 let strictPolicyState: StrictPolicyState = createDefaultStrictPolicyState();
 const notificationSentAtByKey = new Map<string, number>();
@@ -545,7 +551,11 @@ function parseDesktopProcessEventForTest(input: unknown): DesktopProcessEvent {
   }
 
   const category = input.category;
-  if (category !== 'ide' && category !== 'app_block') {
+  if (
+    category !== 'ide' &&
+    category !== 'dev_support' &&
+    category !== 'app_block'
+  ) {
     throw new Error('Desktop process event category is invalid.');
   }
 
@@ -647,6 +657,99 @@ function getAuthenticatedDesktopScope(): DesktopSettingsScope | null {
 
 function isRunningOrPaused(status: DesktopSessionState['status']): boolean {
   return status === 'RUNNING' || status === 'PAUSED';
+}
+
+function getAutoSessionDialogParent(): BrowserWindowType | undefined {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  const isWidgetFocused =
+    focusedWindow !== null &&
+    sessionWidgetWindowRef !== null &&
+    !sessionWidgetWindowRef.isDestroyed() &&
+    focusedWindow.id === sessionWidgetWindowRef.id;
+  if (isWidgetFocused) {
+    return undefined;
+  }
+
+  return focusedWindow ?? mainWindowRef ?? undefined;
+}
+
+async function showAutoSessionReviewDialog(sessionId: string): Promise<void> {
+  if (!desktopSessionScope) {
+    return;
+  }
+
+  const scope = desktopSessionScope;
+  await emitDesktopNotification({
+    scope,
+    kind: 'auto_session_review',
+    title: 'Review auto-session',
+    body: 'Your auto-started session ended. Review and finalize it.',
+    action: 'open_sessions',
+    route: '/sessions',
+    throttleKey: `${scope.userId}:${scope.companyId}:auto_session:review`,
+    throttleMs: 0,
+  }).catch(() => {});
+
+  const prompt: MessageBoxOptions = {
+    type: 'question',
+    buttons: ['Assign Project', 'Add Summary', 'Discard'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+    title: 'Auto-session ended',
+    message: 'Your automatic focus session ended.',
+    detail: `Session ${sessionId} is ready for review.`,
+  };
+  const dialogParent = getAutoSessionDialogParent();
+  const result = dialogParent
+    ? await dialog.showMessageBox(dialogParent, prompt)
+    : await dialog.showMessageBox(prompt);
+
+  if (result.response === 0 || result.response === 1) {
+    await routeDesktopNotificationAction({
+      scope,
+      action: 'open_sessions',
+      route: '/sessions',
+      requestedAt: Date.now(),
+    });
+  }
+}
+
+function ensureAutoSessionManager(): AutoSessionManager {
+  if (!autoSessionManagerRef) {
+    autoSessionManagerRef = new AutoSessionManager({
+      onAutoSessionStart: async () => {
+        if (!desktopSessionScope) {
+          return;
+        }
+
+        await dispatchDesktopSessionAction('start', {
+          isAutoStart: true,
+        });
+
+        await emitDesktopNotification({
+          scope: desktopSessionScope,
+          kind: 'auto_session_started',
+          title: 'Auto-session started',
+          body: 'Detected dev activity and started a focus session.',
+          action: 'open_sessions',
+          route: '/sessions',
+          throttleKey: `${desktopSessionScope.userId}:${desktopSessionScope.companyId}:auto_session:started`,
+          throttleMs: 120_000,
+        }).catch(() => {});
+      },
+      onAutoSessionReviewRequested: async sessionId => {
+        await showAutoSessionReviewDialog(sessionId);
+      },
+    });
+  }
+
+  autoSessionManagerRef.configure({
+    enabled: desktopFocusSettings.autoSession,
+    warmupSeconds: desktopFocusSettings.autoSessionWarmupSeconds,
+  });
+
+  return autoSessionManagerRef;
 }
 
 async function syncHostsBlockingForSessionTransition(params: {
@@ -950,6 +1053,7 @@ async function refreshProcessMonitorForScope(
   if (!scope) {
     desktopFocusSettings = createDefaultDesktopFocusSettings();
     processMonitor.setConfig(normalizeProcessWatchConfig({}));
+    autoSessionManagerRef?.stop();
     await unblockAll();
     return;
   }
@@ -958,6 +1062,7 @@ async function refreshProcessMonitorForScope(
     const settings =
       providedSettings ?? (await loadDesktopFocusSettings(scope));
     desktopFocusSettings = settings;
+    ensureAutoSessionManager();
     const config = createProcessWatchConfigFromFocusSettings(settings);
     processMonitor.setConfig(config);
     if (desktopSessionState.status === 'RUNNING') {
@@ -976,6 +1081,10 @@ async function handleDesktopProcessEvents(
   events: DesktopProcessEvent[]
 ): Promise<void> {
   appendProcessEvents(events);
+  autoSessionManagerRef?.handleProcessEvents(
+    events,
+    getDesktopSessionStateSnapshot()
+  );
   await evaluateAndRunStrictPolicy({ processEvents: events });
 }
 
@@ -1143,6 +1252,8 @@ function resolveDesktopNotificationRoute(
     request.kind === 'session_paused' ||
     request.kind === 'session_resumed' ||
     request.kind === 'session_ended' ||
+    request.kind === 'auto_session_started' ||
+    request.kind === 'auto_session_review' ||
     request.kind === 'ide_session_required' ||
     request.kind === 'distractor_app_detected' ||
     request.kind === 'website_blocked_detected' ||
@@ -1277,6 +1388,7 @@ async function dispatchDesktopSessionAction(
   action: DesktopSessionAction,
   options?: {
     endDecision?: DesktopSessionEndDecision;
+    isAutoStart?: boolean;
   }
 ): Promise<void> {
   if (!desktopSessionScope) {
@@ -1329,6 +1441,9 @@ async function dispatchDesktopSessionAction(
   const commandPayload = {
     scope: desktopSessionScope,
     action,
+    ...(action === 'start' && options?.isAutoStart === true
+      ? { isAutoStart: true }
+      : {}),
     ...(action === 'end' && endDecision ? { endDecision } : {}),
     requestedAt: Date.now(),
   };
@@ -1550,6 +1665,18 @@ function setDesktopScope(nextScope: DesktopSettingsScope | null): void {
     strictPolicyState = createDefaultStrictPolicyState();
     lastEffectiveDurationBySessionId.clear();
     resetLocalEffectiveState();
+    if (foregroundWindowTrackerRef) {
+      foregroundWindowTrackerRef.stop();
+      foregroundWindowTrackerRef = null;
+    }
+    foregroundTrackerRecordingIDE = null;
+    foregroundTrackerWatchListSignature = '';
+    if (inactivityTrackerRef) {
+      inactivityTrackerRef.stop();
+      inactivityTrackerRef = null;
+    }
+    autoSessionManagerRef?.stop();
+    sessionWasAutoPaused = false;
     if (effectiveDurationTickTimer) {
       clearInterval(effectiveDurationTickTimer);
       effectiveDurationTickTimer = null;
@@ -2252,6 +2379,7 @@ function registerIpcHandlers(): void {
       }
 
       const previousStatus = desktopSessionState.status;
+      const previousState = { ...desktopSessionState };
       const incomingState = parseDesktopSessionState(payload);
       let normalizedState = incomingState;
 
@@ -2301,6 +2429,10 @@ function registerIpcHandlers(): void {
       }
 
       desktopSessionState = normalizedState;
+      autoSessionManagerRef?.handleSessionStateChange(
+        previousState,
+        desktopSessionState
+      );
       await syncHostsBlockingForSessionTransition({
         previousStatus,
         nextStatus: desktopSessionState.status,
@@ -2326,18 +2458,95 @@ function registerIpcHandlers(): void {
       }
 
       if (process.platform === 'win32') {
+        if (previousStatus === 'PAUSED' && incomingState.status === 'RUNNING') {
+          sessionWasAutoPaused = false;
+        }
+        if (incomingState.status === 'IDLE') {
+          sessionWasAutoPaused = false;
+        }
+
         const shouldRunTracker =
-          desktopSessionState.status === 'RUNNING' &&
-          desktopSessionState.recordingIDE &&
+          (desktopSessionState.status === 'RUNNING' ||
+            (desktopSessionState.status === 'PAUSED' &&
+              sessionWasAutoPaused)) &&
           desktopSessionState.sessionId;
+
         const nextRecordingIDE = desktopSessionState.recordingIDE ?? null;
-        const needsRestart = foregroundTrackerRecordingIDE !== nextRecordingIDE;
-        if (shouldRunTracker && nextRecordingIDE) {
+        const nextWatchListSignature = desktopFocusSettings.devCoreList
+          .slice()
+          .sort()
+          .join('|');
+        const needsRestart =
+          foregroundTrackerRecordingIDE !== nextRecordingIDE ||
+          foregroundTrackerWatchListSignature !== nextWatchListSignature ||
+          !inactivityTrackerRef;
+
+        if (shouldRunTracker) {
           if (!foregroundWindowTrackerRef || needsRestart) {
             foregroundWindowTrackerRef?.stop();
+            inactivityTrackerRef?.stop();
+
             foregroundTrackerRecordingIDE = nextRecordingIDE;
+            foregroundTrackerWatchListSignature = nextWatchListSignature;
+
+            inactivityTrackerRef = new InactivityTracker({
+              thresholdSeconds: desktopFocusSettings.inactivityThresholdSeconds,
+              onInactive: () => {
+                if (
+                  desktopSessionState.status === 'RUNNING' &&
+                  desktopFocusSettings.autoInactivityPause
+                ) {
+                  runtimeLog.info(
+                    'session-sync',
+                    'Inactivity threshold reached, auto-pausing session.'
+                  );
+                  sessionWasAutoPaused = true;
+                  void dispatchDesktopSessionAction('pause');
+                  if (desktopSessionScope) {
+                    void emitDesktopNotification({
+                      scope: desktopSessionScope,
+                      action: 'open_sessions',
+                      route: '/sessions',
+                      kind: 'inactivity_paused',
+                      title: 'Session Paused',
+                      body: `Session paused due to ${desktopFocusSettings.inactivityThresholdSeconds / 60}m of inactivity.`,
+                      throttleKey: `${desktopSessionScope.userId}:${desktopSessionScope.companyId}:inactivity:paused`,
+                      throttleMs: 60_000,
+                    }).catch(() => {});
+                  }
+                }
+              },
+              onActive: () => {
+                if (
+                  desktopSessionState.status === 'PAUSED' &&
+                  sessionWasAutoPaused &&
+                  desktopFocusSettings.autoInactivityPause
+                ) {
+                  runtimeLog.info(
+                    'session-sync',
+                    'Activity resumed, auto-resuming session.'
+                  );
+                  sessionWasAutoPaused = false;
+                  void dispatchDesktopSessionAction('resume');
+                  if (desktopSessionScope) {
+                    void emitDesktopNotification({
+                      scope: desktopSessionScope,
+                      action: 'open_sessions',
+                      route: '/sessions',
+                      kind: 'inactivity_resumed',
+                      title: 'Session Resumed',
+                      body: 'Welcome back! Your session has been auto-resumed.',
+                      throttleKey: `${desktopSessionScope.userId}:${desktopSessionScope.companyId}:inactivity:resumed`,
+                      throttleMs: 60_000,
+                    }).catch(() => {});
+                  }
+                }
+              },
+            });
+
             foregroundWindowTrackerRef = new ForegroundWindowTracker({
-              recordingIDE: nextRecordingIDE,
+              recordingExecutable: nextRecordingIDE,
+              watchList: desktopFocusSettings.devCoreList,
               onFocusChange: (focused, _payload: IdeFocusPayload) => {
                 const now = Date.now();
                 if (focused) {
@@ -2367,8 +2576,14 @@ function registerIpcHandlers(): void {
                 }
                 broadcastDesktopSessionState();
               },
+              onAnyDevFocusChange: (_payload, focused) => {
+                if (focused) {
+                  inactivityTrackerRef?.recordActivity();
+                }
+              },
             });
             lastIdeFocusAt = Date.now();
+            inactivityTrackerRef.start();
             foregroundWindowTrackerRef.start();
             void foregroundWindowTrackerRef.triggerImmediatePoll();
             if (!effectiveDurationTickTimer) {
@@ -2424,6 +2639,10 @@ function registerIpcHandlers(): void {
           foregroundWindowTrackerRef?.stop();
           foregroundWindowTrackerRef = null;
           foregroundTrackerRecordingIDE = null;
+          foregroundTrackerWatchListSignature = '';
+          inactivityTrackerRef?.stop();
+          inactivityTrackerRef = null;
+          sessionWasAutoPaused = false;
           resetLocalEffectiveState();
           if (effectiveDurationTickTimer) {
             clearInterval(effectiveDurationTickTimer);
@@ -2806,6 +3025,11 @@ if (hasHostsWriteHelperArg(process.argv)) {
     isAppQuitting = true;
     foregroundWindowTrackerRef?.stop();
     foregroundWindowTrackerRef = null;
+    foregroundTrackerRecordingIDE = null;
+    foregroundTrackerWatchListSignature = '';
+    inactivityTrackerRef?.stop();
+    inactivityTrackerRef = null;
+    autoSessionManagerRef?.stop();
     processMonitor.stop();
     if (policyTickTimer) {
       clearInterval(policyTickTimer);

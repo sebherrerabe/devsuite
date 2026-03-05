@@ -29,6 +29,7 @@ test('parseDesktopSessionState accepts a valid payload', () => {
     updatedAt: 1739555000000,
     publishedAt: 1739555001000,
     recordingIDE: null,
+    isAutoCreated: null,
   });
 });
 
@@ -116,6 +117,39 @@ test('parseDesktopSessionState defaults publishedAt to updatedAt', () => {
   });
 
   assert.equal(parsed.publishedAt, 1739555000000);
+  assert.equal(parsed.isAutoCreated, null);
+});
+
+test('parseDesktopSessionState accepts auto-created session flag', () => {
+  const parsed = parseDesktopSessionState({
+    status: 'RUNNING',
+    sessionId: 'session-10',
+    effectiveDurationMs: 0,
+    remainingTaskCount: null,
+    connectionState: 'connected',
+    lastError: null,
+    updatedAt: 1,
+    isAutoCreated: true,
+  });
+
+  assert.equal(parsed.isAutoCreated, true);
+});
+
+test('parseDesktopSessionState rejects invalid auto-created flag', () => {
+  assert.throws(
+    () =>
+      parseDesktopSessionState({
+        status: 'IDLE',
+        sessionId: null,
+        effectiveDurationMs: 0,
+        remainingTaskCount: null,
+        connectionState: 'connected',
+        lastError: null,
+        updatedAt: 1,
+        isAutoCreated: 'yes',
+      }),
+    /isAutoCreated must be a boolean or null/
+  );
 });
 
 test('parseDesktopSessionCommand validates scope, action and timestamp', () => {
@@ -138,6 +172,20 @@ test('parseDesktopSessionCommand validates scope, action and timestamp', () => {
     endDecision: 'mark_all_done',
     requestedAt: 1739555000000,
   });
+});
+
+test('parseDesktopSessionCommand accepts auto-start flag', () => {
+  const parsed = parseDesktopSessionCommand({
+    scope: {
+      userId: 'user-1',
+      companyId: 'company-1',
+    },
+    action: 'start',
+    isAutoStart: true,
+    requestedAt: 1739555000001,
+  });
+
+  assert.equal(parsed.isAutoStart, true);
 });
 
 test('parseDesktopSessionCommand rejects invalid command payloads', () => {
@@ -177,6 +225,19 @@ test('parseDesktopSessionCommand rejects invalid command payloads', () => {
         requestedAt: 1,
       }),
     /endDecision must be one of/
+  );
+  assert.throws(
+    () =>
+      parseDesktopSessionCommand({
+        scope: {
+          userId: 'user-1',
+          companyId: 'company-1',
+        },
+        action: 'start',
+        isAutoStart: 'yes',
+        requestedAt: 1,
+      }),
+    /isAutoStart must be a boolean or null/
   );
 });
 

@@ -16,9 +16,33 @@ const MIN_GRACE_SECONDS = 5;
 const MAX_GRACE_SECONDS = 60 * 60;
 const MIN_REMINDER_INTERVAL_SECONDS = 30;
 const MAX_REMINDER_INTERVAL_SECONDS = 60 * 60;
+const MIN_INACTIVITY_THRESHOLD_SECONDS = 60;
+const MAX_INACTIVITY_THRESHOLD_SECONDS = 3600;
+const MIN_AUTO_SESSION_WARMUP_SECONDS = 30;
+const MAX_AUTO_SESSION_WARMUP_SECONDS = 600;
+const DEFAULT_INACTIVITY_THRESHOLD_SECONDS = 300;
+const DEFAULT_AUTO_INACTIVITY_PAUSE = true;
+const DEFAULT_AUTO_SESSION = false;
+const DEFAULT_AUTO_SESSION_WARMUP_SECONDS = 120;
+const DEFAULT_DEV_CORE_LIST = ['code.exe', 'cursor.exe', 'idea64.exe'];
+const DEFAULT_DEV_SUPPORT_LIST = [
+  'wt.exe',
+  'windowsterminal.exe',
+  'powershell.exe',
+  'cmd.exe',
+];
+const DEFAULT_DEV_SITE_LIST = [
+  'chat.openai.com',
+  'claude.ai',
+  'github.com',
+  'localhost',
+];
 
 const desktopFocusSettingsValidator = v.object({
-  ideWatchList: v.array(v.string()),
+  devCoreList: v.optional(v.array(v.string())),
+  ideWatchList: v.optional(v.array(v.string())),
+  devSupportList: v.optional(v.array(v.string())),
+  devSiteList: v.optional(v.array(v.string())),
   appBlockList: v.array(v.string()),
   websiteBlockList: v.array(v.string()),
   strictMode: v.union(v.literal('prompt_only'), v.literal('prompt_then_close')),
@@ -26,6 +50,10 @@ const desktopFocusSettingsValidator = v.object({
   websiteActionMode: v.union(v.literal('warn_only'), v.literal('escalate')),
   graceSeconds: v.number(),
   reminderIntervalSeconds: v.number(),
+  inactivityThresholdSeconds: v.optional(v.number()),
+  autoInactivityPause: v.optional(v.boolean()),
+  autoSession: v.optional(v.boolean()),
+  autoSessionWarmupSeconds: v.optional(v.number()),
 });
 
 type DbCtx = QueryCtx | MutationCtx;
@@ -105,7 +133,10 @@ function clampInteger(value: number, minimum: number, maximum: number) {
 }
 
 function normalizeDesktopFocusSettingsForStorage(value: {
-  ideWatchList: string[];
+  devCoreList?: string[];
+  ideWatchList?: string[];
+  devSupportList?: string[];
+  devSiteList?: string[];
   appBlockList: string[];
   websiteBlockList: string[];
   strictMode: 'prompt_only' | 'prompt_then_close';
@@ -113,9 +144,22 @@ function normalizeDesktopFocusSettingsForStorage(value: {
   websiteActionMode: 'warn_only' | 'escalate';
   graceSeconds: number;
   reminderIntervalSeconds: number;
+  inactivityThresholdSeconds?: number;
+  autoInactivityPause?: boolean;
+  autoSession?: boolean;
+  autoSessionWarmupSeconds?: number;
 }) {
+  const devCoreSource =
+    value.devCoreList ?? value.ideWatchList ?? DEFAULT_DEV_CORE_LIST;
+  const normalizedDevCoreList = normalizeExecutableNames(devCoreSource);
+
   return {
-    ideWatchList: normalizeExecutableNames(value.ideWatchList),
+    devCoreList: normalizedDevCoreList,
+    ideWatchList: normalizedDevCoreList,
+    devSupportList: normalizeExecutableNames(
+      value.devSupportList ?? DEFAULT_DEV_SUPPORT_LIST
+    ),
+    devSiteList: normalizeDomains(value.devSiteList ?? DEFAULT_DEV_SITE_LIST),
     appBlockList: normalizeExecutableNames(value.appBlockList),
     websiteBlockList: normalizeDomains(value.websiteBlockList),
     strictMode: value.strictMode,
@@ -130,6 +174,19 @@ function normalizeDesktopFocusSettingsForStorage(value: {
       value.reminderIntervalSeconds,
       MIN_REMINDER_INTERVAL_SECONDS,
       MAX_REMINDER_INTERVAL_SECONDS
+    ),
+    inactivityThresholdSeconds: clampInteger(
+      value.inactivityThresholdSeconds ?? DEFAULT_INACTIVITY_THRESHOLD_SECONDS,
+      MIN_INACTIVITY_THRESHOLD_SECONDS,
+      MAX_INACTIVITY_THRESHOLD_SECONDS
+    ),
+    autoInactivityPause:
+      value.autoInactivityPause ?? DEFAULT_AUTO_INACTIVITY_PAUSE,
+    autoSession: value.autoSession ?? DEFAULT_AUTO_SESSION,
+    autoSessionWarmupSeconds: clampInteger(
+      value.autoSessionWarmupSeconds ?? DEFAULT_AUTO_SESSION_WARMUP_SECONDS,
+      MIN_AUTO_SESSION_WARMUP_SECONDS,
+      MAX_AUTO_SESSION_WARMUP_SECONDS
     ),
   };
 }

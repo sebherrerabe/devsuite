@@ -73,7 +73,10 @@ test('parseTasklistCsvVerbose handles escaped quotes and empty rows', () => {
 
 test('createProcessWatchConfigFromFocusSettings normalizes and deduplicates', () => {
   const config = createProcessWatchConfigFromFocusSettings({
+    devCoreList: ['Code.exe', 'code.exe', 'Cursor.exe'],
     ideWatchList: ['Code.exe', 'code.exe', 'Cursor.exe'],
+    devSupportList: ['WT.exe', ' wt.exe '],
+    devSiteList: ['chat.openai.com'],
     appBlockList: ['WhatsApp.exe', ' whatsapp.exe '],
     websiteBlockList: [],
     strictMode: 'prompt_only',
@@ -81,9 +84,14 @@ test('createProcessWatchConfigFromFocusSettings normalizes and deduplicates', ()
     websiteActionMode: 'warn_only',
     graceSeconds: 60,
     reminderIntervalSeconds: 300,
+    inactivityThresholdSeconds: 300,
+    autoInactivityPause: true,
+    autoSession: false,
+    autoSessionWarmupSeconds: 120,
   });
 
   assert.deepEqual(config.ideExecutables, ['code.exe', 'cursor.exe']);
+  assert.deepEqual(config.devSupportExecutables, ['wt.exe']);
   assert.deepEqual(config.appExecutables, ['whatsapp.exe']);
   assert.equal(config.pollIntervalMs, 4000);
 });
@@ -91,11 +99,13 @@ test('createProcessWatchConfigFromFocusSettings normalizes and deduplicates', ()
 test('normalizeProcessWatchConfig clamps interval and normalizes executable names', () => {
   const config = normalizeProcessWatchConfig({
     ideExecutables: [' Code.exe '],
+    devSupportExecutables: [' WT.exe '],
     appExecutables: ['WhatsApp.exe'],
     pollIntervalMs: 10,
   });
 
   assert.deepEqual(config.ideExecutables, ['code.exe']);
+  assert.deepEqual(config.devSupportExecutables, ['wt.exe']);
   assert.deepEqual(config.appExecutables, ['whatsapp.exe']);
   assert.equal(config.pollIntervalMs, 1000);
 });
@@ -103,12 +113,14 @@ test('normalizeProcessWatchConfig clamps interval and normalizes executable name
 test('buildMonitoredEntries keeps only configured ide/app executables', () => {
   const config = normalizeProcessWatchConfig({
     ideExecutables: ['code.exe'],
+    devSupportExecutables: ['wt.exe'],
     appExecutables: ['whatsapp.exe'],
   });
 
   const entries = buildMonitoredEntries(
     [
       { executable: 'code.exe', pid: 1 },
+      { executable: 'wt.exe', pid: 11 },
       { executable: 'whatsapp.exe', pid: 2 },
       { executable: 'explorer.exe', pid: 3 },
     ],
@@ -119,6 +131,7 @@ test('buildMonitoredEntries keeps only configured ide/app executables', () => {
   assert.deepEqual(values, [
     { executable: 'code.exe', pid: 1, category: 'ide' },
     { executable: 'whatsapp.exe', pid: 2, category: 'app_block' },
+    { executable: 'wt.exe', pid: 11, category: 'dev_support' },
   ]);
 });
 
@@ -166,13 +179,17 @@ test('diffProcessEntries emits start/stop events for process transitions', () =>
 test('shouldMonitorProcesses reports if at least one executable is configured', () => {
   assert.equal(
     shouldMonitorProcesses(
-      normalizeProcessWatchConfig({ ideExecutables: [], appExecutables: [] })
+      normalizeProcessWatchConfig({
+        ideExecutables: [],
+        devSupportExecutables: [],
+        appExecutables: [],
+      })
     ),
     false
   );
   assert.equal(
     shouldMonitorProcesses(
-      normalizeProcessWatchConfig({ ideExecutables: ['code.exe'] })
+      normalizeProcessWatchConfig({ devSupportExecutables: ['wt.exe'] })
     ),
     true
   );

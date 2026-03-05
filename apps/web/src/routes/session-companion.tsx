@@ -273,9 +273,11 @@ function MiniCompanionCard({
 
   const userSettings = useQuery(api.userSettings.get, { companyId });
   const ideWatchList =
-    (userSettings?.desktopFocus?.ideWatchList?.length ?? 0) > 0
-      ? (userSettings?.desktopFocus?.ideWatchList ?? [])
-      : DEFAULT_IDE_LIST;
+    (userSettings?.desktopFocus?.devCoreList?.length ?? 0) > 0
+      ? (userSettings?.desktopFocus?.devCoreList ?? [])
+      : (userSettings?.desktopFocus?.ideWatchList?.length ?? 0) > 0
+        ? (userSettings?.desktopFocus?.ideWatchList ?? [])
+        : DEFAULT_IDE_LIST;
   const isDesktop = typeof window !== 'undefined' && !!window.desktopSession;
 
   const startSession = useMutation(api.sessions.startSession);

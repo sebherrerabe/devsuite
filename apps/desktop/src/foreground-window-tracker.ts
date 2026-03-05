@@ -7,7 +7,6 @@
  */
 
 import { clearInterval, setInterval } from 'node:timers';
-import { activeWindow } from 'active-win';
 import type { RuntimeLogWriter } from './runtime-logger.js';
 import { runtimeLog } from './runtime-logger.js';
 
@@ -27,8 +26,14 @@ export type IdeFocusChangeCallback = (
 ) => void | Promise<void>;
 
 export interface ForegroundWindowTrackerOptions {
-  recordingIDE: string;
+  recordingExecutable?: string | null;
+  watchList: string[];
   onFocusChange: IdeFocusChangeCallback;
+  onAnyDevFocusChange?: (
+    payload: IdeFocusPayload,
+    focused: boolean
+  ) => void | Promise<void>;
+  onActiveTick?: (payload: IdeFocusPayload) => void;
   pollIntervalMs?: number;
   logger?: RuntimeLogWriter;
 }
@@ -46,24 +51,39 @@ function getPathBasename(path: string | undefined): string {
   return normalizeExecutable(basename);
 }
 
-export function matchesRecordingIDE(
-  recordingIDE: string,
+export function matchesWatchList(
+  watchList: string[],
   owner: { name?: string; processId?: number; path?: string }
-): boolean {
-  const recNorm = normalizeExecutable(recordingIDE);
-  if (!recNorm) return false;
-
+): string | null {
   if (owner.path) {
     const pathNorm = getPathBasename(owner.path);
-    if (pathNorm && recNorm === pathNorm) return true;
+    if (pathNorm && watchList.includes(pathNorm)) return pathNorm;
   }
 
   if (owner.name) {
     const nameNorm = normalizeExecutable(owner.name);
-    if (nameNorm && recNorm === nameNorm) return true;
+    if (nameNorm && watchList.includes(nameNorm)) return nameNorm;
   }
 
-  return false;
+  return null;
+}
+
+function matchesExecutable(
+  executable: string,
+  owner: { name?: string; processId?: number; path?: string }
+): boolean {
+  const normalizedExecutable = normalizeExecutable(executable);
+  if (!normalizedExecutable) {
+    return false;
+  }
+
+  const byPath = getPathBasename(owner.path);
+  if (byPath && byPath === normalizedExecutable) {
+    return true;
+  }
+
+  const byName = owner.name ? normalizeExecutable(owner.name) : '';
+  return !!byName && byName === normalizedExecutable;
 }
 
 export function buildPayload(owner: {
@@ -89,8 +109,15 @@ export function buildPayload(owner: {
 }
 
 export class ForegroundWindowTracker {
-  private readonly recordingIDE: string;
+  private readonly recordingExecutable: string | null;
+  private readonly watchList: string[];
   private readonly onFocusChange: IdeFocusChangeCallback;
+  private readonly onAnyDevFocusChange:
+    | ((payload: IdeFocusPayload, focused: boolean) => void | Promise<void>)
+    | undefined;
+  private readonly onActiveTick:
+    | ((payload: IdeFocusPayload) => void)
+    | undefined;
   private readonly pollIntervalMs: number;
   private readonly logger: RuntimeLogWriter;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -98,8 +125,13 @@ export class ForegroundWindowTracker {
   private isSuspended = false;
 
   constructor(options: ForegroundWindowTrackerOptions) {
-    this.recordingIDE = normalizeExecutable(options.recordingIDE);
+    this.recordingExecutable = options.recordingExecutable
+      ? normalizeExecutable(options.recordingExecutable)
+      : null;
+    this.watchList = options.watchList.map(normalizeExecutable);
     this.onFocusChange = options.onFocusChange;
+    this.onAnyDevFocusChange = options.onAnyDevFocusChange;
+    this.onActiveTick = options.onActiveTick;
     const raw = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.pollIntervalMs = Math.max(
       MIN_POLL_INTERVAL_MS,
@@ -112,7 +144,7 @@ export class ForegroundWindowTracker {
     if (this.timer) return;
     this.logger.info(
       'foreground-window-tracker',
-      `starting: recordingIDE=${this.recordingIDE}, pollIntervalMs=${this.pollIntervalMs}`
+      `starting: recordingExecutable=${this.recordingExecutable ?? 'none'}, watchList=[${this.watchList.join(',')}], pollIntervalMs=${this.pollIntervalMs}`
     );
     void this.pollOnce();
     this.timer = setInterval(() => {
@@ -148,7 +180,7 @@ export class ForegroundWindowTracker {
         'suspend: emitting IDE_FOCUS_LOST'
       );
       void this.onFocusChange(false, {
-        executable: this.recordingIDE,
+        executable: 'unknown',
       });
     }
   }
@@ -167,21 +199,35 @@ export class ForegroundWindowTracker {
     if (this.isSuspended) return;
 
     try {
+      const { activeWindow } = await import('active-win');
       const window = await activeWindow();
-      const focused = !!(
-        window?.owner && matchesRecordingIDE(this.recordingIDE, window.owner)
-      );
+      const matchedExecutable = window?.owner
+        ? matchesWatchList(this.watchList, window.owner)
+        : null;
+      const focused = !!matchedExecutable;
+      const recordingFocused =
+        window?.owner && this.recordingExecutable
+          ? matchesExecutable(this.recordingExecutable, window.owner)
+          : focused;
       const payload = window?.owner
         ? buildPayload(window.owner)
-        : { executable: this.recordingIDE };
+        : { executable: matchedExecutable || 'unknown' };
 
-      if (focused !== this.isFocused) {
-        this.isFocused = focused;
+      if (recordingFocused !== this.isFocused) {
+        this.isFocused = recordingFocused;
         this.logger.debug(
           'foreground-window-tracker',
-          `transition: focused=${focused}, executable=${payload.executable}`
+          `transition: focused=${recordingFocused}, executable=${payload.executable}`
         );
-        await this.onFocusChange(focused, payload);
+        await this.onFocusChange(recordingFocused, payload);
+      }
+
+      if (this.onAnyDevFocusChange) {
+        await this.onAnyDevFocusChange(payload, focused);
+      }
+
+      if (focused && this.onActiveTick) {
+        this.onActiveTick(payload);
       }
     } catch (error) {
       this.logger.error(

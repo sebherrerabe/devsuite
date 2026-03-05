@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import {
   buildPayload,
-  matchesRecordingIDE,
+  matchesWatchList,
   normalizeExecutable,
 } from '../../src/foreground-window-tracker.js';
 
@@ -13,28 +13,39 @@ test('normalizeExecutable lowercases and adds .exe', () => {
   assert.equal(normalizeExecutable('cursor.exe'), 'cursor.exe');
 });
 
-test('matchesRecordingIDE matches by path basename', () => {
-  assert.ok(
-    matchesRecordingIDE('cursor.exe', {
+test('matchesWatchList matches by path basename', () => {
+  assert.equal(
+    matchesWatchList(['cursor.exe', 'code.exe'], {
       path: 'C:\\Program Files\\Cursor\\Cursor.exe',
       name: 'Other',
-    })
+    }),
+    'cursor.exe'
   );
-  assert.ok(
-    matchesRecordingIDE('cursor.exe', {
+  assert.equal(
+    matchesWatchList(['cursor.exe', 'code.exe'], {
       path: '/usr/local/bin/cursor.exe',
-    })
+    }),
+    'cursor.exe'
   );
 });
 
-test('matchesRecordingIDE matches by owner name', () => {
-  assert.ok(matchesRecordingIDE('cursor.exe', { name: 'Cursor' }));
-  assert.ok(matchesRecordingIDE('code.exe', { name: 'Code' }));
+test('matchesWatchList matches by owner name', () => {
+  assert.equal(
+    matchesWatchList(['cursor.exe', 'code.exe'], { name: 'Cursor' }),
+    'cursor.exe'
+  );
+  assert.equal(
+    matchesWatchList(['cursor.exe', 'code.exe'], { name: 'Code' }),
+    'code.exe'
+  );
 });
 
-test('matchesRecordingIDE returns false when no match', () => {
-  assert.ok(!matchesRecordingIDE('cursor.exe', { name: 'Chrome' }));
-  assert.ok(!matchesRecordingIDE('cursor.exe', { path: 'C:\\Chrome.exe' }));
+test('matchesWatchList returns null when no match', () => {
+  assert.equal(matchesWatchList(['cursor.exe'], { name: 'Chrome' }), null);
+  assert.equal(
+    matchesWatchList(['cursor.exe'], { path: 'C:\\Chrome.exe' }),
+    null
+  );
 });
 
 test('buildPayload normalizes executable from name', () => {

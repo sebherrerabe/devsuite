@@ -402,6 +402,7 @@ export function DesktopSessionBridge() {
       updatedAt,
       publishedAt,
       recordingIDE: activeSession?.recordingIDE ?? null,
+      isAutoCreated: activeSession?.isAutoCreated ?? null,
     };
     logDesktopBridgePublish({
       status: payload.status,
@@ -418,6 +419,7 @@ export function DesktopSessionBridge() {
   }, [
     activeSessionId,
     activeSessionStatus,
+    activeSession?.isAutoCreated,
     activeSession?.recordingIDE,
     commandError,
     connectionState,
@@ -657,6 +659,7 @@ export function DesktopSessionBridge() {
             }
             await startSession({
               companyId: snapshot.companyId,
+              isAutoCreated: command.isAutoStart === true,
             });
             break;
           }

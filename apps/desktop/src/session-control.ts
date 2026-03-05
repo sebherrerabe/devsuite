@@ -22,6 +22,8 @@ export interface DesktopSessionState {
   publishedAt?: number;
   /** User-selected IDE for strict-mode effective time (desktop only) */
   recordingIDE?: string | null;
+  /** Indicates whether the session was auto-started by desktop automation. */
+  isAutoCreated?: boolean | null;
 }
 
 export interface DesktopSessionActionAvailability {
@@ -35,6 +37,7 @@ export interface DesktopSessionCommand {
   scope: DesktopSettingsScope;
   action: DesktopSessionAction;
   endDecision?: DesktopSessionEndDecision;
+  isAutoStart?: boolean;
   requestedAt: number;
 }
 
@@ -129,6 +132,21 @@ function parseOptionalError(value: unknown): string | null {
   return trimmed;
 }
 
+function parseOptionalBoolean(
+  value: unknown,
+  fieldName: string
+): boolean | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value !== 'boolean') {
+    throw new Error(`${fieldName} must be a boolean or null.`);
+  }
+
+  return value;
+}
+
 export function parseDesktopSessionAction(
   value: unknown
 ): DesktopSessionAction {
@@ -175,6 +193,7 @@ export function createDefaultDesktopSessionState(): DesktopSessionState {
     lastError: null,
     updatedAt: now,
     publishedAt: now,
+    isAutoCreated: null,
   };
 }
 
@@ -214,6 +233,7 @@ export function parseDesktopSessionState(input: unknown): DesktopSessionState {
     updatedAt,
     publishedAt,
     recordingIDE,
+    isAutoCreated: parseOptionalBoolean(input.isAutoCreated, 'isAutoCreated'),
   };
 }
 
@@ -230,6 +250,12 @@ export function parseDesktopSessionCommand(
     scope: parseDesktopSettingsScope(input.scope),
     action: parseDesktopSessionAction(input.action),
     ...(endDecision ? { endDecision } : {}),
+    ...(input.isAutoStart === undefined
+      ? {}
+      : {
+          isAutoStart:
+            parseOptionalBoolean(input.isAutoStart, 'isAutoStart') ?? false,
+        }),
     requestedAt: parseTimestamp(input.requestedAt, 'requestedAt'),
   };
 }

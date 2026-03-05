@@ -183,7 +183,10 @@ export default defineSchema({
     ),
     desktopFocus: v.optional(
       v.object({
+        devCoreList: v.optional(v.array(v.string())),
         ideWatchList: v.array(v.string()),
+        devSupportList: v.optional(v.array(v.string())),
+        devSiteList: v.optional(v.array(v.string())),
         appBlockList: v.array(v.string()),
         websiteBlockList: v.array(v.string()),
         strictMode: v.union(
@@ -197,6 +200,10 @@ export default defineSchema({
         ),
         graceSeconds: v.number(),
         reminderIntervalSeconds: v.number(),
+        inactivityThresholdSeconds: v.optional(v.number()),
+        autoInactivityPause: v.optional(v.boolean()),
+        autoSession: v.optional(v.boolean()),
+        autoSessionWarmupSeconds: v.optional(v.number()),
       })
     ),
     createdAt: v.number(),
@@ -430,6 +437,7 @@ export default defineSchema({
     summary: v.union(v.string(), v.null()),
     projectIds: v.array(v.id('projects')),
     isExcludedFromSummaries: v.boolean(),
+    isAutoCreated: v.optional(v.boolean()),
     /** User-selected IDE executable for strict-mode effective time tracking (e.g. "code.exe") */
     recordingIDE: v.optional(v.string()),
     createdAt: v.number(),

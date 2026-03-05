@@ -531,6 +531,21 @@ function isValidRecordingIDE(
   return KNOWN_IDE_ALLOWLIST.includes(normalized);
 }
 
+async function resolveDefaultProjectId(
+  ctx: QueryCtx | MutationCtx,
+  companyId: Id<'companies'>
+): Promise<Id<'projects'> | null> {
+  const defaultProject = await ctx.db
+    .query('projects')
+    .withIndex('by_companyId_deletedAt', q =>
+      q.eq('companyId', companyId).eq('deletedAt', null)
+    )
+    .filter(q => q.eq(q.field('isDefault'), true))
+    .first();
+
+  return defaultProject?._id ?? null;
+}
+
 /**
  * Start a new session.
  */
@@ -541,6 +556,7 @@ export const startSession = mutation({
     summary: v.optional(v.string()),
     clientTimestamp: v.optional(v.number()),
     recordingIDE: v.optional(v.string()),
+    isAutoCreated: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
@@ -552,10 +568,17 @@ export const startSession = mutation({
       throw new Error('An active session already exists for this user');
     }
 
-    const projectIds = args.projectIds ?? [];
-    for (const projectId of projectIds) {
+    const requestedProjectIds = args.projectIds ?? [];
+    for (const projectId of requestedProjectIds) {
       const project = await ctx.db.get(projectId);
       assertCompanyScoped(project, companyId, 'projects');
+    }
+    let projectIds = requestedProjectIds;
+    if (projectIds.length === 0) {
+      const defaultProjectId = await resolveDefaultProjectId(ctx, companyId);
+      if (defaultProjectId) {
+        projectIds = [defaultProjectId];
+      }
     }
 
     let recordingIDE: string | undefined;
@@ -566,7 +589,10 @@ export const startSession = mutation({
           q.eq('companyId', companyId).eq('userId', userId)
         )
         .first();
-      const ideWatchList = settings?.desktopFocus?.ideWatchList ?? [];
+      const ideWatchList =
+        settings?.desktopFocus?.devCoreList ??
+        settings?.desktopFocus?.ideWatchList ??
+        [];
       if (!isValidRecordingIDE(args.recordingIDE, ideWatchList)) {
         throw new Error(
           `recordingIDE must be in ideWatchList or known allowlist: ${args.recordingIDE}`
@@ -588,18 +614,29 @@ export const startSession = mutation({
       summary: args.summary?.trim() ?? null,
       projectIds,
       isExcludedFromSummaries: false,
+      ...(args.isAutoCreated !== undefined
+        ? { isAutoCreated: args.isAutoCreated }
+        : {}),
       ...(recordingIDE !== undefined ? { recordingIDE } : {}),
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
     });
 
+    const startPayload: Record<string, unknown> = {};
+    if (projectIds.length > 0) {
+      startPayload.projectIds = projectIds;
+    }
+    if (args.isAutoCreated === true) {
+      startPayload.isAutoCreated = true;
+    }
+
     await appendSessionEvent(ctx, {
       companyId,
       sessionId,
       actorId: userId,
       type: 'SESSION_STARTED',
-      payload: projectIds.length > 0 ? { projectIds } : {},
+      payload: startPayload,
       clientTimestamp: args.clientTimestamp ?? null,
     });
 

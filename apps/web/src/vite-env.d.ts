@@ -26,7 +26,10 @@ type DesktopAppActionMode = 'warn' | 'warn_then_close';
 type DesktopWebsiteActionMode = 'warn_only' | 'escalate';
 
 interface DesktopFocusSettings {
+  devCoreList: string[];
   ideWatchList: string[];
+  devSupportList: string[];
+  devSiteList: string[];
   appBlockList: string[];
   websiteBlockList: string[];
   strictMode: DesktopStrictMode;
@@ -34,6 +37,10 @@ interface DesktopFocusSettings {
   websiteActionMode: DesktopWebsiteActionMode;
   graceSeconds: number;
   reminderIntervalSeconds: number;
+  inactivityThresholdSeconds: number;
+  autoInactivityPause: boolean;
+  autoSession: boolean;
+  autoSessionWarmupSeconds: number;
 }
 
 type DesktopSessionStatus = 'IDLE' | 'RUNNING' | 'PAUSED';
@@ -55,13 +62,17 @@ type DesktopNotificationKind =
   | 'distractor_app_detected'
   | 'website_blocked_detected'
   | 'tasks_remaining_reminder'
-  | 'inbox_item';
+  | 'inbox_item'
+  | 'inactivity_paused'
+  | 'inactivity_resumed'
+  | 'auto_session_started'
+  | 'auto_session_review';
 type DesktopNotificationAction =
   | 'open_app'
   | 'open_sessions'
   | 'start_session'
   | 'open_inbox';
-type DesktopProcessCategory = 'ide' | 'app_block';
+type DesktopProcessCategory = 'ide' | 'dev_support' | 'app_block';
 type DesktopProcessEventType = 'process_started' | 'process_stopped';
 
 interface DesktopSessionState {
@@ -74,6 +85,7 @@ interface DesktopSessionState {
   updatedAt: number;
   publishedAt?: number;
   recordingIDE?: string | null;
+  isAutoCreated?: boolean | null;
 }
 
 interface IdeFocusEventPayload {
@@ -92,6 +104,7 @@ interface DesktopSessionCommand {
   scope: DesktopSettingsScope;
   action: DesktopSessionAction;
   endDecision?: DesktopSessionEndDecision;
+  isAutoStart?: boolean;
   requestedAt: number;
 }
 

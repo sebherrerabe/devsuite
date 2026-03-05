@@ -8,7 +8,10 @@ export interface DesktopSettingsScope {
 }
 
 export interface DesktopFocusSettings {
+  devCoreList: string[];
   ideWatchList: string[];
+  devSupportList: string[];
+  devSiteList: string[];
   appBlockList: string[];
   websiteBlockList: string[];
   strictMode: StrictMode;
@@ -16,16 +19,39 @@ export interface DesktopFocusSettings {
   websiteActionMode: WebsiteActionMode;
   graceSeconds: number;
   reminderIntervalSeconds: number;
+  inactivityThresholdSeconds: number;
+  autoInactivityPause: boolean;
+  autoSession: boolean;
+  autoSessionWarmupSeconds: number;
 }
 
-const DEFAULT_IDE_WATCH_LIST = ['code.exe', 'cursor.exe', 'idea64.exe'];
+const DEFAULT_DEV_CORE_LIST = ['code.exe', 'cursor.exe', 'idea64.exe'];
+const DEFAULT_DEV_SUPPORT_LIST = [
+  'wt.exe',
+  'windowsterminal.exe',
+  'powershell.exe',
+  'cmd.exe',
+];
+const DEFAULT_DEV_SITE_LIST = [
+  'chat.openai.com',
+  'claude.ai',
+  'github.com',
+  'localhost',
+];
 const MIN_GRACE_SECONDS = 5;
 const MAX_GRACE_SECONDS = 60 * 60;
 const MIN_REMINDER_INTERVAL_SECONDS = 30;
 const MAX_REMINDER_INTERVAL_SECONDS = 60 * 60;
+const MIN_INACTIVITY_THRESHOLD_SECONDS = 60;
+const MAX_INACTIVITY_THRESHOLD_SECONDS = 3600;
+const MIN_AUTO_SESSION_WARMUP_SECONDS = 30;
+const MAX_AUTO_SESSION_WARMUP_SECONDS = 600;
 
 export const DEFAULT_DESKTOP_FOCUS_SETTINGS: DesktopFocusSettings = {
-  ideWatchList: DEFAULT_IDE_WATCH_LIST,
+  devCoreList: DEFAULT_DEV_CORE_LIST,
+  ideWatchList: DEFAULT_DEV_CORE_LIST,
+  devSupportList: DEFAULT_DEV_SUPPORT_LIST,
+  devSiteList: DEFAULT_DEV_SITE_LIST,
   appBlockList: [],
   websiteBlockList: [],
   strictMode: 'prompt_then_close',
@@ -33,6 +59,10 @@ export const DEFAULT_DESKTOP_FOCUS_SETTINGS: DesktopFocusSettings = {
   websiteActionMode: 'escalate',
   graceSeconds: 45,
   reminderIntervalSeconds: 120,
+  inactivityThresholdSeconds: 300,
+  autoInactivityPause: true,
+  autoSession: false,
+  autoSessionWarmupSeconds: 120,
 };
 
 type RawSettings = Partial<Record<keyof DesktopFocusSettings, unknown>>;
@@ -141,10 +171,20 @@ function parseBoundedInteger(
   return numericValue;
 }
 
+function parseBoolean(value: unknown, fieldName: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(`${fieldName} must be a boolean.`);
+  }
+  return value;
+}
+
 export function createDefaultDesktopFocusSettings(): DesktopFocusSettings {
   return {
     ...DEFAULT_DESKTOP_FOCUS_SETTINGS,
+    devCoreList: [...DEFAULT_DESKTOP_FOCUS_SETTINGS.devCoreList],
     ideWatchList: [...DEFAULT_DESKTOP_FOCUS_SETTINGS.ideWatchList],
+    devSupportList: [...DEFAULT_DESKTOP_FOCUS_SETTINGS.devSupportList],
+    devSiteList: [...DEFAULT_DESKTOP_FOCUS_SETTINGS.devSiteList],
     appBlockList: [...DEFAULT_DESKTOP_FOCUS_SETTINGS.appBlockList],
     websiteBlockList: [...DEFAULT_DESKTOP_FOCUS_SETTINGS.websiteBlockList],
   };
@@ -160,15 +200,27 @@ export function parseDesktopFocusSettings(
   const raw = input as RawSettings;
   const defaults = createDefaultDesktopFocusSettings();
 
+  const devCoreListRaw = raw.devCoreList ?? raw.ideWatchList;
+  const devCoreListParsed =
+    devCoreListRaw === undefined
+      ? defaults.devCoreList
+      : parseStringList(devCoreListRaw, 'devCoreList', normalizeExecutableName);
+
   return {
-    ideWatchList:
-      raw.ideWatchList === undefined
-        ? defaults.ideWatchList
+    devCoreList: devCoreListParsed,
+    ideWatchList: devCoreListParsed,
+    devSupportList:
+      raw.devSupportList === undefined
+        ? defaults.devSupportList
         : parseStringList(
-            raw.ideWatchList,
-            'ideWatchList',
+            raw.devSupportList,
+            'devSupportList',
             normalizeExecutableName
           ),
+    devSiteList:
+      raw.devSiteList === undefined
+        ? defaults.devSiteList
+        : parseStringList(raw.devSiteList, 'devSiteList', normalizeDomain),
     appBlockList:
       raw.appBlockList === undefined
         ? defaults.appBlockList
@@ -223,6 +275,32 @@ export function parseDesktopFocusSettings(
             'reminderIntervalSeconds',
             MIN_REMINDER_INTERVAL_SECONDS,
             MAX_REMINDER_INTERVAL_SECONDS
+          ),
+    inactivityThresholdSeconds:
+      raw.inactivityThresholdSeconds === undefined
+        ? defaults.inactivityThresholdSeconds
+        : parseBoundedInteger(
+            raw.inactivityThresholdSeconds,
+            'inactivityThresholdSeconds',
+            MIN_INACTIVITY_THRESHOLD_SECONDS,
+            MAX_INACTIVITY_THRESHOLD_SECONDS
+          ),
+    autoInactivityPause:
+      raw.autoInactivityPause === undefined
+        ? defaults.autoInactivityPause
+        : parseBoolean(raw.autoInactivityPause, 'autoInactivityPause'),
+    autoSession:
+      raw.autoSession === undefined
+        ? defaults.autoSession
+        : parseBoolean(raw.autoSession, 'autoSession'),
+    autoSessionWarmupSeconds:
+      raw.autoSessionWarmupSeconds === undefined
+        ? defaults.autoSessionWarmupSeconds
+        : parseBoundedInteger(
+            raw.autoSessionWarmupSeconds,
+            'autoSessionWarmupSeconds',
+            MIN_AUTO_SESSION_WARMUP_SECONDS,
+            MAX_AUTO_SESSION_WARMUP_SECONDS
           ),
   };
 }

@@ -12,7 +12,10 @@ function createSettings(
   overrides: Partial<DesktopFocusSettings> = {}
 ): DesktopFocusSettings {
   return {
+    devCoreList: ['code.exe'],
     ideWatchList: ['code.exe'],
+    devSupportList: ['wt.exe'],
+    devSiteList: ['chat.openai.com'],
     appBlockList: ['whatsapp.exe'],
     websiteBlockList: [],
     strictMode: 'prompt_only',
@@ -20,6 +23,10 @@ function createSettings(
     websiteActionMode: 'warn_only',
     graceSeconds: 10,
     reminderIntervalSeconds: 30,
+    inactivityThresholdSeconds: 300,
+    autoInactivityPause: true,
+    autoSession: false,
+    autoSessionWarmupSeconds: 120,
     ...overrides,
   };
 }
@@ -32,7 +39,7 @@ function createInput(overrides: {
     type: 'process_started' | 'process_stopped';
     executable: string;
     pid: number;
-    category: 'ide' | 'app_block';
+    category: 'ide' | 'dev_support' | 'app_block';
     timestamp: number;
   }>;
   websiteEvents?: Array<{
@@ -229,6 +236,28 @@ test('distractor apps are only enforced while a session is active', () => {
     ),
     true
   );
+});
+
+test('dev_support process events do not trigger strict policy enforcement', () => {
+  const result = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 2_500,
+      sessionStatus: 'RUNNING',
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'wt.exe',
+          pid: 999,
+          category: 'dev_support',
+          timestamp: 2_500,
+        },
+      ],
+    })
+  );
+
+  assert.equal(result.actions.length, 0);
+  assert.equal(result.auditEvents.length, 0);
 });
 
 test('fail-safe strips close-process actions when action volume spikes', () => {

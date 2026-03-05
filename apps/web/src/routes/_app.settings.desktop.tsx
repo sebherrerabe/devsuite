@@ -18,9 +18,20 @@ import { showToast } from '@/lib/toast';
 import { Checkbox } from '@/components/ui/checkbox';
 import { authClient } from '@/lib/auth';
 import { Badge } from '@/components/ui/badge';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 
 type DesktopFocusSettingsState = {
+  devCoreList: string[];
   ideWatchList: string[];
+  devSupportList: string[];
+  devSiteList: string[];
   appBlockList: string[];
   websiteBlockList: string[];
   strictMode: 'prompt_only' | 'prompt_then_close';
@@ -28,6 +39,10 @@ type DesktopFocusSettingsState = {
   websiteActionMode: 'warn_only' | 'escalate';
   graceSeconds: number;
   reminderIntervalSeconds: number;
+  inactivityThresholdSeconds: number;
+  autoInactivityPause: boolean;
+  autoSession: boolean;
+  autoSessionWarmupSeconds: number;
 };
 
 type DesktopAppBlockItem = {
@@ -41,7 +56,15 @@ type RunningDesktopProcess = {
 };
 
 const DEFAULT_DESKTOP_FOCUS_SETTINGS: DesktopFocusSettingsState = {
+  devCoreList: ['code.exe', 'cursor.exe', 'idea64.exe'],
   ideWatchList: ['code.exe', 'cursor.exe', 'idea64.exe'],
+  devSupportList: [
+    'wt.exe',
+    'windowsterminal.exe',
+    'powershell.exe',
+    'cmd.exe',
+  ],
+  devSiteList: ['chat.openai.com', 'claude.ai', 'github.com', 'localhost'],
   appBlockList: [],
   websiteBlockList: [],
   strictMode: 'prompt_then_close',
@@ -49,6 +72,10 @@ const DEFAULT_DESKTOP_FOCUS_SETTINGS: DesktopFocusSettingsState = {
   websiteActionMode: 'escalate',
   graceSeconds: 45,
   reminderIntervalSeconds: 120,
+  inactivityThresholdSeconds: 300,
+  autoInactivityPause: true,
+  autoSession: false,
+  autoSessionWarmupSeconds: 120,
 };
 const DEFAULT_COMPANION_SHORTCUT = 'Ctrl+Alt+D';
 
@@ -118,20 +145,22 @@ function toEnabledDesktopAppBlockList(items: DesktopAppBlockItem[]): string[] {
   return Array.from(new Set(enabled));
 }
 
-function clampInteger(value: number, fallbackValue: number): number {
+function clampInteger(
+  value: number,
+  fallbackValue: number,
+  minimum = 1,
+  maximum = 3_600
+): number {
   if (!Number.isFinite(value)) {
     return fallbackValue;
   }
-  return Math.max(1, Math.trunc(value));
+  const rounded = Math.trunc(value);
+  return Math.min(maximum, Math.max(minimum, rounded));
 }
 
 function appendUniqueValue(values: string[], candidate: string): string[] {
   const normalizedCandidate = normalizeExecutableInput(candidate);
-  if (!normalizedCandidate) {
-    return values;
-  }
-
-  if (values.includes(normalizedCandidate)) {
+  if (!normalizedCandidate || values.includes(normalizedCandidate)) {
     return values;
   }
 
@@ -140,11 +169,7 @@ function appendUniqueValue(values: string[], candidate: string): string[] {
 
 function appendUniqueDomain(values: string[], candidate: string): string[] {
   const normalizedCandidate = normalizeDomainInput(candidate);
-  if (!normalizedCandidate) {
-    return values;
-  }
-
-  if (values.includes(normalizedCandidate)) {
+  if (!normalizedCandidate || values.includes(normalizedCandidate)) {
     return values;
   }
 
@@ -152,16 +177,20 @@ function appendUniqueDomain(values: string[], candidate: string): string[] {
 }
 
 type ProcessPickerProps = {
-  ideExecutables: string[];
+  devCoreExecutables: string[];
+  devSupportExecutables: string[];
   appBlockExecutables: string[];
-  onAddIdeExecutable: (executable: string) => void;
+  onAddDevCoreExecutable: (executable: string) => void;
+  onAddDevSupportExecutable: (executable: string) => void;
   onAddAppBlockExecutable: (executable: string) => void;
 };
 
 function ProcessPicker({
-  ideExecutables,
+  devCoreExecutables,
+  devSupportExecutables,
   appBlockExecutables,
-  onAddIdeExecutable,
+  onAddDevCoreExecutable,
+  onAddDevSupportExecutable,
   onAddAppBlockExecutable,
 }: ProcessPickerProps) {
   const [runningProcesses, setRunningProcesses] = useState<
@@ -225,15 +254,18 @@ function ProcessPicker({
   const selectedProcess = runningProcesses.find(
     process => process.executable === selectedExecutable
   );
-  const normalizedIdeSet = new Set(
-    ideExecutables.map(normalizeExecutableInput).filter(Boolean)
+  const normalizedDevCoreSet = new Set(
+    devCoreExecutables.map(normalizeExecutableInput).filter(Boolean)
+  );
+  const normalizedDevSupportSet = new Set(
+    devSupportExecutables.map(normalizeExecutableInput).filter(Boolean)
   );
   const normalizedAppBlockSet = new Set(
     appBlockExecutables.map(normalizeExecutableInput).filter(Boolean)
   );
 
   return (
-    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium">Running process picker</p>
         <Button
@@ -295,16 +327,34 @@ function ProcessPicker({
           size="sm"
           variant="secondary"
           disabled={
-            !selectedProcess || normalizedIdeSet.has(selectedProcess.executable)
+            !selectedProcess ||
+            normalizedDevCoreSet.has(selectedProcess.executable)
           }
           onClick={() => {
             if (!selectedProcess) {
               return;
             }
-            onAddIdeExecutable(selectedProcess.executable);
+            onAddDevCoreExecutable(selectedProcess.executable);
           }}
         >
-          Add to IDE list
+          Add to dev core
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={
+            !selectedProcess ||
+            normalizedDevSupportSet.has(selectedProcess.executable)
+          }
+          onClick={() => {
+            if (!selectedProcess) {
+              return;
+            }
+            onAddDevSupportExecutable(selectedProcess.executable);
+          }}
+        >
+          Add to dev support
         </Button>
         <Button
           type="button"
@@ -321,9 +371,42 @@ function ProcessPicker({
             onAddAppBlockExecutable(selectedProcess.executable);
           }}
         >
-          Add to app block list
+          Add to app block
         </Button>
       </div>
+    </div>
+  );
+}
+
+function ChipList({
+  values,
+  variant,
+  onRemove,
+  emptyText,
+}: {
+  values: string[];
+  variant: 'secondary' | 'outline';
+  onRemove: (value: string) => void;
+  emptyText: string;
+}) {
+  if (values.length === 0) {
+    return <p className="text-xs text-muted-foreground">{emptyText}</p>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {values.map(value => (
+        <Badge key={value} variant={variant} className="gap-2 px-2 py-1">
+          <span>{value}</span>
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => onRemove(value)}
+          >
+            x
+          </button>
+        </Badge>
+      ))}
     </div>
   );
 }
@@ -343,18 +426,30 @@ function DesktopSettingsPage() {
   );
   const updateSettings = useMutation(api.userSettings.update);
 
-  const [desktopIdeWatchList, setDesktopIdeWatchList] = useState<string[]>(
-    DEFAULT_DESKTOP_FOCUS_SETTINGS.ideWatchList
+  const [desktopDevCoreList, setDesktopDevCoreList] = useState<string[]>(
+    DEFAULT_DESKTOP_FOCUS_SETTINGS.devCoreList
   );
-  const [desktopIdeCandidate, setDesktopIdeCandidate] = useState('');
+  const [desktopDevCoreCandidate, setDesktopDevCoreCandidate] = useState('');
+  const [desktopDevSupportList, setDesktopDevSupportList] = useState<string[]>(
+    DEFAULT_DESKTOP_FOCUS_SETTINGS.devSupportList
+  );
+  const [desktopDevSupportCandidate, setDesktopDevSupportCandidate] =
+    useState('');
+  const [desktopDevSiteList, setDesktopDevSiteList] = useState<string[]>(
+    DEFAULT_DESKTOP_FOCUS_SETTINGS.devSiteList
+  );
+  const [desktopDevSiteCandidate, setDesktopDevSiteCandidate] = useState('');
+
   const [desktopAppBlockItems, setDesktopAppBlockItems] = useState<
     DesktopAppBlockItem[]
   >(toDesktopAppBlockItems(DEFAULT_DESKTOP_FOCUS_SETTINGS.appBlockList));
   const [desktopAppBlockCandidate, setDesktopAppBlockCandidate] = useState('');
+
   const [desktopWebsiteBlockList, setDesktopWebsiteBlockList] = useState<
     string[]
   >(DEFAULT_DESKTOP_FOCUS_SETTINGS.websiteBlockList);
   const [desktopWebsiteCandidate, setDesktopWebsiteCandidate] = useState('');
+
   const [desktopStrictMode, setDesktopStrictMode] = useState<
     DesktopFocusSettingsState['strictMode']
   >(DEFAULT_DESKTOP_FOCUS_SETTINGS.strictMode);
@@ -364,12 +459,29 @@ function DesktopSettingsPage() {
   const [desktopWebsiteActionMode, setDesktopWebsiteActionMode] = useState<
     DesktopFocusSettingsState['websiteActionMode']
   >(DEFAULT_DESKTOP_FOCUS_SETTINGS.websiteActionMode);
+
   const [desktopGraceSeconds, setDesktopGraceSeconds] = useState(
     String(DEFAULT_DESKTOP_FOCUS_SETTINGS.graceSeconds)
   );
   const [desktopReminderSeconds, setDesktopReminderSeconds] = useState(
     String(DEFAULT_DESKTOP_FOCUS_SETTINGS.reminderIntervalSeconds)
   );
+  const [
+    desktopInactivityThresholdSeconds,
+    setDesktopInactivityThresholdSeconds,
+  ] = useState(
+    String(DEFAULT_DESKTOP_FOCUS_SETTINGS.inactivityThresholdSeconds)
+  );
+
+  const [desktopAutoInactivityPause, setDesktopAutoInactivityPause] = useState(
+    DEFAULT_DESKTOP_FOCUS_SETTINGS.autoInactivityPause
+  );
+  const [desktopAutoSession, setDesktopAutoSession] = useState(
+    DEFAULT_DESKTOP_FOCUS_SETTINGS.autoSession
+  );
+  const [desktopAutoSessionWarmupSeconds, setDesktopAutoSessionWarmupSeconds] =
+    useState(String(DEFAULT_DESKTOP_FOCUS_SETTINGS.autoSessionWarmupSeconds));
+
   const [desktopCompanionShortcut, setDesktopCompanionShortcut] = useState(
     DEFAULT_COMPANION_SHORTCUT
   );
@@ -396,8 +508,26 @@ function DesktopSettingsPage() {
     const desktopFocus =
       settings?.desktopFocus ?? DEFAULT_DESKTOP_FOCUS_SETTINGS;
 
-    setDesktopIdeWatchList(
-      desktopFocus.ideWatchList.map(normalizeExecutableInput).filter(Boolean)
+    const nextDevCoreList =
+      (desktopFocus.devCoreList?.length ?? 0) > 0
+        ? (desktopFocus.devCoreList ?? [])
+        : (desktopFocus.ideWatchList ?? []);
+
+    setDesktopDevCoreList(
+      nextDevCoreList.map(normalizeExecutableInput).filter(Boolean)
+    );
+    setDesktopDevSupportList(
+      (
+        desktopFocus.devSupportList ??
+        DEFAULT_DESKTOP_FOCUS_SETTINGS.devSupportList
+      )
+        .map(normalizeExecutableInput)
+        .filter(Boolean)
+    );
+    setDesktopDevSiteList(
+      (desktopFocus.devSiteList ?? DEFAULT_DESKTOP_FOCUS_SETTINGS.devSiteList)
+        .map(normalizeDomainInput)
+        .filter(Boolean)
     );
     setDesktopAppBlockItems(toDesktopAppBlockItems(desktopFocus.appBlockList));
     setDesktopWebsiteBlockList(
@@ -408,6 +538,25 @@ function DesktopSettingsPage() {
     setDesktopWebsiteActionMode(desktopFocus.websiteActionMode);
     setDesktopGraceSeconds(String(desktopFocus.graceSeconds));
     setDesktopReminderSeconds(String(desktopFocus.reminderIntervalSeconds));
+    setDesktopInactivityThresholdSeconds(
+      String(
+        desktopFocus.inactivityThresholdSeconds ??
+          DEFAULT_DESKTOP_FOCUS_SETTINGS.inactivityThresholdSeconds
+      )
+    );
+    setDesktopAutoInactivityPause(
+      desktopFocus.autoInactivityPause ??
+        DEFAULT_DESKTOP_FOCUS_SETTINGS.autoInactivityPause
+    );
+    setDesktopAutoSession(
+      desktopFocus.autoSession ?? DEFAULT_DESKTOP_FOCUS_SETTINGS.autoSession
+    );
+    setDesktopAutoSessionWarmupSeconds(
+      String(
+        desktopFocus.autoSessionWarmupSeconds ??
+          DEFAULT_DESKTOP_FOCUS_SETTINGS.autoSessionWarmupSeconds
+      )
+    );
   }, [settings?.desktopFocus]);
 
   useEffect(() => {
@@ -518,8 +667,13 @@ function DesktopSettingsPage() {
       return;
     }
 
+    const normalizedDevCoreList = Array.from(new Set(desktopDevCoreList));
+
     const desktopFocusPayload: DesktopFocusSettingsState = {
-      ideWatchList: Array.from(new Set(desktopIdeWatchList)),
+      devCoreList: normalizedDevCoreList,
+      ideWatchList: normalizedDevCoreList,
+      devSupportList: Array.from(new Set(desktopDevSupportList)),
+      devSiteList: Array.from(new Set(desktopDevSiteList)),
       appBlockList: toEnabledDesktopAppBlockList(desktopAppBlockItems),
       websiteBlockList: Array.from(new Set(desktopWebsiteBlockList)),
       strictMode: desktopStrictMode,
@@ -527,11 +681,29 @@ function DesktopSettingsPage() {
       websiteActionMode: desktopWebsiteActionMode,
       graceSeconds: clampInteger(
         Number(desktopGraceSeconds),
-        DEFAULT_DESKTOP_FOCUS_SETTINGS.graceSeconds
+        DEFAULT_DESKTOP_FOCUS_SETTINGS.graceSeconds,
+        5,
+        3_600
       ),
       reminderIntervalSeconds: clampInteger(
         Number(desktopReminderSeconds),
-        DEFAULT_DESKTOP_FOCUS_SETTINGS.reminderIntervalSeconds
+        DEFAULT_DESKTOP_FOCUS_SETTINGS.reminderIntervalSeconds,
+        30,
+        3_600
+      ),
+      inactivityThresholdSeconds: clampInteger(
+        Number(desktopInactivityThresholdSeconds),
+        DEFAULT_DESKTOP_FOCUS_SETTINGS.inactivityThresholdSeconds,
+        60,
+        3_600
+      ),
+      autoInactivityPause: desktopAutoInactivityPause,
+      autoSession: desktopAutoSession,
+      autoSessionWarmupSeconds: clampInteger(
+        Number(desktopAutoSessionWarmupSeconds),
+        DEFAULT_DESKTOP_FOCUS_SETTINGS.autoSessionWarmupSeconds,
+        30,
+        600
       ),
     };
 
@@ -617,10 +789,10 @@ function DesktopSettingsPage() {
       <div>
         <h3 className="text-lg font-medium">Desktop</h3>
         <p className="text-sm text-muted-foreground">
-          Configure desktop-only focus enforcement and runtime behavior.
+          Configure activity detection, automatic sessions, and focus
+          enforcement.
         </p>
       </div>
-      <div className="h-[1px] bg-border" />
 
       <div className="grid gap-2 sm:grid-cols-2">
         {desktopCapabilities.map(capability => (
@@ -636,376 +808,496 @@ function DesktopSettingsPage() {
         ))}
       </div>
 
-      {hasDesktopProcessPicker ? (
-        <ProcessPicker
-          ideExecutables={desktopIdeWatchList}
-          appBlockExecutables={desktopAppBlockItems.map(
-            item => item.executable
-          )}
-          onAddIdeExecutable={executable =>
-            setDesktopIdeWatchList(previous =>
-              appendUniqueValue(previous, executable)
-            )
-          }
-          onAddAppBlockExecutable={addDesktopAppBlockExecutable}
-        />
-      ) : null}
+      <Card>
+        <CardHeader>
+          <CardTitle>Activity Detection</CardTitle>
+          <CardDescription>
+            Define what counts as development activity and when inactivity
+            should pause sessions.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {hasDesktopProcessPicker ? (
+            <ProcessPicker
+              devCoreExecutables={desktopDevCoreList}
+              devSupportExecutables={desktopDevSupportList}
+              appBlockExecutables={desktopAppBlockItems.map(
+                item => item.executable
+              )}
+              onAddDevCoreExecutable={executable =>
+                setDesktopDevCoreList(previous =>
+                  appendUniqueValue(previous, executable)
+                )
+              }
+              onAddDevSupportExecutable={executable =>
+                setDesktopDevSupportList(previous =>
+                  appendUniqueValue(previous, executable)
+                )
+              }
+              onAddAppBlockExecutable={addDesktopAppBlockExecutable}
+            />
+          ) : null}
 
-      <div className="rounded-md border p-4 space-y-4">
-        <div>
-          <p className="text-sm font-medium">IDE watch list</p>
-          <p className="text-xs text-muted-foreground">
-            Add executables that require an active session.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Input
-            value={desktopIdeCandidate}
-            onChange={event => setDesktopIdeCandidate(event.target.value)}
-            placeholder="code.exe"
-          />
-          <Button
-            type="button"
-            onClick={() => {
-              setDesktopIdeWatchList(previous =>
-                appendUniqueValue(previous, desktopIdeCandidate)
-              );
-              setDesktopIdeCandidate('');
-            }}
-          >
-            Add
-          </Button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {desktopIdeWatchList.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No IDE executables configured.
-            </p>
-          ) : (
-            desktopIdeWatchList.map(executable => (
-              <Badge
-                key={executable}
-                variant="secondary"
-                className="gap-2 px-2 py-1"
-              >
-                <span>{executable}</span>
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() =>
-                    setDesktopIdeWatchList(previous =>
-                      previous.filter(item => item !== executable)
-                    )
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3 rounded-md border p-3">
+              <p className="text-sm font-medium">Dev core executable list</p>
+              <div className="flex gap-2">
+                <Input
+                  value={desktopDevCoreCandidate}
+                  onChange={event =>
+                    setDesktopDevCoreCandidate(event.target.value)
                   }
-                >
-                  x
-                </button>
-              </Badge>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="rounded-md border p-4 space-y-4">
-        <div>
-          <p className="text-sm font-medium">Distractor app block list</p>
-          <p className="text-xs text-muted-foreground">
-            Enabled executables are warned and optionally closed during an
-            active session.
-          </p>
-        </div>
-
-        <div className="flex gap-2">
-          <Input
-            value={desktopAppBlockCandidate}
-            onChange={event => setDesktopAppBlockCandidate(event.target.value)}
-            placeholder="whatsapp.root.exe"
-          />
-          <Button
-            type="button"
-            onClick={() => {
-              addDesktopAppBlockExecutable(desktopAppBlockCandidate);
-              setDesktopAppBlockCandidate('');
-            }}
-          >
-            Add
-          </Button>
-        </div>
-
-        <div className="space-y-2">
-          {desktopAppBlockItems.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No distractor executables configured.
-            </p>
-          ) : (
-            desktopAppBlockItems.map(item => (
-              <div
-                key={item.executable}
-                className="flex items-center justify-between rounded-md border px-3 py-2"
-              >
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={item.enabled}
-                    onCheckedChange={checked =>
-                      setDesktopAppBlockItems(previousItems =>
-                        previousItems.map(previousItem =>
-                          previousItem.executable === item.executable
-                            ? {
-                                ...previousItem,
-                                enabled: Boolean(checked),
-                              }
-                            : previousItem
-                        )
-                      )
-                    }
-                  />
-                  <span className="text-sm">{item.executable}</span>
-                </div>
+                  placeholder="code.exe"
+                />
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    setDesktopAppBlockItems(previousItems =>
-                      previousItems.filter(
-                        previousItem =>
-                          previousItem.executable !== item.executable
-                      )
-                    )
-                  }
+                  onClick={() => {
+                    setDesktopDevCoreList(previous =>
+                      appendUniqueValue(previous, desktopDevCoreCandidate)
+                    );
+                    setDesktopDevCoreCandidate('');
+                  }}
                 >
-                  Remove
+                  Add
                 </Button>
               </div>
-            ))
-          )}
-        </div>
-      </div>
+              <ChipList
+                values={desktopDevCoreList}
+                variant="secondary"
+                emptyText="No dev core executables configured."
+                onRemove={value =>
+                  setDesktopDevCoreList(previous =>
+                    previous.filter(item => item !== value)
+                  )
+                }
+              />
+            </div>
 
-      <div className="rounded-md border p-4 space-y-4">
-        <div>
-          <p className="text-sm font-medium">Website block list</p>
-          <p className="text-xs text-muted-foreground">
-            Domains are applied through the desktop hosts policy during active
-            sessions.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Input
-            value={desktopWebsiteCandidate}
-            onChange={event => setDesktopWebsiteCandidate(event.target.value)}
-            placeholder="youtube.com"
-          />
-          <Button
-            type="button"
-            onClick={() => {
-              const nextValues = parseListInput(desktopWebsiteCandidate).reduce(
-                (values, candidate) => appendUniqueDomain(values, candidate),
-                desktopWebsiteBlockList
-              );
-              setDesktopWebsiteBlockList(nextValues);
-              setDesktopWebsiteCandidate('');
-            }}
-          >
-            Add
-          </Button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {desktopWebsiteBlockList.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No blocked domains configured.
-            </p>
-          ) : (
-            desktopWebsiteBlockList.map(domain => (
-              <Badge key={domain} variant="outline" className="gap-2 px-2 py-1">
-                <span>{domain}</span>
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() =>
-                    setDesktopWebsiteBlockList(previous =>
-                      previous.filter(item => item !== domain)
-                    )
+            <div className="space-y-3 rounded-md border p-3">
+              <p className="text-sm font-medium">Dev support executable list</p>
+              <div className="flex gap-2">
+                <Input
+                  value={desktopDevSupportCandidate}
+                  onChange={event =>
+                    setDesktopDevSupportCandidate(event.target.value)
                   }
+                  placeholder="wt.exe"
+                />
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setDesktopDevSupportList(previous =>
+                      appendUniqueValue(previous, desktopDevSupportCandidate)
+                    );
+                    setDesktopDevSupportCandidate('');
+                  }}
                 >
-                  x
-                </button>
-              </Badge>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="rounded-md border p-4 space-y-4">
-        <div>
-          <p className="text-sm font-medium">Enforcement mode</p>
-          <p className="text-xs text-muted-foreground">
-            Choose how strictly DevSuite reacts to IDE, distractor app, and
-            website events.
-          </p>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="space-y-2">
-            <p className="text-xs font-medium">IDE mode</p>
-            <div className="grid grid-cols-1 gap-2">
-              <Button
-                type="button"
-                variant={
-                  desktopStrictMode === 'prompt_only' ? 'default' : 'outline'
+                  Add
+                </Button>
+              </div>
+              <ChipList
+                values={desktopDevSupportList}
+                variant="secondary"
+                emptyText="No dev support executables configured."
+                onRemove={value =>
+                  setDesktopDevSupportList(previous =>
+                    previous.filter(item => item !== value)
+                  )
                 }
-                onClick={() => setDesktopStrictMode('prompt_only')}
-                className="justify-start"
-              >
-                Prompt only
-              </Button>
-              <Button
-                type="button"
-                variant={
-                  desktopStrictMode === 'prompt_then_close'
-                    ? 'default'
-                    : 'outline'
-                }
-                onClick={() => setDesktopStrictMode('prompt_then_close')}
-                className="justify-start"
-              >
-                Prompt then close
-              </Button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs font-medium">App action</p>
-            <div className="grid grid-cols-1 gap-2">
-              <Button
-                type="button"
-                variant={
-                  desktopAppActionMode === 'warn' ? 'default' : 'outline'
-                }
-                onClick={() => setDesktopAppActionMode('warn')}
-                className="justify-start"
-              >
-                Warn
-              </Button>
-              <Button
-                type="button"
-                variant={
-                  desktopAppActionMode === 'warn_then_close'
-                    ? 'default'
-                    : 'outline'
-                }
-                onClick={() => setDesktopAppActionMode('warn_then_close')}
-                className="justify-start"
-              >
-                Warn then close
-              </Button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs font-medium">Website action</p>
-            <div className="grid grid-cols-1 gap-2">
-              <Button
-                type="button"
-                variant={
-                  desktopWebsiteActionMode === 'warn_only'
-                    ? 'default'
-                    : 'outline'
-                }
-                onClick={() => setDesktopWebsiteActionMode('warn_only')}
-                className="justify-start"
-              >
-                Warn only
-              </Button>
-              <Button
-                type="button"
-                variant={
-                  desktopWebsiteActionMode === 'escalate'
-                    ? 'default'
-                    : 'outline'
-                }
-                onClick={() => setDesktopWebsiteActionMode('escalate')}
-                className="justify-start"
-              >
-                Escalate
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-md border p-4 space-y-4">
-        <div>
-          <p className="text-sm font-medium">Timing and runtime</p>
-          <p className="text-xs text-muted-foreground">
-            Tune grace windows and desktop startup behavior.
-          </p>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <label className="text-xs font-medium">Grace window</label>
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min={1}
-                value={desktopGraceSeconds}
-                onChange={event => setDesktopGraceSeconds(event.target.value)}
               />
-              <span className="text-xs text-muted-foreground">sec</span>
+            </div>
+
+            <div className="space-y-3 rounded-md border p-3 lg:col-span-2">
+              <p className="text-sm font-medium">Dev site allowlist</p>
+              <div className="flex gap-2">
+                <Input
+                  value={desktopDevSiteCandidate}
+                  onChange={event =>
+                    setDesktopDevSiteCandidate(event.target.value)
+                  }
+                  placeholder="chat.openai.com"
+                />
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const nextValues = parseListInput(
+                      desktopDevSiteCandidate
+                    ).reduce(
+                      (values, candidate) =>
+                        appendUniqueDomain(values, candidate),
+                      desktopDevSiteList
+                    );
+                    setDesktopDevSiteList(nextValues);
+                    setDesktopDevSiteCandidate('');
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
+              <ChipList
+                values={desktopDevSiteList}
+                variant="outline"
+                emptyText="No dev sites configured."
+                onRemove={value =>
+                  setDesktopDevSiteList(previous =>
+                    previous.filter(item => item !== value)
+                  )
+                }
+              />
             </div>
           </div>
-          <div className="space-y-2">
-            <label className="text-xs font-medium">Reminder interval</label>
+
+          <div className="rounded-md border p-3">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Auto-pause on inactivity</p>
+                <p className="text-xs text-muted-foreground">
+                  Pause running sessions when no dev core app is active.
+                </p>
+              </div>
+              <Switch
+                checked={desktopAutoInactivityPause}
+                onCheckedChange={setDesktopAutoInactivityPause}
+              />
+            </div>
+            <div className="max-w-xs space-y-2">
+              <label className="text-xs font-medium">
+                Inactivity threshold
+              </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={60}
+                  max={3600}
+                  value={desktopInactivityThresholdSeconds}
+                  onChange={event =>
+                    setDesktopInactivityThresholdSeconds(event.target.value)
+                  }
+                />
+                <span className="text-xs text-muted-foreground">sec</span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Auto-Session</CardTitle>
+          <CardDescription>
+            Automatically start a focus session after sustained dev-core
+            activity with no active session.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <p className="text-sm font-medium">Enable auto-session</p>
+              <p className="text-xs text-muted-foreground">
+                When enabled, DevSuite starts sessions automatically after
+                warm-up.
+              </p>
+            </div>
+            <Switch
+              checked={desktopAutoSession}
+              onCheckedChange={setDesktopAutoSession}
+            />
+          </div>
+
+          <div className="max-w-xs space-y-2">
+            <label className="text-xs font-medium">Warm-up duration</label>
             <div className="flex items-center gap-2">
               <Input
                 type="number"
-                min={1}
-                value={desktopReminderSeconds}
+                min={30}
+                max={600}
+                value={desktopAutoSessionWarmupSeconds}
                 onChange={event =>
-                  setDesktopReminderSeconds(event.target.value)
+                  setDesktopAutoSessionWarmupSeconds(event.target.value)
                 }
+                disabled={!desktopAutoSession}
               />
               <span className="text-xs text-muted-foreground">sec</span>
             </div>
           </div>
-        </div>
+        </CardContent>
+      </Card>
 
-        <div className="space-y-2">
-          <label className="text-xs font-medium">Companion shortcut</label>
-          <Input
-            value={desktopCompanionShortcut}
-            onChange={event => setDesktopCompanionShortcut(event.target.value)}
-            placeholder={DEFAULT_COMPANION_SHORTCUT}
-            disabled={!hasDesktopCompanionApi}
-          />
-        </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Focus & Enforcement</CardTitle>
+          <CardDescription>
+            Configure strict enforcement behavior, distractor rules, and desktop
+            runtime preferences.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <p className="text-xs font-medium">IDE mode</p>
+              <div className="grid grid-cols-1 gap-2">
+                <Button
+                  type="button"
+                  variant={
+                    desktopStrictMode === 'prompt_only' ? 'default' : 'outline'
+                  }
+                  onClick={() => setDesktopStrictMode('prompt_only')}
+                  className="justify-start"
+                >
+                  Prompt only
+                </Button>
+                <Button
+                  type="button"
+                  variant={
+                    desktopStrictMode === 'prompt_then_close'
+                      ? 'default'
+                      : 'outline'
+                  }
+                  onClick={() => setDesktopStrictMode('prompt_then_close')}
+                  className="justify-start"
+                >
+                  Prompt then close
+                </Button>
+              </div>
+            </div>
 
-        <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm">Start DevSuite with Windows</span>
-            <Checkbox
-              checked={desktopOpenAtLogin}
-              disabled={!hasDesktopRuntimePreferencesApi}
-              onCheckedChange={checked =>
-                setDesktopOpenAtLogin(Boolean(checked))
-              }
-            />
+            <div className="space-y-2">
+              <p className="text-xs font-medium">App action</p>
+              <div className="grid grid-cols-1 gap-2">
+                <Button
+                  type="button"
+                  variant={
+                    desktopAppActionMode === 'warn' ? 'default' : 'outline'
+                  }
+                  onClick={() => setDesktopAppActionMode('warn')}
+                  className="justify-start"
+                >
+                  Warn
+                </Button>
+                <Button
+                  type="button"
+                  variant={
+                    desktopAppActionMode === 'warn_then_close'
+                      ? 'default'
+                      : 'outline'
+                  }
+                  onClick={() => setDesktopAppActionMode('warn_then_close')}
+                  className="justify-start"
+                >
+                  Warn then close
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium">Website action</p>
+              <div className="grid grid-cols-1 gap-2">
+                <Button
+                  type="button"
+                  variant={
+                    desktopWebsiteActionMode === 'warn_only'
+                      ? 'default'
+                      : 'outline'
+                  }
+                  onClick={() => setDesktopWebsiteActionMode('warn_only')}
+                  className="justify-start"
+                >
+                  Warn only
+                </Button>
+                <Button
+                  type="button"
+                  variant={
+                    desktopWebsiteActionMode === 'escalate'
+                      ? 'default'
+                      : 'outline'
+                  }
+                  onClick={() => setDesktopWebsiteActionMode('escalate')}
+                  className="justify-start"
+                >
+                  Escalate
+                </Button>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm">
-              Run in background when window is closed
-            </span>
-            <Checkbox
-              checked={desktopRunInBackgroundOnClose}
-              disabled={!hasDesktopRuntimePreferencesApi}
-              onCheckedChange={checked =>
-                setDesktopRunInBackgroundOnClose(Boolean(checked))
-              }
-            />
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-medium">Grace window</label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={5}
+                  max={3600}
+                  value={desktopGraceSeconds}
+                  onChange={event => setDesktopGraceSeconds(event.target.value)}
+                />
+                <span className="text-xs text-muted-foreground">sec</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium">Reminder interval</label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={30}
+                  max={3600}
+                  value={desktopReminderSeconds}
+                  onChange={event =>
+                    setDesktopReminderSeconds(event.target.value)
+                  }
+                />
+                <span className="text-xs text-muted-foreground">sec</span>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3 rounded-md border p-3">
+              <p className="text-sm font-medium">Distractor app block list</p>
+              <div className="flex gap-2">
+                <Input
+                  value={desktopAppBlockCandidate}
+                  onChange={event =>
+                    setDesktopAppBlockCandidate(event.target.value)
+                  }
+                  placeholder="whatsapp.root.exe"
+                />
+                <Button
+                  type="button"
+                  onClick={() => {
+                    addDesktopAppBlockExecutable(desktopAppBlockCandidate);
+                    setDesktopAppBlockCandidate('');
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {desktopAppBlockItems.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No distractor executables configured.
+                  </p>
+                ) : (
+                  desktopAppBlockItems.map(item => (
+                    <div
+                      key={item.executable}
+                      className="flex items-center justify-between rounded-md border px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={item.enabled}
+                          onCheckedChange={checked =>
+                            setDesktopAppBlockItems(previousItems =>
+                              previousItems.map(previousItem =>
+                                previousItem.executable === item.executable
+                                  ? {
+                                      ...previousItem,
+                                      enabled: Boolean(checked),
+                                    }
+                                  : previousItem
+                              )
+                            )
+                          }
+                        />
+                        <span className="text-sm">{item.executable}</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setDesktopAppBlockItems(previousItems =>
+                            previousItems.filter(
+                              previousItem =>
+                                previousItem.executable !== item.executable
+                            )
+                          )
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-md border p-3">
+              <p className="text-sm font-medium">Website block list</p>
+              <div className="flex gap-2">
+                <Input
+                  value={desktopWebsiteCandidate}
+                  onChange={event =>
+                    setDesktopWebsiteCandidate(event.target.value)
+                  }
+                  placeholder="youtube.com"
+                />
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const nextValues = parseListInput(
+                      desktopWebsiteCandidate
+                    ).reduce(
+                      (values, candidate) =>
+                        appendUniqueDomain(values, candidate),
+                      desktopWebsiteBlockList
+                    );
+                    setDesktopWebsiteBlockList(nextValues);
+                    setDesktopWebsiteCandidate('');
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
+              <ChipList
+                values={desktopWebsiteBlockList}
+                variant="outline"
+                emptyText="No blocked domains configured."
+                onRemove={value =>
+                  setDesktopWebsiteBlockList(previous =>
+                    previous.filter(item => item !== value)
+                  )
+                }
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-medium">Companion shortcut</label>
+              <Input
+                value={desktopCompanionShortcut}
+                onChange={event =>
+                  setDesktopCompanionShortcut(event.target.value)
+                }
+                placeholder={DEFAULT_COMPANION_SHORTCUT}
+                disabled={!hasDesktopCompanionApi}
+              />
+            </div>
+            <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Start DevSuite with Windows</span>
+                <Switch
+                  checked={desktopOpenAtLogin}
+                  disabled={!hasDesktopRuntimePreferencesApi}
+                  onCheckedChange={setDesktopOpenAtLogin}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm">
+                  Run in background when window is closed
+                </span>
+                <Switch
+                  checked={desktopRunInBackgroundOnClose}
+                  disabled={!hasDesktopRuntimePreferencesApi}
+                  onCheckedChange={setDesktopRunInBackgroundOnClose}
+                />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="sticky bottom-0 z-10 rounded-md border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex items-center justify-between gap-3">

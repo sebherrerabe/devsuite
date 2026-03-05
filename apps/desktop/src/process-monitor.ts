@@ -23,7 +23,7 @@ interface ProcessCommandError {
   killed?: boolean;
 }
 
-export type DesktopProcessCategory = 'ide' | 'app_block';
+export type DesktopProcessCategory = 'ide' | 'dev_support' | 'app_block';
 export type DesktopProcessEventType = 'process_started' | 'process_stopped';
 
 export interface DesktopProcessEvent {
@@ -36,6 +36,7 @@ export interface DesktopProcessEvent {
 
 export interface DesktopProcessWatchConfig {
   ideExecutables: string[];
+  devSupportExecutables: string[];
   appExecutables: string[];
   pollIntervalMs: number;
 }
@@ -305,7 +306,14 @@ export function createProcessWatchConfigFromFocusSettings(
   settings: DesktopFocusSettings
 ): DesktopProcessWatchConfig {
   const ideExecutables = Array.from(
-    new Set(settings.ideWatchList.map(normalizeExecutable).filter(Boolean))
+    new Set(
+      (settings.devCoreList ?? settings.ideWatchList)
+        .map(normalizeExecutable)
+        .filter(Boolean)
+    )
+  );
+  const devSupportExecutables = Array.from(
+    new Set(settings.devSupportList.map(normalizeExecutable).filter(Boolean))
   );
   const appExecutables = Array.from(
     new Set(settings.appBlockList.map(normalizeExecutable).filter(Boolean))
@@ -313,6 +321,7 @@ export function createProcessWatchConfigFromFocusSettings(
 
   return {
     ideExecutables,
+    devSupportExecutables,
     appExecutables,
     pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
   };
@@ -324,6 +333,13 @@ export function normalizeProcessWatchConfig(
   const ideExecutables = Array.from(
     new Set(
       (input.ideExecutables ?? []).map(normalizeExecutable).filter(Boolean)
+    )
+  );
+  const devSupportExecutables = Array.from(
+    new Set(
+      (input.devSupportExecutables ?? [])
+        .map(normalizeExecutable)
+        .filter(Boolean)
     )
   );
   const appExecutables = Array.from(
@@ -342,6 +358,7 @@ export function normalizeProcessWatchConfig(
 
   return {
     ideExecutables,
+    devSupportExecutables,
     appExecutables,
     pollIntervalMs: safePollIntervalMs,
   };
@@ -350,10 +367,15 @@ export function normalizeProcessWatchConfig(
 function getCategoryForExecutable(
   executable: string,
   ideSet: Set<string>,
+  devSupportSet: Set<string>,
   appSet: Set<string>
 ): DesktopProcessCategory | null {
   if (ideSet.has(executable)) {
     return 'ide';
+  }
+
+  if (devSupportSet.has(executable)) {
+    return 'dev_support';
   }
 
   if (appSet.has(executable)) {
@@ -372,6 +394,7 @@ export function buildMonitoredEntries(
   config: DesktopProcessWatchConfig
 ): Map<string, ProcessEntryWithCategory> {
   const ideSet = new Set(config.ideExecutables);
+  const devSupportSet = new Set(config.devSupportExecutables);
   const appSet = new Set(config.appExecutables);
   const entries = new Map<string, ProcessEntryWithCategory>();
 
@@ -379,6 +402,7 @@ export function buildMonitoredEntries(
     const category = getCategoryForExecutable(
       process.executable,
       ideSet,
+      devSupportSet,
       appSet
     );
     if (!category) {
@@ -551,7 +575,11 @@ export async function listWindowsProcessesVerbose(
 export function shouldMonitorProcesses(
   config: DesktopProcessWatchConfig
 ): boolean {
-  return config.ideExecutables.length > 0 || config.appExecutables.length > 0;
+  return (
+    config.ideExecutables.length > 0 ||
+    config.devSupportExecutables.length > 0 ||
+    config.appExecutables.length > 0
+  );
 }
 
 export class WindowsProcessMonitor {
@@ -573,7 +601,7 @@ export class WindowsProcessMonitor {
     this.config = normalizeProcessWatchConfig(nextConfig);
     this.logger.info(
       'process-monitor',
-      `config updated: ideExecutables=${this.config.ideExecutables.join('|') || 'none'}, appExecutables=${this.config.appExecutables.join('|') || 'none'}, pollIntervalMs=${this.config.pollIntervalMs}`
+      `config updated: ideExecutables=${this.config.ideExecutables.join('|') || 'none'}, devSupportExecutables=${this.config.devSupportExecutables.join('|') || 'none'}, appExecutables=${this.config.appExecutables.join('|') || 'none'}, pollIntervalMs=${this.config.pollIntervalMs}`
     );
     this.previousEntries.clear();
     this.restart();

@@ -12,7 +12,11 @@ export type DesktopNotificationKind =
   | 'distractor_app_detected'
   | 'website_blocked_detected'
   | 'tasks_remaining_reminder'
-  | 'inbox_item';
+  | 'inbox_item'
+  | 'inactivity_paused'
+  | 'inactivity_resumed'
+  | 'auto_session_started'
+  | 'auto_session_review';
 
 export type DesktopNotificationAction =
   | 'open_app'
@@ -56,7 +60,11 @@ function parseNotificationKind(value: unknown): DesktopNotificationKind {
     value === 'distractor_app_detected' ||
     value === 'website_blocked_detected' ||
     value === 'tasks_remaining_reminder' ||
-    value === 'inbox_item'
+    value === 'inbox_item' ||
+    value === 'inactivity_paused' ||
+    value === 'inactivity_resumed' ||
+    value === 'auto_session_started' ||
+    value === 'auto_session_review'
   ) {
     return value;
   }
