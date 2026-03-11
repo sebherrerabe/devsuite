@@ -218,6 +218,102 @@ function Resolve-InstallState {
   }
 }
 
+function Assert-HostsHelperInstalled {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $InstallRoot
+  )
+
+  $helperScriptPath = Join-Path $InstallRoot 'resources\assets\hosts-write-helper.ps1'
+  if (-not (Test-Path -Path $helperScriptPath)) {
+    throw "Hosts helper script not found at $helperScriptPath"
+  }
+
+  & schtasks /Query /TN 'DevSuiteHostsWriteHelper' | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Scheduled task DevSuiteHostsWriteHelper was not registered by the installer.'
+  }
+
+  Write-Host "[desktop:install-smoke] Hosts helper script present: $helperScriptPath"
+  Write-Host '[desktop:install-smoke] Hosts helper scheduled task present.'
+}
+
+function Invoke-HostsHelperVerification {
+  $helperDir = Join-Path $env:ProgramData 'DevSuite\hosts-helper'
+  $requestPath = Join-Path $helperDir 'request.json'
+  $resultPath = Join-Path $helperDir 'result.json'
+  $verificationPath = Join-Path $helperDir "verify-$([Guid]::NewGuid().ToString('N')).txt"
+  $requestId = [Guid]::NewGuid().ToString('N')
+  $verificationContents = "verified:$requestId"
+  $encodedContents = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($verificationContents))
+  $requestPayload = @{
+    requestId = $requestId
+    hostsPath = $verificationPath
+    encodedContents = $encodedContents
+  } | ConvertTo-Json -Compress
+
+  if (-not (Test-Path -Path $helperDir)) {
+    throw "Hosts helper directory not found at $helperDir"
+  }
+
+  Set-Content -Path $requestPath -Value $requestPayload -Encoding UTF8
+  Set-Content -Path $resultPath -Value '' -Encoding UTF8
+
+  & schtasks /Run /TN 'DevSuiteHostsWriteHelper' | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to invoke scheduled task DevSuiteHostsWriteHelper.'
+  }
+
+  $deadline = (Get-Date).AddSeconds(15)
+  $parsed = $null
+
+  do {
+    Start-Sleep -Milliseconds 250
+
+    if (-not (Test-Path -Path $resultPath)) {
+      continue
+    }
+
+    $rawResult = Get-Content -Path $resultPath -Raw -ErrorAction SilentlyContinue
+    if ([string]::IsNullOrWhiteSpace($rawResult)) {
+      continue
+    }
+
+    try {
+      $candidate = $rawResult | ConvertFrom-Json
+    } catch {
+      continue
+    }
+
+    if ($candidate.requestId -ne $requestId) {
+      continue
+    }
+
+    $parsed = $candidate
+    break
+  } while ((Get-Date) -lt $deadline)
+
+  if ($null -eq $parsed) {
+    throw 'Hosts helper verification timed out waiting for result.json'
+  }
+
+  if (-not $parsed.ok) {
+    throw "Hosts helper verification failed: $($parsed.error)"
+  }
+
+  if (-not (Test-Path -Path $verificationPath)) {
+    throw "Hosts helper verification file was not created: $verificationPath"
+  }
+
+  $actualContents = Get-Content -Path $verificationPath -Raw
+  if ($actualContents -ne $verificationContents) {
+    throw 'Hosts helper verification wrote unexpected contents.'
+  }
+
+  Remove-Item -Path $verificationPath -Force -ErrorAction SilentlyContinue
+  Write-Host '[desktop:install-smoke] Hosts helper verification passed.'
+}
+
 function Wait-ForDevSuiteRemoval {
   param(
     [Parameter(Mandatory = $true)]
@@ -279,6 +375,8 @@ try {
 
   Write-Host "[desktop:install-smoke] Detected app binary: $($installState.AppExePath)"
   Write-Host "[desktop:install-smoke] Detected install root: $($installState.InstallRoot)"
+  Assert-HostsHelperInstalled -InstallRoot $installState.InstallRoot
+  Invoke-HostsHelperVerification
   Write-Host '[desktop:install-smoke] Install check passed.'
 
   Invoke-BoundedProcess -Phase 'upgrade' -FilePath $setupCandidate.FullName -Arguments @('/S') -TimeoutSeconds $upgradeTimeoutSeconds
@@ -290,6 +388,7 @@ try {
   }
 
   Write-Host "[desktop:install-smoke] Upgrade binary path: $($installState.AppExePath)"
+  Assert-HostsHelperInstalled -InstallRoot $installState.InstallRoot
   Write-Host '[desktop:install-smoke] Upgrade check passed.'
 
   if (-not (Test-Path -Path $installState.UninstallExe)) {

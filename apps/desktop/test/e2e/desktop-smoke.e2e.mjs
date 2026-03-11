@@ -60,6 +60,12 @@ async function injectWebsiteEvents(events) {
   }, events);
 }
 
+async function signalWebsiteNavigation(signal) {
+  await browser.execute(async payload => {
+    await globalThis.window.desktopTest.signalWebsiteNavigation(payload);
+  }, signal);
+}
+
 async function resetPolicyState() {
   await browser.execute(async () => {
     await globalThis.window.desktopTest.resetPolicyState();
@@ -79,6 +85,9 @@ async function waitForDesktopBridge() {
       hasDesktopFocus: Boolean(runtimeWindow?.desktopFocus),
       hasDesktopSession: Boolean(runtimeWindow?.desktopSession),
       hasDesktopPolicy: Boolean(runtimeWindow?.desktopPolicy),
+      hasDesktopHostsEnforcement: Boolean(
+        runtimeWindow?.desktopHostsEnforcement
+      ),
       hasDesktopTest: Boolean(runtimeWindow?.desktopTest),
     };
   };
@@ -110,6 +119,7 @@ async function waitForDesktopBridge() {
           lastSnapshot.hasDesktopFocus &&
           lastSnapshot.hasDesktopSession &&
           lastSnapshot.hasDesktopPolicy &&
+          lastSnapshot.hasDesktopHostsEnforcement &&
           lastSnapshot.hasDesktopTest
         );
       },
@@ -125,6 +135,7 @@ async function waitForDesktopBridge() {
       ['desktopFocus', snapshot.hasDesktopFocus],
       ['desktopSession', snapshot.hasDesktopSession],
       ['desktopPolicy', snapshot.hasDesktopPolicy],
+      ['desktopHostsEnforcement', snapshot.hasDesktopHostsEnforcement],
       ['desktopTest', snapshot.hasDesktopTest],
     ]
       .filter(([, present]) => !present)
@@ -179,6 +190,15 @@ describe('desktop e2e smoke', () => {
       'x.com',
       'instagram.com',
     ]);
+  });
+
+  it('reads hosts enforcement status through the desktop bridge', async () => {
+    const status = await browser.execute(async () => {
+      return await globalThis.window.desktopHostsEnforcement.getStatus();
+    });
+
+    assert.equal(status.state, 'inactive');
+    assert.equal(Array.isArray(status.blockedDomains), true);
   });
 
   it('show-companion IPC handler responds', async () => {
@@ -485,6 +505,71 @@ describe('desktop e2e smoke', () => {
       return events
         .slice(beforeEvents.length)
         .some(event => event.type === 'website_prompt_started');
+    });
+  });
+
+  it('suppresses distraction audits while paused and resumes enforcement afterward', async () => {
+    await publishSessionState({
+      status: 'PAUSED',
+      sessionId: 'e2e-session-paused',
+      remainingTaskCount: 2,
+    });
+
+    const beforeEvents = await getPolicyAuditEvents();
+
+    await injectProcessEvents([
+      {
+        type: 'process_started',
+        executable: 'whatsapp.exe',
+        pid: 701,
+        category: 'app_block',
+        timestamp: Date.now() - 120_000,
+      },
+    ]);
+    await signalWebsiteNavigation({
+      sourceId: 'paused-tab-1',
+      rawUrl: 'https://www.youtube.com/watch?v=paused',
+      timestamp: Date.now(),
+    });
+
+    await browser.pause(350);
+
+    const pausedEvents = (await getPolicyAuditEvents()).slice(
+      beforeEvents.length
+    );
+    assert.equal(
+      pausedEvents.some(
+        event =>
+          event.type === 'app_prompt_started' ||
+          event.type === 'app_close_requested' ||
+          event.type === 'website_prompt_started'
+      ),
+      false
+    );
+
+    await publishSessionState({
+      status: 'RUNNING',
+      sessionId: 'e2e-session-paused',
+      remainingTaskCount: 2,
+    });
+
+    await injectProcessEvents([
+      {
+        type: 'process_started',
+        executable: 'whatsapp.exe',
+        pid: 701,
+        category: 'app_block',
+        timestamp: Date.now() - 120_000,
+      },
+    ]);
+
+    await browser.waitUntil(async () => {
+      const recent = (await getPolicyAuditEvents()).slice(beforeEvents.length);
+      return (
+        recent.some(event => event.type === 'app_prompt_started') &&
+        recent.some(event => event.type === 'app_close_requested') &&
+        recent.some(event => event.type === 'website_prompt_started')
+      );
     });
   });
 

@@ -79,6 +79,7 @@ Extends existing session/task architecture with a Windows desktop shell and loca
   - `graceSeconds`: `45`
   - `reminderIntervalSeconds`: `120`
 - URL-based website enforcement is signal-aware:
+  - always attempt hosts-based domain blocking during active sessions when blocked domains are configured
   - apply warning/escalation only when reliable URL signal is available
   - never execute destructive browser-close behavior from partial URL telemetry
 - Local/self-use distribution remains unsigned for MVP; Authenticode signing becomes mandatory before any external distribution.

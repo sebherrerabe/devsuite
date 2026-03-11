@@ -12,6 +12,7 @@ import {
   normalizeHostsDomains,
   stripDevSuiteHostsBlock,
   unblockAll,
+  verifyHostsWriteHelper,
 } from '../../src/hosts-manager.js';
 
 test('normalizeHostsDomains deduplicates and lowercases', () => {
@@ -37,7 +38,8 @@ test('blockDomains writes managed entries between markers', async () => {
     platform: 'linux',
   });
 
-  assert.equal(result.applied, true);
+  assert.equal(result.status, 'applied');
+  assert.equal(result.method, 'direct');
   const contents = await readFile(hostsPath, 'utf8');
   assert.match(contents, /127\.0\.0\.1 localhost/);
   assert.match(contents, new RegExp(BEGIN_MARKER));
@@ -96,7 +98,8 @@ test('unblockAll removes only managed section', async () => {
     platform: 'linux',
   });
 
-  assert.equal(result.applied, true);
+  assert.equal(result.status, 'applied');
+  assert.equal(result.method, 'direct');
   const contents = await readFile(hostsPath, 'utf8');
   assert.equal(contents.includes(BEGIN_MARKER), false);
   assert.equal(contents.includes(END_MARKER), false);
@@ -119,7 +122,7 @@ test('cleanupStaleBlocks removes stale managed section', async () => {
     platform: 'linux',
   });
 
-  assert.equal(result.applied, true);
+  assert.equal(result.status, 'applied');
   const contents = await readFile(hostsPath, 'utf8');
   assert.equal(contents.includes(BEGIN_MARKER), false);
 });
@@ -192,7 +195,8 @@ test('blockDomains prefers installer helper when direct hosts write is denied', 
     execFile: execFileMock as never,
   });
 
-  assert.equal(result.applied, true);
+  assert.equal(result.status, 'applied');
+  assert.equal(result.method, 'helper');
   const contents = await readFile(hostsPath, 'utf8');
   assert.equal(contents.includes('youtube.com'), true);
   assert.equal(
@@ -243,9 +247,88 @@ test('blockDomains fails gracefully when helper is unavailable', async () => {
     execFile: execFileMock as never,
   });
 
-  assert.equal(result.applied, false);
+  assert.equal(result.status, 'degraded');
+  assert.equal(result.method, 'none');
+  assert.match(result.error ?? '', /unavailable|task not found/i);
   assert.equal(
     execCalls.some(call => call[0] === 'powershell'),
     false
   );
+});
+
+test('verifyHostsWriteHelper succeeds via scheduled task flow', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'hosts-manager-verify-'));
+  const helperDir = join(tempDir, 'DevSuite', 'hosts-helper');
+  const requestPath = join(helperDir, 'request.json');
+  const resultPath = join(helperDir, 'result.json');
+  await mkdir(helperDir, { recursive: true });
+
+  const execFileMock = async (
+    file: string,
+    args: string[]
+  ): Promise<{ stdout: string; stderr: string }> => {
+    if (file === 'schtasks' && args[0] === '/Run') {
+      const request = JSON.parse(await readFile(requestPath, 'utf8')) as {
+        requestId: string;
+        hostsPath: string;
+        encodedContents: string;
+      };
+      await writeFile(
+        request.hostsPath,
+        Buffer.from(request.encodedContents, 'base64').toString('utf8'),
+        'utf8'
+      );
+      await writeFile(
+        resultPath,
+        JSON.stringify({
+          requestId: request.requestId,
+          ok: true,
+          error: null,
+        }),
+        'utf8'
+      );
+    }
+
+    return {
+      stdout: '',
+      stderr: '',
+    };
+  };
+
+  const result = await verifyHostsWriteHelper({
+    platform: 'win32',
+    programDataPath: tempDir,
+    execFile: execFileMock as never,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.method, 'helper');
+  assert.equal(result.error, null);
+});
+
+test('verifyHostsWriteHelper fails when helper task is unavailable', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'hosts-manager-verify-miss-'));
+  const execFileMock = async (
+    file: string,
+    args: string[]
+  ): Promise<{ stdout: string; stderr: string }> => {
+    if (file === 'schtasks' && args[0] === '/Query') {
+      throw new Error('task not found');
+    }
+
+    return {
+      stdout: '',
+      stderr: '',
+    };
+  };
+
+  const result = await verifyHostsWriteHelper({
+    platform: 'win32',
+    programDataPath: tempDir,
+    execFile: execFileMock as never,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.method, 'none');
+  assert.match(result.error ?? '', /unavailable|task not found/i);
 });

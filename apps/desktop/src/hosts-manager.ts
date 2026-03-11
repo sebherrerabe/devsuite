@@ -1,5 +1,6 @@
 import { execFile as nodeExecFile } from 'node:child_process';
 import {
+  rm as nodeRm,
   readFile as nodeReadFile,
   mkdir as nodeMkdir,
   writeFile as nodeWriteFile,
@@ -28,6 +29,7 @@ type ReadFileLike = typeof nodeReadFile;
 type WriteFileLike = typeof nodeWriteFile;
 type ExecFileLike = typeof execFileAsync;
 type MkdirLike = typeof nodeMkdir;
+type RmLike = typeof nodeRm;
 
 interface FsErrorLike {
   code?: string;
@@ -39,11 +41,38 @@ export interface HostsManagerOptions {
   readFile?: ReadFileLike;
   writeFile?: WriteFileLike;
   mkdir?: MkdirLike;
+  rm?: RmLike;
   execFile?: ExecFileLike;
   platform?: string;
   programDataPath?: string;
   helperTaskName?: string;
   helperTimeoutMs?: number;
+}
+
+export type HostsOperationStatus = 'applied' | 'noop' | 'degraded';
+export type HostsOperationMethod = 'direct' | 'helper' | 'none';
+
+export interface HostsOperationResult {
+  status: HostsOperationStatus;
+  method: HostsOperationMethod;
+  normalizedDomains: string[];
+  error: string | null;
+}
+
+export interface HostsHelperVerificationResult {
+  ok: boolean;
+  method: HostsOperationMethod;
+  checkedAt: number;
+  error: string | null;
+}
+
+export interface HostsEnforcementStatus {
+  state: 'inactive' | 'active' | 'degraded';
+  blockedDomains: string[];
+  lastCheckedAt: number | null;
+  lastAppliedAt: number | null;
+  lastError: string | null;
+  method: HostsOperationMethod;
 }
 
 function isPermissionError(error: unknown): boolean {
@@ -61,6 +90,16 @@ function ensureTrailingNewline(input: string): string {
 
 function normalizeHostsText(input: string): string {
   return input.replace(/\r\n/g, '\n').trim();
+}
+
+function shouldPreferRegisteredHelper(
+  hostsPath: string,
+  platform: string
+): boolean {
+  return (
+    platform === 'win32' &&
+    normalizeHostsText(hostsPath).toLowerCase() === HOSTS_PATH.toLowerCase()
+  );
 }
 
 export function normalizeHostsDomain(domain: string): string {
@@ -205,9 +244,17 @@ async function writeWithRegisteredHelper(params: {
   programDataPath: string;
   helperTaskName: string;
   helperTimeoutMs: number;
-}): Promise<boolean> {
+}): Promise<{
+  applied: boolean;
+  method: HostsOperationMethod;
+  error: string | null;
+}> {
   if (params.platform !== 'win32') {
-    return false;
+    return {
+      applied: false,
+      method: 'none',
+      error: 'Installer helper is only available on Windows.',
+    };
   }
 
   const paths = resolveHostsWriteHelperPaths(params.programDataPath);
@@ -216,21 +263,25 @@ async function writeWithRegisteredHelper(params: {
       recursive: true,
     });
   } catch (error) {
-    params.logger.warn(
-      'hosts-manager',
-      `failed to prepare helper directory at ${paths.helperDirectoryPath}: ${error instanceof Error ? error.message : String(error)}`
-    );
-    return false;
+    const message = `failed to prepare helper directory at ${paths.helperDirectoryPath}: ${error instanceof Error ? error.message : String(error)}`;
+    params.logger.warn('hosts-manager', message);
+    return {
+      applied: false,
+      method: 'none',
+      error: message,
+    };
   }
 
   try {
     await params.execFile('schtasks', ['/Query', '/TN', params.helperTaskName]);
   } catch {
-    params.logger.warn(
-      'hosts-manager',
-      `hosts helper task "${params.helperTaskName}" is unavailable; reinstall DevSuite to restore installer-level permissions`
-    );
-    return false;
+    const message = `hosts helper task "${params.helperTaskName}" is unavailable; reinstall DevSuite to restore installer-level permissions`;
+    params.logger.warn('hosts-manager', message);
+    return {
+      applied: false,
+      method: 'none',
+      error: message,
+    };
   }
 
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -244,11 +295,13 @@ async function writeWithRegisteredHelper(params: {
     await params.writeFile(paths.requestPath, requestPayload, 'utf8');
     await params.writeFile(paths.resultPath, '', 'utf8');
   } catch (error) {
-    params.logger.warn(
-      'hosts-manager',
-      `failed to stage helper request payload: ${error instanceof Error ? error.message : String(error)}`
-    );
-    return false;
+    const message = `failed to stage helper request payload: ${error instanceof Error ? error.message : String(error)}`;
+    params.logger.warn('hosts-manager', message);
+    return {
+      applied: false,
+      method: 'none',
+      error: message,
+    };
   }
 
   try {
@@ -258,11 +311,13 @@ async function writeWithRegisteredHelper(params: {
       maxBuffer: 1024 * 1024,
     });
   } catch (error) {
-    params.logger.warn(
-      'hosts-manager',
-      `failed to invoke helper task "${params.helperTaskName}": ${error instanceof Error ? error.message : String(error)}`
-    );
-    return false;
+    const message = `failed to invoke helper task "${params.helperTaskName}": ${error instanceof Error ? error.message : String(error)}`;
+    params.logger.warn('hosts-manager', message);
+    return {
+      applied: false,
+      method: 'none',
+      error: message,
+    };
   }
 
   const timeoutAt = Date.now() + params.helperTimeoutMs;
@@ -302,21 +357,33 @@ async function writeWithRegisteredHelper(params: {
         'hosts-manager',
         `hosts file updated via installer helper task: ${params.helperTaskName}`
       );
-      return true;
+      return {
+        applied: true,
+        method: 'helper',
+        error: null,
+      };
     }
 
+    const message =
+      typeof parsed.error === 'string' ? parsed.error : 'unknown helper error';
     params.logger.warn(
       'hosts-manager',
-      `helper task failed to write hosts file: ${typeof parsed.error === 'string' ? parsed.error : 'unknown error'}`
+      `helper task failed to write hosts file: ${message}`
     );
-    return false;
+    return {
+      applied: false,
+      method: 'none',
+      error: message,
+    };
   }
 
-  params.logger.warn(
-    'hosts-manager',
-    `helper task timed out while writing hosts file: ${params.helperTaskName}`
-  );
-  return false;
+  const timeoutMessage = `helper task timed out while writing hosts file: ${params.helperTaskName}`;
+  params.logger.warn('hosts-manager', timeoutMessage);
+  return {
+    applied: false,
+    method: 'none',
+    error: timeoutMessage,
+  };
 }
 
 async function writeHostsFile(params: {
@@ -331,14 +398,38 @@ async function writeHostsFile(params: {
   programDataPath: string;
   helperTaskName: string;
   helperTimeoutMs: number;
-}): Promise<boolean> {
+}): Promise<{
+  applied: boolean;
+  method: HostsOperationMethod;
+  error: string | null;
+}> {
+  if (shouldPreferRegisteredHelper(params.hostsPath, params.platform)) {
+    return writeWithRegisteredHelper({
+      hostsPath: params.hostsPath,
+      contents: params.contents,
+      readFile: params.readFile,
+      writeFile: params.writeFile,
+      mkdir: params.mkdir,
+      execFile: params.execFile,
+      logger: params.logger,
+      platform: params.platform,
+      programDataPath: params.programDataPath,
+      helperTaskName: params.helperTaskName,
+      helperTimeoutMs: params.helperTimeoutMs,
+    });
+  }
+
   try {
     await params.writeFile(params.hostsPath, params.contents, 'utf8');
     params.logger.info(
       'hosts-manager',
       `hosts file updated: ${params.hostsPath}`
     );
-    return true;
+    return {
+      applied: true,
+      method: 'direct',
+      error: null,
+    };
   } catch (error) {
     if (!isPermissionError(error)) {
       throw error;
@@ -362,15 +453,21 @@ async function writeHostsFile(params: {
       helperTaskName: params.helperTaskName,
       helperTimeoutMs: params.helperTimeoutMs,
     });
-    if (appliedWithHelper) {
-      return true;
+    if (appliedWithHelper.applied) {
+      return appliedWithHelper;
     }
 
     params.logger.warn(
       'hosts-manager',
-      'hosts helper is unavailable or failed; focus mode will continue without hosts enforcement until helper permissions are restored'
+      'hosts helper is unavailable or failed; focus mode is degraded until helper permissions are restored'
     );
-    return false;
+    return {
+      applied: false,
+      method: appliedWithHelper.method,
+      error:
+        appliedWithHelper.error ??
+        'hosts helper is unavailable or failed; focus mode is degraded until helper permissions are restored',
+    };
   }
 }
 
@@ -408,6 +505,7 @@ function resolveOptions(options: HostsManagerOptions = {}) {
     readFile: options.readFile ?? nodeReadFile,
     writeFile: options.writeFile ?? nodeWriteFile,
     mkdir: options.mkdir ?? nodeMkdir,
+    rm: options.rm ?? nodeRm,
     execFile: options.execFile ?? execFileAsync,
     platform: options.platform ?? process.platform,
     programDataPath:
@@ -421,7 +519,7 @@ function resolveOptions(options: HostsManagerOptions = {}) {
 export async function blockDomains(
   domains: string[],
   options?: HostsManagerOptions
-): Promise<{ applied: boolean; normalizedDomains: string[] }> {
+): Promise<HostsOperationResult> {
   const resolved = resolveOptions(options);
   const normalizedDomains = normalizeHostsDomains(domains);
 
@@ -431,8 +529,10 @@ export async function blockDomains(
       'blockDomains no-op: empty domain list'
     );
     return {
-      applied: false,
+      status: 'noop',
+      method: 'none',
       normalizedDomains,
+      error: null,
     };
   }
 
@@ -453,8 +553,10 @@ export async function blockDomains(
       `blockDomains no-op: hosts block already matches requested domains (${normalizedDomains.join(',')})`
     );
     return {
-      applied: false,
+      status: 'noop',
+      method: 'none',
       normalizedDomains,
+      error: null,
     };
   }
 
@@ -463,7 +565,7 @@ export async function blockDomains(
     `blocking domains via hosts file: ${normalizedDomains.join(',')}`
   );
 
-  const applied = await writeHostsFile({
+  const writeResult = await writeHostsFile({
     hostsPath: resolved.hostsPath,
     contents: nextContents,
     readFile: resolved.readFile,
@@ -477,7 +579,7 @@ export async function blockDomains(
     helperTimeoutMs: resolved.helperTimeoutMs,
   });
 
-  if (applied) {
+  if (writeResult.applied) {
     await flushDns({
       execFile: resolved.execFile,
       logger: resolved.logger,
@@ -486,14 +588,16 @@ export async function blockDomains(
   }
 
   return {
-    applied,
+    status: writeResult.applied ? 'applied' : 'degraded',
+    method: writeResult.method,
     normalizedDomains,
+    error: writeResult.error,
   };
 }
 
 export async function unblockAll(
   options?: HostsManagerOptions
-): Promise<{ applied: boolean }> {
+): Promise<HostsOperationResult> {
   const resolved = resolveOptions(options);
   const existing = await readHostsFile({
     hostsPath: resolved.hostsPath,
@@ -508,12 +612,15 @@ export async function unblockAll(
       'unblockAll no-op: no managed hosts block found'
     );
     return {
-      applied: false,
+      status: 'noop',
+      method: 'none',
+      normalizedDomains: [],
+      error: null,
     };
   }
 
   resolved.logger.info('hosts-manager', 'removing managed hosts block');
-  const applied = await writeHostsFile({
+  const writeResult = await writeHostsFile({
     hostsPath: resolved.hostsPath,
     contents: stripped,
     readFile: resolved.readFile,
@@ -527,7 +634,7 @@ export async function unblockAll(
     helperTimeoutMs: resolved.helperTimeoutMs,
   });
 
-  if (applied) {
+  if (writeResult.applied) {
     await flushDns({
       execFile: resolved.execFile,
       logger: resolved.logger,
@@ -536,13 +643,16 @@ export async function unblockAll(
   }
 
   return {
-    applied,
+    status: writeResult.applied ? 'applied' : 'degraded',
+    method: writeResult.method,
+    normalizedDomains: [],
+    error: writeResult.error,
   };
 }
 
 export async function cleanupStaleBlocks(
   options?: HostsManagerOptions
-): Promise<{ applied: boolean }> {
+): Promise<HostsOperationResult> {
   return unblockAll(options);
 }
 
@@ -550,7 +660,7 @@ export async function reconcileDomains(params: {
   currentDomains: string[];
   newDomains: string[];
   options?: HostsManagerOptions;
-}): Promise<{ applied: boolean; normalizedDomains: string[] }> {
+}): Promise<HostsOperationResult> {
   const current = normalizeHostsDomains(params.currentDomains);
   const next = normalizeHostsDomains(params.newDomains);
 
@@ -559,18 +669,96 @@ export async function reconcileDomains(params: {
     current.every((domain, index) => domain === next[index])
   ) {
     return {
-      applied: false,
+      status: 'noop',
+      method: 'none',
       normalizedDomains: next,
+      error: null,
     };
   }
 
   if (next.length === 0) {
     const unblocked = await unblockAll(params.options);
     return {
-      applied: unblocked.applied,
+      status: unblocked.status,
+      method: unblocked.method,
       normalizedDomains: next,
+      error: unblocked.error,
     };
   }
 
   return blockDomains(next, params.options);
+}
+
+export async function verifyHostsWriteHelper(
+  options?: HostsManagerOptions
+): Promise<HostsHelperVerificationResult> {
+  const resolved = resolveOptions(options);
+  const checkedAt = Date.now();
+
+  if (resolved.platform !== 'win32') {
+    return {
+      ok: false,
+      method: 'none',
+      checkedAt,
+      error: 'Installer helper verification is only available on Windows.',
+    };
+  }
+
+  const helperPaths = resolveHostsWriteHelperPaths(resolved.programDataPath);
+  const verificationFilePath = joinPath(
+    helperPaths.helperDirectoryPath,
+    `verify-${checkedAt}.txt`
+  );
+  const verificationContents = `verified:${checkedAt}`;
+
+  const writeResult = await writeWithRegisteredHelper({
+    hostsPath: verificationFilePath,
+    contents: verificationContents,
+    readFile: resolved.readFile,
+    writeFile: resolved.writeFile,
+    mkdir: resolved.mkdir,
+    execFile: resolved.execFile,
+    logger: resolved.logger,
+    platform: resolved.platform,
+    programDataPath: resolved.programDataPath,
+    helperTaskName: resolved.helperTaskName,
+    helperTimeoutMs: resolved.helperTimeoutMs,
+  });
+
+  if (!writeResult.applied) {
+    return {
+      ok: false,
+      method: writeResult.method,
+      checkedAt,
+      error: writeResult.error,
+    };
+  }
+
+  try {
+    const verificationRead = await resolved.readFile(
+      verificationFilePath,
+      'utf8'
+    );
+    const ok = verificationRead === verificationContents;
+    return {
+      ok,
+      method: writeResult.method,
+      checkedAt,
+      error: ok ? null : 'Helper verification wrote unexpected contents.',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      method: writeResult.method,
+      checkedAt,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Helper verification file could not be read.',
+    };
+  } finally {
+    await resolved.rm(verificationFilePath, {
+      force: true,
+    });
+  }
 }

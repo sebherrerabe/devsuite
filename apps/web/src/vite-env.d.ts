@@ -24,6 +24,8 @@ interface DesktopSettingsScope {
 type DesktopStrictMode = 'prompt_only' | 'prompt_then_close';
 type DesktopAppActionMode = 'warn' | 'warn_then_close';
 type DesktopWebsiteActionMode = 'warn_only' | 'escalate';
+type HostsEnforcementState = 'inactive' | 'active' | 'degraded';
+type HostsEnforcementMethod = 'direct' | 'helper' | 'none';
 
 interface DesktopFocusSettings {
   devCoreList: string[];
@@ -41,6 +43,15 @@ interface DesktopFocusSettings {
   autoInactivityPause: boolean;
   autoSession: boolean;
   autoSessionWarmupSeconds: number;
+}
+
+interface HostsEnforcementStatus {
+  state: HostsEnforcementState;
+  blockedDomains: string[];
+  lastCheckedAt: number | null;
+  lastAppliedAt: number | null;
+  lastError: string | null;
+  method: HostsEnforcementMethod;
 }
 
 type DesktopSessionStatus = 'IDLE' | 'RUNNING' | 'PAUSED';
@@ -137,6 +148,10 @@ type DesktopStrictPolicyAuditEventType =
   | 'website_escalated'
   | 'website_entry_cleared'
   | 'website_signal_unavailable'
+  | 'website_hosts_block_applied'
+  | 'website_hosts_block_failed'
+  | 'website_hosts_block_cleared'
+  | 'website_hosts_block_recovered'
   | 'tasks_reminder_sent'
   | 'tasks_escalation_sent'
   | 'tasks_reminder_cleared'
@@ -275,6 +290,12 @@ interface Window {
       scope: DesktopSettingsScope;
       overrideUntilMs: number | null;
     }>;
+  };
+  desktopHostsEnforcement?: {
+    getStatus: () => Promise<HostsEnforcementStatus>;
+    onStatusChanged: (
+      listener: (status: HostsEnforcementStatus) => void | Promise<void>
+    ) => () => void;
   };
   desktopWidget?: {
     close: () => Promise<void>;

@@ -7,6 +7,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import type { DesktopFocusSettings } from './focus-settings.js';
 import type { DesktopSettingsScope } from './focus-settings.js';
+import type { HostsEnforcementStatus } from './hosts-manager.js';
 import {
   resolveTrustedDesktopOrigins,
   shouldExposeDesktopApis,
@@ -178,6 +179,13 @@ type DesktopPolicyApi = {
   }>;
 };
 
+type DesktopHostsEnforcementApi = {
+  getStatus: () => Promise<HostsEnforcementStatus>;
+  onStatusChanged: (
+    listener: (status: HostsEnforcementStatus) => void | Promise<void>
+  ) => () => void;
+};
+
 type DesktopWindowApi = {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
@@ -199,12 +207,21 @@ type DesktopTestWebsiteEvent = {
   timestamp: number;
 };
 
+type DesktopTestWebsiteNavigationSignal = {
+  sourceId: string;
+  rawUrl: string;
+  timestamp: number;
+};
+
 type DesktopTestApi = {
   injectProcessEvents: (
     events: DesktopProcessEvent[]
   ) => Promise<{ accepted: number }>;
   injectWebsiteEvents: (
     events: DesktopTestWebsiteEvent[]
+  ) => Promise<{ accepted: number }>;
+  signalWebsiteNavigation: (
+    signal: DesktopTestWebsiteNavigationSignal
   ) => Promise<{ accepted: number }>;
   resetPolicyState: () => Promise<{ reset: boolean }>;
 };
@@ -249,6 +266,8 @@ const NOTIFICATION_ACTION_CHANNEL = 'desktop-notification:action';
 const PROCESS_EVENTS_CHANNEL = 'desktop-process-monitor:events';
 const IDE_FOCUS_EVENTS_CHANNEL = 'desktop-ide-focus:events';
 const POLICY_AUDIT_CHANNEL = 'desktop-policy:audit-events';
+const HOSTS_ENFORCEMENT_STATUS_CHANNEL =
+  'desktop-hosts-enforcement:status-changed';
 const WINDOW_MAXIMIZE_CHANGED_CHANNEL = 'desktop-window:maximize-changed';
 
 const desktopCompanyApi: DesktopCompanyApi = {
@@ -460,6 +479,22 @@ const desktopWidgetApi: DesktopWidgetApi = {
   },
 };
 
+const desktopHostsEnforcementApi: DesktopHostsEnforcementApi = {
+  getStatus: async () =>
+    ipcRenderer.invoke(
+      'desktop-hosts-enforcement:get-status'
+    ) as Promise<HostsEnforcementStatus>,
+  onStatusChanged: listener => {
+    const wrapped = (_event: unknown, payload: HostsEnforcementStatus) => {
+      void listener(payload);
+    };
+    ipcRenderer.on(HOSTS_ENFORCEMENT_STATUS_CHANNEL, wrapped);
+    return () => {
+      ipcRenderer.removeListener(HOSTS_ENFORCEMENT_STATUS_CHANNEL, wrapped);
+    };
+  },
+};
+
 const desktopWindowApi: DesktopWindowApi = {
   minimize: async () => {
     await ipcRenderer.invoke('desktop-window:minimize');
@@ -495,6 +530,13 @@ const desktopTestApi: DesktopTestApi = {
     ipcRenderer.invoke(
       'desktop-test:inject-website-events',
       events
+    ) as Promise<{
+      accepted: number;
+    }>,
+  signalWebsiteNavigation: async signal =>
+    ipcRenderer.invoke(
+      'desktop-test:signal-website-navigation',
+      signal
     ) as Promise<{
       accepted: number;
     }>,
@@ -542,6 +584,10 @@ if (shouldExposeApis) {
     desktopProcessMonitorApi
   );
   contextBridge.exposeInMainWorld('desktopPolicy', desktopPolicyApi);
+  contextBridge.exposeInMainWorld(
+    'desktopHostsEnforcement',
+    desktopHostsEnforcementApi
+  );
   contextBridge.exposeInMainWorld('desktopWidget', desktopWidgetApi);
   contextBridge.exposeInMainWorld('desktopWindow', desktopWindowApi);
   if (shouldForceExposeApisForTestHarness) {
@@ -561,6 +607,7 @@ declare global {
     desktopNotification?: DesktopNotificationApi;
     desktopProcessMonitor?: DesktopProcessMonitorApi;
     desktopPolicy?: DesktopPolicyApi;
+    desktopHostsEnforcement?: DesktopHostsEnforcementApi;
     desktopWidget?: DesktopWidgetApi;
     desktopWindow?: DesktopWindowApi;
     desktopTest?: DesktopTestApi;

@@ -19,6 +19,10 @@ export type StrictPolicyAuditEventType =
   | 'website_escalated'
   | 'website_entry_cleared'
   | 'website_signal_unavailable'
+  | 'website_hosts_block_applied'
+  | 'website_hosts_block_failed'
+  | 'website_hosts_block_cleared'
+  | 'website_hosts_block_recovered'
   | 'tasks_reminder_sent'
   | 'tasks_escalation_sent'
   | 'tasks_reminder_cleared'
@@ -147,8 +151,12 @@ function isOverrideActive(state: StrictPolicyState, nowMs: number): boolean {
   return state.overrideUntilMs !== null && nowMs < state.overrideUntilMs;
 }
 
-function isSessionActive(status: SessionStatus): boolean {
+function hasOpenSession(status: SessionStatus): boolean {
   return status === 'RUNNING' || status === 'PAUSED';
+}
+
+function isSessionRunning(status: SessionStatus): boolean {
+  return status === 'RUNNING';
 }
 
 function createEntry(event: DesktopProcessEvent): PolicyEntry {
@@ -381,7 +389,11 @@ export function evaluateStrictPolicy(
 
   const overrideActive = isOverrideActive(state, input.nowMs);
   const sessionIsIdle = input.sessionState.status === 'IDLE';
-  const sessionIsActive = isSessionActive(input.sessionState.status);
+  const sessionHasOpenFocusSession = hasOpenSession(input.sessionState.status);
+  const sessionIsRunningNow = isSessionRunning(input.sessionState.status);
+  const distractionEntryClearReason = sessionIsIdle
+    ? 'session_inactive'
+    : 'session_paused';
 
   for (const event of input.processEvents) {
     const key = toEntryKey(event.executable, event.pid);
@@ -426,15 +438,17 @@ export function evaluateStrictPolicy(
       if (event.type === 'process_started') {
         const existingEntry = appEntries[key];
         const entry = existingEntry ?? createEntry(event);
-        appEntries[key] = entry;
-        const shouldEnforce = sessionIsActive && !overrideActive;
+        if (sessionIsRunningNow) {
+          appEntries[key] = entry;
+        }
+        const shouldEnforce = sessionIsRunningNow && !overrideActive;
 
         logger.debug(
           'strict-policy',
-          `app_block rule evaluated: executable=${entry.executable}, pid=${entry.pid}, sessionActive=${sessionIsActive}, overrideActive=${overrideActive}, result=${shouldEnforce ? 'action' : 'skip'}`
+          `app_block rule evaluated: executable=${entry.executable}, pid=${entry.pid}, sessionActive=${sessionHasOpenFocusSession}, sessionRunning=${sessionIsRunningNow}, overrideActive=${overrideActive}, result=${shouldEnforce ? 'action' : 'skip'}`
         );
 
-        if (!existingEntry) {
+        if (!existingEntry && sessionIsRunningNow) {
           logger.info(
             'strict-policy',
             `app entry created: ${entry.executable}:${entry.pid}, reason=process_started`
@@ -482,12 +496,14 @@ export function evaluateStrictPolicy(
     if (event.type === 'website_blocked_started') {
       const existingEntry = websiteEntries[key];
       const entry = existingEntry ?? createWebsiteEntry(event);
-      websiteEntries[key] = entry;
-      const shouldEnforce = sessionIsActive && !overrideActive;
+      if (sessionIsRunningNow) {
+        websiteEntries[key] = entry;
+      }
+      const shouldEnforce = sessionIsRunningNow && !overrideActive;
 
       logger.debug(
         'strict-policy',
-        `website rule evaluated: domain=${entry.domain}, sessionActive=${sessionIsActive}, result=${shouldEnforce ? 'action' : 'skip'}`
+        `website rule evaluated: domain=${entry.domain}, sessionActive=${sessionHasOpenFocusSession}, sessionRunning=${sessionIsRunningNow}, result=${shouldEnforce ? 'action' : 'skip'}`
       );
 
       if (shouldEnforce) {
@@ -535,17 +551,19 @@ export function evaluateStrictPolicy(
     ideEntries = {};
   }
 
-  if (!sessionIsActive) {
+  if (!sessionIsRunningNow) {
+    lastWebsiteSignalUnavailableAt = null;
+
     for (const entry of Object.values(appEntries)) {
       logger.info(
         'strict-policy',
-        `app entry cleared: ${entry.executable}:${entry.pid}, reason=session_inactive`
+        `app entry cleared: ${entry.executable}:${entry.pid}, reason=${distractionEntryClearReason}`
       );
       auditEvents.push(
         toAuditEvent('app_entry_cleared', input.nowMs, {
           executable: entry.executable,
           pid: entry.pid,
-          reason: 'session_inactive',
+          reason: distractionEntryClearReason,
         })
       );
     }
@@ -556,7 +574,7 @@ export function evaluateStrictPolicy(
         toAuditEvent('website_entry_cleared', input.nowMs, {
           domain: entry.domain,
           sourceId: entry.sourceId,
-          reason: 'session_inactive',
+          reason: distractionEntryClearReason,
         })
       );
     }
@@ -594,7 +612,7 @@ export function evaluateStrictPolicy(
       }
     }
 
-    if (sessionIsActive) {
+    if (sessionIsRunningNow) {
       for (const [key, entry] of Object.entries(appEntries)) {
         const needsReminder =
           input.nowMs - entry.lastReminderAt >= reminderIntervalMs;
@@ -771,10 +789,69 @@ export function evaluateStrictPolicy(
           })
         );
       }
+    } else if (sessionHasOpenFocusSession) {
+      const remainingTaskCount = normalizeRemainingTaskCount(
+        input.remainingTaskCount
+      );
+      if (remainingTaskCount !== null && remainingTaskCount > 0) {
+        const shouldSendReminder =
+          taskReminder.lastReminderAt === null ||
+          input.nowMs - taskReminder.lastReminderAt >= reminderIntervalMs;
+
+        if (shouldSendReminder) {
+          const reminderCount = taskReminder.reminderCount + 1;
+          const escalated = reminderCount >= 3;
+          actions.push(
+            buildTasksReminderNotification({
+              scope: input.scope,
+              remainingTaskCount,
+              reminderCount,
+              throttleMs: Math.min(60_000, reminderIntervalMs),
+              escalated,
+            })
+          );
+
+          taskReminder = {
+            lastReminderAt: input.nowMs,
+            reminderCount,
+            lastKnownRemainingTaskCount: remainingTaskCount,
+          };
+
+          auditEvents.push(
+            toAuditEvent('tasks_reminder_sent', input.nowMs, {
+              remainingTaskCount,
+              reminderCount,
+              escalated,
+            })
+          );
+
+          if (escalated) {
+            auditEvents.push(
+              toAuditEvent('tasks_escalation_sent', input.nowMs, {
+                remainingTaskCount,
+                reminderCount,
+              })
+            );
+          }
+        }
+      } else if (
+        taskReminder.reminderCount > 0 ||
+        taskReminder.lastKnownRemainingTaskCount > 0
+      ) {
+        taskReminder = createTaskReminderState();
+        auditEvents.push(
+          toAuditEvent('tasks_reminder_cleared', input.nowMs, {
+            reason:
+              remainingTaskCount === 0
+                ? 'no_remaining_tasks'
+                : 'count_unavailable',
+          })
+        );
+      }
     }
   }
 
-  if (overrideActive || !sessionIsActive) {
+  if (overrideActive || !sessionHasOpenFocusSession) {
     if (
       taskReminder.reminderCount > 0 ||
       taskReminder.lastKnownRemainingTaskCount > 0

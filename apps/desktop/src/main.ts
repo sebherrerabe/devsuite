@@ -2,7 +2,12 @@ import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize, sep } from 'node:path';
-import { clearInterval, setInterval } from 'node:timers';
+import {
+  clearInterval,
+  clearTimeout,
+  setInterval,
+  setTimeout,
+} from 'node:timers';
 import { URL, fileURLToPath } from 'node:url';
 import type {
   BrowserWindow as BrowserWindowType,
@@ -69,8 +74,10 @@ import {
   HOSTS_WRITE_HELPER_BASE64_ARG,
   HOSTS_WRITE_HELPER_FLAG,
   HOSTS_WRITE_HELPER_PATH_ARG,
-  reconcileDomains,
   unblockAll,
+  verifyHostsWriteHelper,
+  type HostsEnforcementStatus,
+  type HostsOperationResult,
 } from './hosts-manager.js';
 import {
   applyStrictPolicyOverride,
@@ -83,6 +90,10 @@ import {
 import { executeStrictPolicyActions } from './strict-policy-actions.js';
 import { runtimeLog } from './runtime-logger.js';
 import { broadcastDesktopSessionStateToWindows } from './session-state-broadcast.js';
+import {
+  shouldFinalizeExitAfterPause,
+  shouldPauseRunningSessionOnExit,
+} from './session-exit-guard.js';
 import {
   getSessionWidgetWindowOptions,
   getSessionWidgetSize,
@@ -133,6 +144,8 @@ const NOTIFICATION_ACTION_CHANNEL = 'desktop-notification:action';
 const PROCESS_EVENTS_CHANNEL = 'desktop-process-monitor:events';
 const IDE_FOCUS_EVENTS_CHANNEL = 'desktop-ide-focus:events';
 const POLICY_AUDIT_CHANNEL = 'desktop-policy:audit-events';
+const HOSTS_ENFORCEMENT_STATUS_CHANNEL =
+  'desktop-hosts-enforcement:status-changed';
 const MAX_PROCESS_EVENT_LOG = 500;
 const MAX_POLICY_AUDIT_LOG = 1000;
 const POLICY_TICK_INTERVAL_MS = 5_000;
@@ -314,6 +327,14 @@ const notificationSentAtByKey = new Map<string, number>();
 const pendingNotificationActions: DesktopNotificationActionEvent[] = [];
 let processEventLog: DesktopProcessEvent[] = [];
 let policyAuditLog: StrictPolicyAuditEvent[] = [];
+let hostsEnforcementStatus: HostsEnforcementStatus = {
+  state: 'inactive',
+  blockedDomains: [],
+  lastCheckedAt: null,
+  lastAppliedAt: null,
+  lastError: null,
+  method: 'none',
+};
 const blockedWebsiteBySourceId = new Map<string, string>();
 let policyTickTimer: ReturnType<typeof setInterval> | null = null;
 let rendererProtocolRegistered = false;
@@ -324,11 +345,16 @@ let desktopRuntimePreferences: DesktopRuntimePreferences = {
   runInBackgroundOnClose: false,
 };
 let isAppQuitting = false;
+let bypassSessionPauseOnQuit = false;
+let pendingQuitAfterSessionPause = false;
+let pendingQuitReason: 'app_quit' | 'window_close' | null = null;
+let sessionPauseBeforeQuitTimer: ReturnType<typeof setTimeout> | null = null;
 let isClosingSessionWidgetProgrammatically = false;
 let sessionWidgetDismissedByUser = false;
 let sessionWidgetMode: SessionWidgetMode = 'mini';
 
 const lastEffectiveDurationBySessionId = new Map<string, number>();
+const SESSION_PAUSE_BEFORE_QUIT_TIMEOUT_MS = 5_000;
 
 /** Local effective time state when recordingIDE is set (desktop strict mode). */
 interface LocalEffectiveState {
@@ -612,6 +638,22 @@ function parseDesktopWebsiteEventsForTest(
   return input.map(parseDesktopWebsiteEventForTest);
 }
 
+function parseDesktopWebsiteNavigationSignalForTest(input: unknown): {
+  sourceId: string;
+  rawUrl: string;
+  timestamp: number;
+} {
+  if (!isRecord(input)) {
+    throw new Error('Desktop website navigation signal must be an object.');
+  }
+
+  return {
+    sourceId: parseNonEmptyString(input.sourceId, 'sourceId'),
+    rawUrl: parseNonEmptyString(input.rawUrl, 'rawUrl'),
+    timestamp: parseInteger(input.timestamp, 'timestamp'),
+  };
+}
+
 const processMonitor = new WindowsProcessMonitor({
   onEvents: async events => {
     await handleDesktopProcessEvents(events);
@@ -655,7 +697,9 @@ function getAuthenticatedDesktopScope(): DesktopSettingsScope | null {
   return desktopSessionScope;
 }
 
-function isRunningOrPaused(status: DesktopSessionState['status']): boolean {
+function shouldBlockDomainsForSessionStatus(
+  status: DesktopSessionState['status']
+): boolean {
   return status === 'RUNNING' || status === 'PAUSED';
 }
 
@@ -752,30 +796,210 @@ function ensureAutoSessionManager(): AutoSessionManager {
   return autoSessionManagerRef;
 }
 
-async function syncHostsBlockingForSessionTransition(params: {
-  previousStatus: DesktopSessionState['status'];
-  nextStatus: DesktopSessionState['status'];
+async function emitHostsDegradedNotification(params: {
+  scope: DesktopSettingsScope;
   domains: string[];
+  error: string | null;
 }): Promise<void> {
-  if (params.previousStatus === 'IDLE' && params.nextStatus === 'RUNNING') {
-    const result = await blockDomains(params.domains);
+  await emitDesktopNotification({
+    scope: params.scope,
+    kind: 'website_blocked_detected',
+    title: 'Website blocking degraded',
+    body:
+      params.error?.trim() ||
+      `Blocked domains are configured (${params.domains.join(', ')}) but hosts enforcement is unavailable. Reinstall or restart DevSuite Desktop.`,
+    action: 'open_sessions',
+    route: '/sessions',
+    throttleKey: `${params.scope.userId}:${params.scope.companyId}:hosts_enforcement:degraded`,
+    throttleMs: 120_000,
+  }).catch(() => {});
+}
+
+function resolveHostsEnforcementStatusFromResult(params: {
+  result: HostsOperationResult;
+  blockedDomains: string[];
+  now: number;
+  previous: HostsEnforcementStatus;
+}): HostsEnforcementStatus {
+  if (params.result.status === 'degraded') {
+    return {
+      state: 'degraded',
+      blockedDomains: [...params.blockedDomains],
+      lastCheckedAt: params.now,
+      lastAppliedAt: params.previous.lastAppliedAt,
+      lastError: params.result.error,
+      method: params.result.method,
+    };
+  }
+
+  if (params.blockedDomains.length === 0) {
+    return {
+      state: 'inactive',
+      blockedDomains: [],
+      lastCheckedAt: params.now,
+      lastAppliedAt:
+        params.result.status === 'applied'
+          ? params.now
+          : params.previous.lastAppliedAt,
+      lastError: null,
+      method: params.result.method,
+    };
+  }
+
+  return {
+    state: 'active',
+    blockedDomains: [...params.blockedDomains],
+    lastCheckedAt: params.now,
+    lastAppliedAt:
+      params.result.status === 'applied'
+        ? params.now
+        : params.previous.lastAppliedAt,
+    lastError: null,
+    method: params.result.method,
+  };
+}
+
+async function syncHostsEnforcement(params: {
+  status: DesktopSessionState['status'];
+  domains: string[];
+  source: string;
+}): Promise<void> {
+  const activeScope = getAuthenticatedDesktopScope();
+  const normalizedDomains = [...params.domains];
+  const previousStatus = getHostsEnforcementStatusSnapshot();
+  const now = Date.now();
+
+  if (!shouldBlockDomainsForSessionStatus(params.status)) {
+    const result = await unblockAll();
     runtimeLog.info(
       'hosts-manager',
-      `session transition to RUNNING: hosts block ${result.applied ? 'applied' : 'skipped'} for domains=${result.normalizedDomains.join(',') || 'none'}`
+      `session status reconcile (${params.source}): status=${params.status}, hosts unblock status=${result.status}, method=${result.method}, error=${result.error ?? 'none'}`
+    );
+
+    setHostsEnforcementStatus(
+      resolveHostsEnforcementStatusFromResult({
+        result,
+        blockedDomains: [],
+        now,
+        previous: previousStatus,
+      })
+    );
+
+    if (
+      result.status === 'applied' &&
+      previousStatus.blockedDomains.length > 0
+    ) {
+      appendHostsAuditEvent(
+        'website_hosts_block_cleared',
+        {
+          source: params.source,
+          blockedDomains: previousStatus.blockedDomains.join(','),
+          method: result.method,
+          status: result.status,
+        },
+        activeScope
+      );
+    }
+    return;
+  }
+
+  if (normalizedDomains.length === 0) {
+    setHostsEnforcementStatus({
+      state: 'inactive',
+      blockedDomains: [],
+      lastCheckedAt: now,
+      lastAppliedAt: previousStatus.lastAppliedAt,
+      lastError: null,
+      method: 'none',
+    });
+    return;
+  }
+
+  const result = await blockDomains(normalizedDomains);
+  runtimeLog.info(
+    'hosts-manager',
+    `session status reconcile (${params.source}): status=${params.status}, hosts block status=${result.status}, method=${result.method}, domains=${result.normalizedDomains.join(',') || 'none'}, error=${result.error ?? 'none'}`
+  );
+
+  const nextStatus = resolveHostsEnforcementStatusFromResult({
+    result,
+    blockedDomains: result.normalizedDomains,
+    now,
+    previous: previousStatus,
+  });
+  setHostsEnforcementStatus(nextStatus);
+
+  if (result.status === 'degraded') {
+    appendHostsAuditEvent(
+      'website_hosts_block_failed',
+      {
+        source: params.source,
+        blockedDomains: result.normalizedDomains.join(','),
+        method: result.method,
+        error: result.error,
+        sessionStatus: params.status,
+      },
+      activeScope
+    );
+    if (activeScope) {
+      await emitHostsDegradedNotification({
+        scope: activeScope,
+        domains: result.normalizedDomains,
+        error: result.error,
+      });
+    }
+    return;
+  }
+
+  if (previousStatus.state === 'degraded' && nextStatus.state === 'active') {
+    appendHostsAuditEvent(
+      'website_hosts_block_recovered',
+      {
+        source: params.source,
+        blockedDomains: result.normalizedDomains.join(','),
+        method: result.method,
+        sessionStatus: params.status,
+        recoveredFrom: previousStatus.lastError,
+      },
+      activeScope
     );
     return;
   }
 
-  if (
-    isRunningOrPaused(params.previousStatus) &&
-    params.nextStatus === 'IDLE'
-  ) {
-    const result = await unblockAll();
-    runtimeLog.info(
-      'hosts-manager',
-      `session transition to IDLE: hosts unblock ${result.applied ? 'applied' : 'skipped'}`
+  if (result.status === 'applied') {
+    appendHostsAuditEvent(
+      'website_hosts_block_applied',
+      {
+        source: params.source,
+        blockedDomains: result.normalizedDomains.join(','),
+        method: result.method,
+        sessionStatus: params.status,
+      },
+      activeScope
     );
   }
+}
+
+async function replayBlockedWebsiteSignalsForCurrentSession(): Promise<void> {
+  if (
+    desktopSessionState.status !== 'RUNNING' ||
+    blockedWebsiteBySourceId.size === 0
+  ) {
+    return;
+  }
+
+  const now = Date.now();
+  await evaluateAndRunStrictPolicy({
+    websiteEvents: Array.from(blockedWebsiteBySourceId.entries()).map(
+      ([sourceId, domain]) => ({
+        type: 'website_blocked_started' as const,
+        domain,
+        sourceId,
+        timestamp: now,
+      })
+    ),
+    websiteSignalAvailable: true,
+  });
 }
 
 function broadcastDesktopSessionState(): void {
@@ -866,6 +1090,85 @@ function appendPolicyAuditEvents(
 
 function getPolicyAuditLogSnapshot(): StrictPolicyAuditEvent[] {
   return [...policyAuditLog];
+}
+
+function getHostsEnforcementStatusSnapshot(): HostsEnforcementStatus {
+  return {
+    ...hostsEnforcementStatus,
+    blockedDomains: [...hostsEnforcementStatus.blockedDomains],
+  };
+}
+
+function broadcastHostsEnforcementStatus(): void {
+  const snapshot = getHostsEnforcementStatusSnapshot();
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(HOSTS_ENFORCEMENT_STATUS_CHANNEL, snapshot);
+    }
+  }
+}
+
+function setHostsEnforcementStatus(nextStatus: HostsEnforcementStatus): void {
+  const current = hostsEnforcementStatus;
+  const hasChanged =
+    current.state !== nextStatus.state ||
+    current.lastCheckedAt !== nextStatus.lastCheckedAt ||
+    current.lastAppliedAt !== nextStatus.lastAppliedAt ||
+    current.lastError !== nextStatus.lastError ||
+    current.method !== nextStatus.method ||
+    current.blockedDomains.length !== nextStatus.blockedDomains.length ||
+    current.blockedDomains.some(
+      (domain, index) => domain !== nextStatus.blockedDomains[index]
+    );
+
+  if (!hasChanged) {
+    return;
+  }
+
+  hostsEnforcementStatus = {
+    ...nextStatus,
+    blockedDomains: [...nextStatus.blockedDomains],
+  };
+  broadcastHostsEnforcementStatus();
+}
+
+async function refreshHostsEnforcementHealth(source: string): Promise<void> {
+  const verification = await verifyHostsWriteHelper();
+  const current = getHostsEnforcementStatusSnapshot();
+  runtimeLog.info(
+    'hosts-manager',
+    `hosts helper verification (${source}): ok=${verification.ok}, method=${verification.method}, error=${verification.error ?? 'none'}`
+  );
+
+  setHostsEnforcementStatus({
+    state: current.state,
+    blockedDomains: current.blockedDomains,
+    lastCheckedAt: verification.checkedAt,
+    lastAppliedAt: current.lastAppliedAt,
+    lastError: verification.ok ? null : verification.error,
+    method: verification.method,
+  });
+}
+
+function appendHostsAuditEvent(
+  type:
+    | 'website_hosts_block_applied'
+    | 'website_hosts_block_failed'
+    | 'website_hosts_block_cleared'
+    | 'website_hosts_block_recovered',
+  metadata: StrictPolicyAuditEvent['metadata'],
+  scope?: DesktopSettingsScope | null
+): void {
+  appendPolicyAuditEvents(
+    [
+      {
+        type,
+        timestamp: Date.now(),
+        metadata,
+      },
+    ],
+    scope
+  );
 }
 
 function normalizeDomainFromUrl(rawUrl: string): string | null {
@@ -1054,7 +1357,18 @@ async function refreshProcessMonitorForScope(
     desktopFocusSettings = createDefaultDesktopFocusSettings();
     processMonitor.setConfig(normalizeProcessWatchConfig({}));
     autoSessionManagerRef?.stop();
-    await unblockAll();
+    const result = await unblockAll();
+    setHostsEnforcementStatus({
+      state: 'inactive',
+      blockedDomains: [],
+      lastCheckedAt: Date.now(),
+      lastAppliedAt:
+        result.status === 'applied'
+          ? Date.now()
+          : hostsEnforcementStatus.lastAppliedAt,
+      lastError: result.status === 'degraded' ? result.error : null,
+      method: result.method,
+    });
     return;
   }
 
@@ -1062,17 +1376,31 @@ async function refreshProcessMonitorForScope(
     const settings =
       providedSettings ?? (await loadDesktopFocusSettings(scope));
     desktopFocusSettings = settings;
+    await refreshHostsEnforcementHealth('refresh_process_monitor');
     ensureAutoSessionManager();
     const config = createProcessWatchConfigFromFocusSettings(settings);
     processMonitor.setConfig(config);
-    if (desktopSessionState.status === 'RUNNING') {
-      await blockDomains(desktopFocusSettings.websiteBlockList);
-    }
+    await syncHostsEnforcement({
+      status: desktopSessionState.status,
+      domains: desktopFocusSettings.websiteBlockList,
+      source: 'refresh_process_monitor',
+    });
     await reconcileBlockedWebsiteSignals();
     await evaluateAndRunStrictPolicy();
   } catch (error) {
     desktopFocusSettings = createDefaultDesktopFocusSettings();
     processMonitor.setConfig(normalizeProcessWatchConfig({}));
+    setHostsEnforcementStatus({
+      state: 'degraded',
+      blockedDomains: [],
+      lastCheckedAt: Date.now(),
+      lastAppliedAt: hostsEnforcementStatus.lastAppliedAt,
+      lastError:
+        error instanceof Error
+          ? error.message
+          : 'Failed to refresh process monitor config.',
+      method: 'none',
+    });
     console.warn('[desktop] Failed to refresh process monitor config.', error);
   }
 }
@@ -1107,6 +1435,76 @@ function canDispatchSessionAction(action: DesktopSessionAction): boolean {
     case 'end':
       return availability.end;
   }
+}
+
+function clearPendingQuitAfterSessionPause(): void {
+  pendingQuitAfterSessionPause = false;
+  pendingQuitReason = null;
+  if (sessionPauseBeforeQuitTimer) {
+    clearTimeout(sessionPauseBeforeQuitTimer);
+    sessionPauseBeforeQuitTimer = null;
+  }
+}
+
+function prepareForAppQuit(): void {
+  isAppQuitting = true;
+  foregroundWindowTrackerRef?.stop();
+  foregroundWindowTrackerRef = null;
+  foregroundTrackerRecordingIDE = null;
+  foregroundTrackerWatchListSignature = '';
+  inactivityTrackerRef?.stop();
+  inactivityTrackerRef = null;
+  autoSessionManagerRef?.stop();
+  processMonitor.stop();
+  if (policyTickTimer) {
+    clearInterval(policyTickTimer);
+    policyTickTimer = null;
+  }
+  void unblockAll().catch(error => {
+    console.warn('[desktop] Failed to clear hosts block before quit.', error);
+  });
+}
+
+function finalizeAppQuitAfterSessionPause(): void {
+  clearPendingQuitAfterSessionPause();
+  bypassSessionPauseOnQuit = true;
+  isAppQuitting = true;
+  app.quit();
+}
+
+function shouldPauseSessionBeforeExit(): boolean {
+  return shouldPauseRunningSessionOnExit(desktopSessionState);
+}
+
+function requestSessionPauseThenQuit(
+  reason: 'app_quit' | 'window_close'
+): void {
+  if (pendingQuitAfterSessionPause) {
+    return;
+  }
+
+  pendingQuitAfterSessionPause = true;
+  pendingQuitReason = reason;
+  runtimeLog.info(
+    'session-sync',
+    `deferring ${reason} to pause active session before exit`
+  );
+
+  sessionPauseBeforeQuitTimer = setTimeout(() => {
+    runtimeLog.warn(
+      'session-sync',
+      `timed out waiting for session pause during ${pendingQuitReason ?? 'quit'}; proceeding with exit`
+    );
+    finalizeAppQuitAfterSessionPause();
+  }, SESSION_PAUSE_BEFORE_QUIT_TIMEOUT_MS);
+
+  void dispatchDesktopSessionAction('pause').catch(error => {
+    runtimeLog.warn(
+      'session-sync',
+      `failed to dispatch pause before quit: ${error instanceof Error ? error.message : String(error)}`
+    );
+    finalizeAppQuitAfterSessionPause();
+  });
 }
 
 async function showMainWindow(): Promise<void> {
@@ -1684,6 +2082,14 @@ function setDesktopScope(nextScope: DesktopSettingsScope | null): void {
     pendingNotificationActions.length = 0;
     processEventLog = [];
     policyAuditLog = [];
+    setHostsEnforcementStatus({
+      state: 'inactive',
+      blockedDomains: [],
+      lastCheckedAt: hostsEnforcementStatus.lastCheckedAt,
+      lastAppliedAt: hostsEnforcementStatus.lastAppliedAt,
+      lastError: null,
+      method: 'none',
+    });
     blockedWebsiteBySourceId.clear();
     void unblockAll().catch(error => {
       console.warn(
@@ -2297,11 +2703,6 @@ function registerIpcHandlers(): void {
     'desktop-focus-settings:set',
     async (_event, scope: unknown, payload: unknown) => {
       const resolvedScope = await resolveScopedDesktopContext(scope);
-      const previousWebsiteBlockList =
-        desktopSessionScope &&
-        areScopesEqual(desktopSessionScope, resolvedScope)
-          ? [...desktopFocusSettings.websiteBlockList]
-          : null;
       const savedSettings = await saveDesktopFocusSettings(
         resolvedScope,
         payload
@@ -2310,12 +2711,6 @@ function registerIpcHandlers(): void {
         desktopSessionScope &&
         areScopesEqual(desktopSessionScope, resolvedScope)
       ) {
-        if (isRunningOrPaused(desktopSessionState.status)) {
-          await reconcileDomains({
-            currentDomains: previousWebsiteBlockList ?? [],
-            newDomains: savedSettings.websiteBlockList,
-          });
-        }
         await refreshProcessMonitorForScope(desktopSessionScope, savedSettings);
       }
       return savedSettings;
@@ -2429,20 +2824,34 @@ function registerIpcHandlers(): void {
       }
 
       desktopSessionState = normalizedState;
+      if (
+        shouldFinalizeExitAfterPause({
+          pendingExit: pendingQuitAfterSessionPause,
+          state: desktopSessionState,
+        })
+      ) {
+        runtimeLog.info(
+          'session-sync',
+          `session pause acknowledged during ${pendingQuitReason ?? 'quit'}; resuming exit`
+        );
+        finalizeAppQuitAfterSessionPause();
+        return getDesktopSessionStateSnapshot();
+      }
       autoSessionManagerRef?.handleSessionStateChange(
         previousState,
         desktopSessionState
       );
-      await syncHostsBlockingForSessionTransition({
-        previousStatus,
-        nextStatus: desktopSessionState.status,
+      await syncHostsEnforcement({
+        status: desktopSessionState.status,
         domains: desktopFocusSettings.websiteBlockList,
+        source: `session_transition:${previousStatus}->${desktopSessionState.status}`,
       });
-      void evaluateAndRunStrictPolicy();
+      await evaluateAndRunStrictPolicy();
       if (
         previousStatus !== 'RUNNING' &&
         desktopSessionState.status === 'RUNNING'
       ) {
+        await replayBlockedWebsiteSignalsForCurrentSession();
         try {
           await processMonitor.triggerImmediatePoll({
             resetPreviousEntries: true,
@@ -2773,6 +3182,9 @@ function registerIpcHandlers(): void {
       return getPolicyAuditLogSnapshot();
     }
   );
+  ipcMain.handle('desktop-hosts-enforcement:get-status', async () => {
+    return getHostsEnforcementStatusSnapshot();
+  });
   ipcMain.handle(
     'desktop-policy:apply-override',
     async (_event, scope: unknown, durationMs: unknown, reason: unknown) => {
@@ -2839,10 +3251,32 @@ function registerIpcHandlers(): void {
         };
       }
     );
+    ipcMain.handle(
+      'desktop-test:signal-website-navigation',
+      async (_event, payload: unknown) => {
+        const signal = parseDesktopWebsiteNavigationSignalForTest(payload);
+        await handleWebsiteNavigationSignal(
+          signal.sourceId,
+          signal.rawUrl,
+          signal.timestamp
+        );
+        return {
+          accepted: 1,
+        };
+      }
+    );
     ipcMain.handle('desktop-test:reset-policy-state', async () => {
       strictPolicyState = createDefaultStrictPolicyState();
       processEventLog = [];
       policyAuditLog = [];
+      hostsEnforcementStatus = {
+        state: 'inactive',
+        blockedDomains: [],
+        lastCheckedAt: null,
+        lastAppliedAt: null,
+        lastError: null,
+        method: 'none',
+      };
       blockedWebsiteBySourceId.clear();
       return {
         reset: true,
@@ -2887,12 +3321,20 @@ async function createMainWindow(options?: {
   registerWebsiteSignalHandlers(mainWindow);
   await loadWindowContent(mainWindow);
   mainWindow.on('close', event => {
-    if (!desktopRuntimePreferences.runInBackgroundOnClose || isAppQuitting) {
+    if (desktopRuntimePreferences.runInBackgroundOnClose && !isAppQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
       return;
     }
 
-    event.preventDefault();
-    mainWindow.hide();
+    if (
+      !isAppQuitting &&
+      !bypassSessionPauseOnQuit &&
+      shouldPauseSessionBeforeExit()
+    ) {
+      event.preventDefault();
+      requestSessionPauseThenQuit('window_close');
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -2978,6 +3420,7 @@ if (hasHostsWriteHelperArg(process.argv)) {
           error
         );
       }
+      await refreshHostsEnforcementHealth('startup');
       await registerRendererProtocol();
       await initializeRuntimePreferences();
       registerIpcHandlers();
@@ -3021,23 +3464,21 @@ if (hasHostsWriteHelperArg(process.argv)) {
     });
   }
 
-  app.on('before-quit', () => {
-    isAppQuitting = true;
-    foregroundWindowTrackerRef?.stop();
-    foregroundWindowTrackerRef = null;
-    foregroundTrackerRecordingIDE = null;
-    foregroundTrackerWatchListSignature = '';
-    inactivityTrackerRef?.stop();
-    inactivityTrackerRef = null;
-    autoSessionManagerRef?.stop();
-    processMonitor.stop();
-    if (policyTickTimer) {
-      clearInterval(policyTickTimer);
-      policyTickTimer = null;
+  app.on('before-quit', event => {
+    if (bypassSessionPauseOnQuit) {
+      prepareForAppQuit();
+      bypassSessionPauseOnQuit = false;
+      return;
     }
-    void unblockAll().catch(error => {
-      console.warn('[desktop] Failed to clear hosts block before quit.', error);
-    });
+
+    if (!isAppQuitting && shouldPauseSessionBeforeExit()) {
+      event.preventDefault();
+      requestSessionPauseThenQuit('app_quit');
+      return;
+    }
+
+    clearPendingQuitAfterSessionPause();
+    prepareForAppQuit();
   });
 
   app.on('window-all-closed', () => {

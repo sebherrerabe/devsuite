@@ -55,6 +55,24 @@ type RunningDesktopProcess = {
   windowTitle: string;
 };
 
+type DesktopHostsEnforcementStatus = {
+  state: 'inactive' | 'active' | 'degraded';
+  blockedDomains: string[];
+  lastCheckedAt: number | null;
+  lastAppliedAt: number | null;
+  lastError: string | null;
+  method: 'direct' | 'helper' | 'none';
+};
+
+const DEFAULT_HOSTS_ENFORCEMENT_STATUS: DesktopHostsEnforcementStatus = {
+  state: 'inactive',
+  blockedDomains: [],
+  lastCheckedAt: null,
+  lastAppliedAt: null,
+  lastError: null,
+  method: 'none',
+};
+
 const DEFAULT_DESKTOP_FOCUS_SETTINGS: DesktopFocusSettingsState = {
   devCoreList: ['code.exe', 'cursor.exe', 'idea64.exe'],
   ideWatchList: ['code.exe', 'cursor.exe', 'idea64.exe'],
@@ -78,6 +96,14 @@ const DEFAULT_DESKTOP_FOCUS_SETTINGS: DesktopFocusSettingsState = {
   autoSessionWarmupSeconds: 120,
 };
 const DEFAULT_COMPANION_SHORTCUT = 'Ctrl+Alt+D';
+
+function formatDateTime(timestamp: number | null): string {
+  if (!timestamp) {
+    return 'Never';
+  }
+
+  return new Date(timestamp).toLocaleString();
+}
 
 function getSessionUserId(sessionData: unknown): string | null {
   if (!sessionData || typeof sessionData !== 'object') {
@@ -488,6 +514,8 @@ function DesktopSettingsPage() {
   const [desktopOpenAtLogin, setDesktopOpenAtLogin] = useState(true);
   const [desktopRunInBackgroundOnClose, setDesktopRunInBackgroundOnClose] =
     useState(false);
+  const [hostsEnforcementStatus, setHostsEnforcementStatus] =
+    useState<DesktopHostsEnforcementStatus>(DEFAULT_HOSTS_ENFORCEMENT_STATUS);
   const [isSaving, setIsSaving] = useState(false);
 
   const hasDesktopFocusApi =
@@ -501,6 +529,9 @@ function DesktopSettingsPage() {
   const hasDesktopRuntimePreferencesApi =
     typeof window !== 'undefined' &&
     typeof window.desktopRuntimePreferences !== 'undefined';
+  const hasDesktopHostsEnforcementApi =
+    typeof window !== 'undefined' &&
+    typeof window.desktopHostsEnforcement !== 'undefined';
 
   const isDesktopRuntime = hasDesktopFocusApi;
 
@@ -615,6 +646,39 @@ function DesktopSettingsPage() {
     };
   }, [hasDesktopRuntimePreferencesApi]);
 
+  useEffect(() => {
+    if (!hasDesktopHostsEnforcementApi) {
+      setHostsEnforcementStatus(DEFAULT_HOSTS_ENFORCEMENT_STATUS);
+      return;
+    }
+
+    let active = true;
+    const unsubscribe =
+      window.desktopHostsEnforcement?.onStatusChanged(status => {
+        if (active) {
+          setHostsEnforcementStatus(status);
+        }
+      }) ?? (() => {});
+
+    void window.desktopHostsEnforcement
+      ?.getStatus()
+      .then(status => {
+        if (active && status) {
+          setHostsEnforcementStatus(status);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setHostsEnforcementStatus(DEFAULT_HOSTS_ENFORCEMENT_STATUS);
+        }
+      });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [hasDesktopHostsEnforcementApi]);
+
   const addDesktopAppBlockExecutable = (executable: string) => {
     const normalized = normalizeExecutableInput(executable);
     if (!normalized) {
@@ -653,14 +717,48 @@ function DesktopSettingsPage() {
         label: 'Runtime preferences',
         value: hasDesktopRuntimePreferencesApi ? 'Available' : 'Not available',
       },
+      {
+        label: 'Hosts enforcement',
+        value: hasDesktopHostsEnforcementApi ? 'Available' : 'Not available',
+      },
     ],
     [
       hasDesktopCompanionApi,
+      hasDesktopHostsEnforcementApi,
       hasDesktopProcessPicker,
       hasDesktopRuntimePreferencesApi,
       isDesktopRuntime,
     ]
   );
+
+  const hostsEnforcementSummary = useMemo(() => {
+    if (hostsEnforcementStatus.state === 'active') {
+      return {
+        tone: 'text-emerald-700',
+        title: 'Website blocking active',
+        body:
+          hostsEnforcementStatus.blockedDomains.length > 0
+            ? `Blocked now: ${hostsEnforcementStatus.blockedDomains.join(', ')}`
+            : 'Blocked domains are being enforced for the active desktop session.',
+      };
+    }
+
+    if (hostsEnforcementStatus.state === 'degraded') {
+      return {
+        tone: 'text-amber-700',
+        title: 'Website blocking degraded',
+        body:
+          hostsEnforcementStatus.lastError?.trim() ||
+          'Hosts enforcement is unavailable. Restart or reinstall DevSuite Desktop to restore blocking.',
+      };
+    }
+
+    return {
+      tone: 'text-muted-foreground',
+      title: 'Website blocking inactive',
+      body: 'No active session requires hosts blocking right now, or no blocked domains are configured.',
+    };
+  }, [hostsEnforcementStatus]);
 
   const handleSave = async () => {
     if (!companyId || !isDesktopRuntime) {
@@ -1032,6 +1130,41 @@ function DesktopSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-md border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">
+                  {hostsEnforcementSummary.title}
+                </p>
+                <p className={`text-xs ${hostsEnforcementSummary.tone}`}>
+                  {hostsEnforcementSummary.body}
+                </p>
+              </div>
+              <Badge
+                variant={
+                  hostsEnforcementStatus.state === 'active'
+                    ? 'default'
+                    : hostsEnforcementStatus.state === 'degraded'
+                      ? 'destructive'
+                      : 'secondary'
+                }
+              >
+                {hostsEnforcementStatus.state}
+              </Badge>
+            </div>
+            <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+              <p>Method: {hostsEnforcementStatus.method}</p>
+              <p>
+                Last check:{' '}
+                {formatDateTime(hostsEnforcementStatus.lastCheckedAt)}
+              </p>
+              <p>
+                Last apply:{' '}
+                {formatDateTime(hostsEnforcementStatus.lastAppliedAt)}
+              </p>
+            </div>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <p className="text-xs font-medium">IDE mode</p>

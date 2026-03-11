@@ -28,7 +28,7 @@ test('blockDomains triggers DNS flush command when applied', async () => {
     }) as Parameters<typeof blockDomains>[1]['execFile'],
   });
 
-  assert.equal(result.applied, true);
+  assert.equal(result.status, 'applied');
   assert.equal(
     commands.some(
       entry => entry.command === 'ipconfig' && entry.args[0] === '/flushdns'
@@ -54,7 +54,7 @@ test('reconcileDomains no-ops when domain sets are unchanged', async () => {
     },
   });
 
-  assert.equal(result.applied, false);
+  assert.equal(result.status, 'noop');
 });
 
 test('reconcileDomains removes managed hosts block when new domain list is empty', async () => {
@@ -84,7 +84,7 @@ test('reconcileDomains removes managed hosts block when new domain list is empty
     },
   });
 
-  assert.equal(result.applied, true);
+  assert.equal(result.status, 'applied');
   const contents = await readFile(hostsPath, 'utf8');
   assert.equal(contents.includes('# BEGIN DEVSUITE BLOCK'), false);
   assert.equal(contents.includes('youtube.com'), false);

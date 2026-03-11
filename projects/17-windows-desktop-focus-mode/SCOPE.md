@@ -97,7 +97,7 @@ Desktop-specific infrastructure (Electron main/preload, process watchers, tray c
 
 ### Boundary 5
 
-Website blocking policy is configuration-driven and desktop-enforced; hard blocking mechanisms that require OS/network controls are deferred.
+Website blocking policy is configuration-driven and desktop-enforced. Hosts-based domain blocking is in scope during active sessions; broader OS/network controls beyond the managed hosts block remain deferred.
 
 ## Assumptions
 
