@@ -68,7 +68,6 @@ function parseJson(text: string): unknown {
 }
 
 function getBaseUrl(): string {
-  // nosemgrep: semgrep.devsuite-process-env-without-validation
   const configured = process.env.DEVSUITE_GH_SERVICE_URL?.trim();
   return configured || DEFAULT_GH_SERVICE_BASE_URL;
 }
@@ -79,7 +78,6 @@ function buildHeaders(userId: string): Record<string, string> {
     'x-devsuite-user-id': userId,
   };
 
-  // nosemgrep: semgrep.devsuite-process-env-without-validation
   const serviceToken = process.env.DEVSUITE_GH_SERVICE_TOKEN?.trim();
   if (serviceToken) {
     headers.authorization = `Bearer ${serviceToken}`;

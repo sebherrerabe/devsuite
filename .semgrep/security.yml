@@ -20,9 +20,23 @@ rules:
   - id: devsuite-process-env-without-validation
     languages: [typescript]
     message: >-
-      process.env access should be validated via config schema or explicit
-      runtime checks before use.
+      Bare process.env reads should be wrapped in a validator/helper or
+      normalized with an explicit fallback before use.
     severity: INFO
-    patterns:
-      - pattern: process.env.$VAR
-      - pattern-not: process.env.NODE_ENV
+    pattern-either:
+      - pattern: process.env.$VAR!
+      - pattern: process.env[$VAR]!
+      - pattern: return process.env.$VAR
+      - pattern: return process.env[$VAR]
+      - pattern: |
+          {
+            ...
+            $KEY: process.env.$VAR,
+            ...
+          }
+      - pattern: |
+          {
+            ...
+            $KEY: process.env[$VAR],
+            ...
+          }

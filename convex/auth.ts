@@ -12,7 +12,6 @@ const DEV_FALLBACK_SITE_URL = 'http://localhost:5173';
 
 export function requireSiteUrl(siteUrl: string | undefined): string {
   const resolved =
-    // nosemgrep: semgrep.devsuite-process-env-without-validation
     siteUrl ?? process.env.CONVEX_SITE_URL ?? DEV_FALLBACK_SITE_URL;
   if (!resolved) {
     throw new Error('SITE_URL is required for Better Auth');
@@ -32,9 +31,7 @@ export function requireBetterAuthSecret(secret: string | undefined): string {
 
 function getValidatedEnv() {
   return {
-    // nosemgrep: semgrep.devsuite-process-env-without-validation
     siteUrl: requireSiteUrl(process.env.SITE_URL),
-    // nosemgrep: semgrep.devsuite-process-env-without-validation
     betterAuthSecret: requireBetterAuthSecret(process.env.BETTER_AUTH_SECRET),
   };
 }

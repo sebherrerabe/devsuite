@@ -175,7 +175,6 @@ export const backfillDefaultsForCompany = internalMutation({
 export const backfillDefaultsAllCompanies = internalMutation({
   args: {},
   handler: async ctx => {
-    // nosemgrep: semgrep.devsuite-process-env-without-validation
     if (process.env.MIGRATION_ALLOW_ALL !== 'true') {
       throw new Error(
         'MIGRATION_ALLOW_ALL is not enabled for this deployment.'

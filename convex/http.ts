@@ -123,10 +123,15 @@ function readBearerToken(request: globalThis.Request): string | null {
   return token;
 }
 
+function readOptionalEnvVar(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value && value.length > 0 ? value : null;
+}
+
 function authorizeGhServiceRequest(
   request: globalThis.Request
 ): globalThis.Response | null {
-  const expectedToken = process.env[GH_SERVICE_BACKEND_TOKEN_ENV];
+  const expectedToken = readOptionalEnvVar(GH_SERVICE_BACKEND_TOKEN_ENV);
   if (!expectedToken) {
     return jsonResponse(503, {
       error: 'GitHub service backend token is not configured',
@@ -146,7 +151,7 @@ function authorizeGhServiceRequest(
 function authorizeNotionServiceRequest(
   request: globalThis.Request
 ): globalThis.Response | null {
-  const expectedToken = process.env[NOTION_SERVICE_BACKEND_TOKEN_ENV];
+  const expectedToken = readOptionalEnvVar(NOTION_SERVICE_BACKEND_TOKEN_ENV);
   if (!expectedToken) {
     return jsonResponse(503, {
       error: 'Notion service backend token is not configured',
