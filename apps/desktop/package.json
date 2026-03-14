@@ -15,7 +15,7 @@
     "build:all": "pnpm run verify:assets && pnpm --filter @devsuite/shared build && pnpm --filter @devsuite/web build && pnpm run build && node scripts/copy-renderer.mjs",
     "start": "node scripts/run-electron.mjs",
     "package": "pnpm run build && electron-builder --dir --config electron-builder.config.cjs",
-    "make:win": "pnpm run build:all && electron-builder --win nsis --x64 --config electron-builder.config.cjs",
+    "make:win": "pnpm run build:all && electron-builder --win nsis --x64 --publish never --config electron-builder.config.cjs",
     "test:int": "tsx --test test/integration/**/*.test.ts",
     "test:e2e": "pnpm run build && node scripts/run-e2e.mjs",
     "test:install-smoke": "pnpm run make:win && node scripts/run-install-smoke.mjs",
