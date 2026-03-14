@@ -55,9 +55,8 @@ function getBrowserCorsHeaders(
 
   const allowedOrigins = new Set<string>();
   try {
-    allowedOrigins.add(
-      new globalThis.URL(requireSiteUrl(process.env.SITE_URL)).origin
-    );
+    const configuredSiteUrl = requireSiteUrl(process.env['SITE_URL']);
+    allowedOrigins.add(new globalThis.URL(configuredSiteUrl).origin);
   } catch {
     // Ignore malformed configuration and fall back to deny.
   }
