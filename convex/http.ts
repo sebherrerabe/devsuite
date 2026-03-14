@@ -1,8 +1,8 @@
 import { httpRouter, type FunctionReference } from 'convex/server';
 import { httpAction } from './_generated/server';
-import { internal } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { authComponent, createAuth } from './auth';
+import { authComponent, createAuth, requireSiteUrl } from './auth';
 
 const http = httpRouter();
 const GH_SERVICE_BACKEND_TOKEN_ENV = 'DEVSUITE_GH_SERVICE_BACKEND_TOKEN';
@@ -41,6 +41,71 @@ function jsonResponse(
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
+    },
+  });
+}
+
+function getBrowserCorsHeaders(
+  request: globalThis.Request
+): Record<string, string> | null {
+  const origin = request.headers.get('origin');
+  if (!origin) {
+    return {};
+  }
+
+  const allowedOrigins = new Set<string>();
+  try {
+    allowedOrigins.add(
+      new globalThis.URL(requireSiteUrl(process.env.SITE_URL)).origin
+    );
+  } catch {
+    // Ignore malformed configuration and fall back to deny.
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    allowedOrigins.add('http://localhost:5173');
+  }
+
+  if (!allowedOrigins.has(origin)) {
+    return null;
+  }
+
+  return {
+    'access-control-allow-origin': origin,
+    'access-control-allow-credentials': 'true',
+    vary: 'Origin',
+  };
+}
+
+function emptyCorsResponse(
+  request: globalThis.Request,
+  status: number
+): globalThis.Response {
+  const headers = getBrowserCorsHeaders(request);
+  if (headers === null) {
+    return jsonResponse(403, { error: 'Forbidden origin' });
+  }
+
+  return new globalThis.Response(null, {
+    status,
+    headers,
+  });
+}
+
+function jsonCorsResponse(
+  request: globalThis.Request,
+  status: number,
+  payload: Record<string, unknown>
+): globalThis.Response {
+  const headers = getBrowserCorsHeaders(request);
+  if (headers === null) {
+    return jsonResponse(403, { error: 'Forbidden origin' });
+  }
+
+  return new globalThis.Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      ...headers,
     },
   });
 }
@@ -111,6 +176,59 @@ interface GithubNotificationPayload {
   unread: boolean;
   apiUrl?: string | null;
 }
+
+const pauseSessionOnUnload = httpAction(async (ctx, request) => {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    return jsonCorsResponse(request, 401, {
+      error: 'Unauthorized',
+    });
+  }
+
+  let payload: { companyId?: string; sessionId?: string };
+  try {
+    payload = JSON.parse(await request.text()) as {
+      companyId?: string;
+      sessionId?: string;
+    };
+  } catch {
+    return jsonCorsResponse(request, 400, {
+      error: 'Invalid request payload',
+    });
+  }
+
+  const companyId = payload.companyId?.trim() as Id<'companies'> | undefined;
+  const sessionId = payload.sessionId?.trim() as Id<'sessions'> | undefined;
+  if (!companyId || !sessionId) {
+    return jsonCorsResponse(request, 400, {
+      error: 'companyId and sessionId are required',
+    });
+  }
+
+  const activeSession = await ctx.runQuery(api.sessions.getActiveSession, {
+    companyId,
+  });
+  if (
+    !activeSession ||
+    activeSession._id !== sessionId ||
+    activeSession.status !== 'RUNNING'
+  ) {
+    return emptyCorsResponse(request, 204);
+  }
+
+  await ctx.runMutation(api.sessions.pauseSession, {
+    companyId,
+    sessionId,
+  });
+
+  return emptyCorsResponse(request, 204);
+});
+
+http.route({
+  path: '/web/session/pause-on-unload',
+  method: 'POST',
+  handler: pauseSessionOnUnload,
+});
 
 interface GithubSyncTelemetryPayload {
   githubUser?: string | null;
