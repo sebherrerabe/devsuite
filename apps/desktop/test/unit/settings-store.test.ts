@@ -5,9 +5,14 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import {
+  clearDesktopScopedSettings,
   DEFAULT_COMPANION_SHORTCUT,
   loadCompanionShortcut,
+  loadDesktopFocusSettings,
+  loadDesktopRuntimePreferences,
   saveCompanionShortcut,
+  saveDesktopFocusSettings,
+  saveDesktopRuntimePreferences,
 } from '../../src/settings-store.js';
 
 const USER_DATA_PATH_ENV = 'DEVSUITE_DESKTOP_USER_DATA_PATH';
@@ -63,5 +68,61 @@ test('saveCompanionShortcut rejects invalid shortcut values gracefully', async (
 
     const loadedShortcut = await loadCompanionShortcut();
     assert.equal(loadedShortcut, DEFAULT_COMPANION_SHORTCUT);
+  });
+});
+
+test('clearDesktopScopedSettings removes persisted company-scoped settings only', async () => {
+  await withTempUserDataPath(async tempDir => {
+    await saveDesktopFocusSettings(
+      {
+        userId: 'user-1',
+        companyId: 'company-1',
+      },
+      {
+        devCoreList: ['code.exe'],
+        ideWatchList: ['code.exe'],
+        devSupportList: ['powershell.exe'],
+        devSiteList: ['github.com'],
+        appBlockList: ['spotify.exe'],
+        websiteBlockList: ['youtube.com'],
+        strictMode: 'prompt_then_close',
+        appActionMode: 'warn_then_close',
+        websiteActionMode: 'escalate',
+        graceSeconds: 45,
+        reminderIntervalSeconds: 120,
+        inactivityThresholdSeconds: 300,
+        autoInactivityPause: true,
+        autoSession: false,
+        autoSessionWarmupSeconds: 120,
+      }
+    );
+    await saveCompanionShortcut('Ctrl+Shift+K');
+    await saveDesktopRuntimePreferences({
+      openAtLogin: false,
+      runInBackgroundOnClose: true,
+    });
+
+    await clearDesktopScopedSettings();
+
+    const loadedSettings = await loadDesktopFocusSettings({
+      userId: 'user-1',
+      companyId: 'company-1',
+    });
+    assert.equal(loadedSettings.websiteBlockList.length, 0);
+    assert.equal(loadedSettings.appBlockList.length, 0);
+
+    const loadedShortcut = await loadCompanionShortcut();
+    assert.equal(loadedShortcut, 'Ctrl+Shift+K');
+
+    const runtimePreferences = await loadDesktopRuntimePreferences();
+    assert.deepEqual(runtimePreferences, {
+      openAtLogin: false,
+      runInBackgroundOnClose: true,
+    });
+
+    const persisted = JSON.parse(
+      await readFile(join(tempDir, 'desktop-focus-settings.json'), 'utf-8')
+    ) as { byScope?: Record<string, unknown> };
+    assert.deepEqual(persisted.byScope, {});
   });
 });

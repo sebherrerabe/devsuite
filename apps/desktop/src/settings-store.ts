@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import {
@@ -290,4 +290,22 @@ export async function saveDesktopRuntimePreferences(
   storage.runtimePreferences = normalizedPreferences;
   await writeStorage(settingsFilePath, storage);
   return normalizedPreferences;
+}
+
+export async function clearDesktopScopedSettings(): Promise<void> {
+  const settingsFilePath = getSettingsFilePath();
+
+  try {
+    const fileContents = await readFile(settingsFilePath, 'utf-8');
+    const storage = parseStoredData(JSON.parse(fileContents));
+
+    if (Object.keys(storage.byScope).length === 0) {
+      return;
+    }
+
+    storage.byScope = {};
+    await writeStorage(settingsFilePath, storage);
+  } catch {
+    await rm(settingsFilePath, { force: true });
+  }
 }

@@ -17,6 +17,7 @@ import type {
 } from 'electron';
 
 import {
+  clearDesktopScopedSettings,
   DEFAULT_COMPANION_SHORTCUT,
   loadCompanionShortcut,
   loadDesktopRuntimePreferences,
@@ -2737,10 +2738,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle('desktop-auth:clear-local-state', async () => {
     runtimeLog.debug('session-sync', 'desktop-auth:clear-local-state invoked');
     await clearDesktopSessionScope();
+    await clearDesktopScopedSettings();
     setDesktopScope(null);
     const desktopSession = session.fromPartition(DESKTOP_PARTITION);
     await desktopSession.clearStorageData();
     await desktopSession.clearCache();
+    await runtimeLog.clearPersistedLogs();
   });
   ipcMain.handle('desktop-company:get-selection', async () => {
     return desktopSelectedCompanyId;

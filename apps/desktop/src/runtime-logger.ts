@@ -163,6 +163,26 @@ export class RuntimeLogger implements RuntimeLogWriter {
     await this.writeChain;
   }
 
+  async clearPersistedLogs(): Promise<void> {
+    this.queue = [];
+
+    try {
+      await this.writeChain;
+    } catch {
+      // Ignore prior write failures while clearing persisted logs.
+    }
+
+    await this.resolveLogFilePath();
+    if (!this.logFilePath) {
+      return;
+    }
+
+    await Promise.all([
+      this.fsOps.rm(this.logFilePath, { force: true }),
+      this.fsOps.rm(`${this.logFilePath}.1`, { force: true }),
+    ]);
+  }
+
   private enqueue(
     level: RuntimeLogLevel,
     subsystem: RuntimeLogSubsystem,

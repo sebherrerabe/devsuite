@@ -97,3 +97,21 @@ test('runtime logger queues writes until app is ready', async () => {
   );
   assert.match(content, /queued-before-ready/);
 });
+
+test('runtime logger clearPersistedLogs removes current and rotated files', async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), 'runtime-logger-clear-'));
+  const logPath = join(baseDir, 'desktop-runtime.log');
+  const rotatedPath = `${logPath}.1`;
+  const logger = new RuntimeLogger({
+    logFilePath: logPath,
+  });
+
+  logger.info('session-sync', 'sensitive scoped entry');
+  await logger.flush();
+  await writeFile(rotatedPath, 'older sensitive entry\n', 'utf8');
+
+  await logger.clearPersistedLogs();
+
+  await assert.rejects(readFile(logPath, 'utf8'));
+  await assert.rejects(readFile(rotatedPath, 'utf8'));
+});
