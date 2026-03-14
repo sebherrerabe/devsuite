@@ -1,6 +1,6 @@
 ---
-name: ticktick-integration-minimal
-description: Implement optional TickTick integration for explicit task linking. This is NOT task mirroring—only linking DevSuite tasks to TickTick tasks for reference. Use when implementing TickTick integration, linking tasks to TickTick, or displaying TickTick task metadata.
+name: 'ticktick-integration-minimal'
+description: 'Implement optional TickTick integration for explicit task linking. This is NOT task mirroring—only linking DevSuite tasks to TickTick tasks for reference. Use when implementing TickTick integration, linking tasks to TickTick, or displaying TickTick task metadata.'
 ---
 
 # TickTick Integration (Minimal)

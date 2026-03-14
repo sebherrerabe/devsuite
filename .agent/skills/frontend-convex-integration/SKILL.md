@@ -1,6 +1,6 @@
 ---
-name: frontend-convex-integration
-description: Integrate Convex React client with TanStack Query patterns, handle realtime subscriptions, company scoping, and data fetching patterns. Use when connecting frontend to Convex backend, implementing data fetching, or handling realtime updates.
+name: 'frontend-convex-integration'
+description: 'Integrate Convex React client with TanStack Query patterns, handle realtime subscriptions, company scoping, and data fetching patterns. Use when connecting frontend to Convex backend, implementing data fetching, or handling realtime updates.'
 ---
 
 # Frontend Convex Integration

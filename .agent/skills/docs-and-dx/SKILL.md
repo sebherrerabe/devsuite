@@ -1,6 +1,6 @@
 ---
-name: docs-and-dx
-description: Standardize READMEs, package boundaries, contribution workflow, and developer experience documentation for DevSuite. Use when creating or updating documentation, establishing package boundaries, or improving developer onboarding and contribution processes.
+name: 'docs-and-dx'
+description: 'Standardize READMEs, package boundaries, contribution workflow, and developer experience documentation for DevSuite. Use when creating or updating documentation, establishing package boundaries, or improving developer onboarding and contribution processes.'
 ---
 
 # Documentation and Developer Experience

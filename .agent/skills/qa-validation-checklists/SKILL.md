@@ -1,6 +1,6 @@
 ---
-name: qa-validation-checklists
-description: Create QA validation checklists for DevSuite modules focusing on invariants (soft delete, company scoping, privacy mode) and module-specific flows. Use when validating module implementations, performing QA checks, or ensuring compliance with DevSuite architectural rules.
+name: 'qa-validation-checklists'
+description: 'Create QA validation checklists for DevSuite modules focusing on invariants (soft delete, company scoping, privacy mode) and module-specific flows. Use when validating module implementations, performing QA checks, or ensuring compliance with DevSuite architectural rules.'
 ---
 
 # QA Validation Checklists

@@ -1,6 +1,6 @@
 ---
-name: frontend-app-shell-and-routing
-description: Set up TanStack Router with file-based routing, application shell (layout, navigation, sidebar), company context propagation, and type-safe navigation patterns. Use when implementing routing, layouts, navigation components, or company switcher integration.
+name: 'frontend-app-shell-and-routing'
+description: 'Set up TanStack Router with file-based routing, application shell (layout, navigation, sidebar), company context propagation, and type-safe navigation patterns. Use when implementing routing, layouts, navigation components, or company switcher integration.'
 ---
 
 # Frontend App Shell & Routing

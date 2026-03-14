@@ -1,6 +1,6 @@
 ---
-name: mcp-server-tooling
-description: Set up and maintain the MCP server infrastructure in apps/mcp/. Implement tools, handle authentication via static token, integrate with Convex, and enforce DevSuite guardrails (no-delete, company scoping). Use when building MCP tools, setting up the server, or integrating DevSuite operations for AI agents.
+name: 'mcp-server-tooling'
+description: 'Set up and maintain the MCP server infrastructure in apps/mcp/. Implement tools, handle authentication via static token, integrate with Convex, and enforce DevSuite guardrails (no-delete, company scoping). Use when building MCP tools, setting up the server, or integrating DevSuite operations for AI agents.'
 ---
 
 # MCP Server Tooling (DevSuite)

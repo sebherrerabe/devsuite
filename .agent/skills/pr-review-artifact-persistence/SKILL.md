@@ -1,6 +1,6 @@
 ---
-name: pr-review-artifact-persistence
-description: Implement PR review storage and persistence in DevSuite. Handle MCP tool for submitting reviews, Convex functions for storage, company scoping, and UI integration. Use when building PR review history, storing review artifacts, or integrating review data from MCP tools.
+name: 'pr-review-artifact-persistence'
+description: 'Implement PR review storage and persistence in DevSuite. Handle MCP tool for submitting reviews, Convex functions for storage, company scoping, and UI integration. Use when building PR review history, storing review artifacts, or integrating review data from MCP tools.'
 ---
 
 # PR Review Artifact Persistence (DevSuite)

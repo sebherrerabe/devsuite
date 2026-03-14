@@ -1,6 +1,6 @@
 ---
-name: github-cli-integration
-description: Implement GitHub integration via GitHub CLI (gh) in the MCP server. Handle PR discovery, metadata fetching, notification sync, rate limiting, and authentication. Use when building GitHub-related MCP tools, handling gh CLI operations, or implementing rate limit strategies.
+name: 'github-cli-integration'
+description: 'Implement GitHub integration via GitHub CLI (gh) in the MCP server. Handle PR discovery, metadata fetching, notification sync, rate limiting, and authentication. Use when building GitHub-related MCP tools, handling gh CLI operations, or implementing rate limit strategies.'
 ---
 
 # GitHub CLI Integration (DevSuite)

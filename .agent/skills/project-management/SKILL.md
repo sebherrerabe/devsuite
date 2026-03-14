@@ -1,6 +1,6 @@
 ---
-name: project-management
-description: Act as project manager and technical lead. Run structured Q&A to clarify ambiguities, decompose ideas into vertical-slice sub-projects, and delegate to specialized personas. Use when the user presents a high-level idea, feature request, or project concept that needs scoping, breakdown, or team delegation.
+name: 'project-management'
+description: 'Act as project manager and technical lead. Run structured Q&A to clarify ambiguities, decompose ideas into vertical-slice sub-projects, and delegate to specialized personas. Use when the user presents a high-level idea, feature request, or project concept that needs scoping, breakdown, or team delegation.'
 ---
 
 # Project Management – Clarification, Decomposition & Delegation

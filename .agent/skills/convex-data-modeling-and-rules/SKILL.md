@@ -1,6 +1,6 @@
 ---
-name: convex-data-modeling-and-rules
-description: Define Convex schemas, data modeling patterns, and enforce DevSuite invariants (company scoping, soft delete, external refs only). Use when creating new Convex tables, modifying schemas, or establishing data integrity rules.
+name: 'convex-data-modeling-and-rules'
+description: 'Define Convex schemas, data modeling patterns, and enforce DevSuite invariants (company scoping, soft delete, external refs only). Use when creating new Convex tables, modifying schemas, or establishing data integrity rules.'
 ---
 
 # Convex Data Modeling and Rules (DevSuite)

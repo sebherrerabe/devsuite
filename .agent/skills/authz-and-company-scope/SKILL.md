@@ -1,6 +1,6 @@
 ---
-name: authz-and-company-scope
-description: Implement authorization patterns and company scoping enforcement for Convex functions. Use when adding auth checks, implementing company context switching, or enforcing privacy boundaries.
+name: 'authz-and-company-scope'
+description: 'Implement authorization patterns and company scoping enforcement for Convex functions. Use when adding auth checks, implementing company context switching, or enforcing privacy boundaries.'
 ---
 
 # Authorization and Company Scoping (DevSuite)

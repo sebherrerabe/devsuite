@@ -1,6 +1,6 @@
 ---
-name: notion-integration-minimal
-description: Implement minimal Notion integration for DevSuite: link validation, notification polling, and inbox item creation. This is NOT a full Notion sync—only explicit linking and notification forwarding. Use when implementing Notion integration, linking tasks to Notion pages, or syncing Notion notifications to inbox.
+name: 'notion-integration-minimal'
+description: 'Implement minimal Notion integration for DevSuite: link validation, notification polling, and inbox item creation. This is NOT a full Notion sync—only explicit linking and notification forwarding. Use when implementing Notion integration, linking tasks to Notion pages, or syncing Notion notifications to inbox.'
 ---
 
 # Notion Integration (Minimal)

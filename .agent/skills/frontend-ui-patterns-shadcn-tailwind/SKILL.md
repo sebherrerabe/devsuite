@@ -1,6 +1,6 @@
 ---
-name: frontend-ui-patterns-shadcn-tailwind
-description: Implement UI components using shadcn/ui and Tailwind CSS v4, following DevSuite conventions for loading/empty/error states, accessibility, forms, and component composition. Use when building UI components, forms, or styling features.
+name: 'frontend-ui-patterns-shadcn-tailwind'
+description: 'Implement UI components using shadcn/ui and Tailwind CSS v4, following DevSuite conventions for loading/empty/error states, accessibility, forms, and component composition. Use when building UI components, forms, or styling features.'
 ---
 
 # Frontend UI Patterns (shadcn/ui + Tailwind v4)

@@ -1,6 +1,6 @@
 ---
-name: ux-ui-design-app-structure
-description: Produces UX/UI deliverables that convert user needs and app modules into a coherent information architecture, navigation model, wireframe-level page specs, and a distinctive visual direction. Use when defining app structure, layouts, link placement, user flows, IA/sitemaps, wireframes, UI kits/tokens, or when the user asks for UX/UI design standards.
+name: 'ux-ui-design-app-structure'
+description: 'Produces UX/UI deliverables that convert user needs and app modules into a coherent information architecture, navigation model, wireframe-level page specs, and a distinctive visual direction. Use when defining app structure, layouts, link placement, user flows, IA/sitemaps, wireframes, UI kits/tokens, or when the user asks for UX/UI design standards.'
 ---
 
 # UX/UI Design — App Structure + Standards

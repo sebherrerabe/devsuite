@@ -1,6 +1,6 @@
 ---
-name: vertical-slice-module-implementation
-description: Implement complete DevSuite modules as vertical slices: Convex functions (CRUD/queries), React UI (list/create/edit), and business logic. Use when implementing any module from projects/04-16 (Company, Repository, Project, Task, Session, Inbox, PR Review, Performance, Invoicing) following DevSuite conventions.
+name: 'vertical-slice-module-implementation'
+description: 'Implement complete DevSuite modules as vertical slices: Convex functions (CRUD/queries), React UI (list/create/edit), and business logic. Use when implementing any module from projects/04-16 (Company, Repository, Project, Task, Session, Inbox, PR Review, Performance, Invoicing) following DevSuite conventions.'
 ---
 
 # Vertical Slice Module Implementation

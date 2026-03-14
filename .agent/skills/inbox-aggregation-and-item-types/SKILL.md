@@ -1,6 +1,6 @@
 ---
-name: inbox-aggregation-and-item-types
-description: Implement DevSuite's unified inbox that aggregates notifications from external systems (GitHub, Notion) and internal events. Handle multiple item types, company scoping, read/archive actions, and privacy mode filtering. Use when implementing inbox functionality, notification aggregation, or multi-source notification systems.
+name: 'inbox-aggregation-and-item-types'
+description: "Implement DevSuite's unified inbox that aggregates notifications from external systems (GitHub, Notion) and internal events. Handle multiple item types, company scoping, read/archive actions, and privacy mode filtering. Use when implementing inbox functionality, notification aggregation, or multi-source notification systems."
 ---
 
 # Inbox Aggregation and Item Types

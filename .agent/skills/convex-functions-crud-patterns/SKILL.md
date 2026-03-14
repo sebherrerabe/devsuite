@@ -1,6 +1,6 @@
 ---
-name: convex-functions-crud-patterns
-description: Implement Convex query, mutation, and action functions following DevSuite CRUD patterns with company scoping, soft delete, and type safety. Use when creating or modifying Convex functions for data operations.
+name: 'convex-functions-crud-patterns'
+description: 'Implement Convex query, mutation, and action functions following DevSuite CRUD patterns with company scoping, soft delete, and type safety. Use when creating or modifying Convex functions for data operations.'
 ---
 
 # Convex Functions: CRUD Patterns (DevSuite)

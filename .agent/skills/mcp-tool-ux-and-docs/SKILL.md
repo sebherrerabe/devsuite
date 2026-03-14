@@ -1,6 +1,6 @@
 ---
-name: mcp-tool-ux-and-docs
-description: Design MCP tools for optimal agent UX: predictable inputs/outputs, clear documentation, discoverable parameters, structured errors, and helpful descriptions. Use when creating new MCP tools, improving tool usability, or documenting tool contracts for AI agents.
+name: 'mcp-tool-ux-and-docs'
+description: 'Design MCP tools for optimal agent UX: predictable inputs/outputs, clear documentation, discoverable parameters, structured errors, and helpful descriptions. Use when creating new MCP tools, improving tool usability, or documenting tool contracts for AI agents.'
 ---
 
 # MCP Tool UX and Documentation (DevSuite)

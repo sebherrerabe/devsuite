@@ -1,6 +1,6 @@
 ---
-name: monorepo-scaffolding
-description: Establish DevSuite’s monorepo “soil”: pnpm workspaces, TypeScript project references, lint/format/husky tooling, base folder structure, scripts, and repo-wide conventions. Also create and maintain nested AGENTS.md files (root and key subdirectories) following Cursor Rules documentation. Use when bootstrapping the repo, standardizing workspace tooling, or writing/refreshing AGENTS.md instructions.
+name: 'monorepo-scaffolding'
+description: 'Establish DevSuite’s monorepo “soil”: pnpm workspaces, TypeScript project references, lint/format/husky tooling, base folder structure, scripts, and repo-wide conventions. Also create and maintain nested AGENTS.md files (root and key subdirectories) following Cursor Rules documentation. Use when bootstrapping the repo, standardizing workspace tooling, or writing/refreshing AGENTS.md instructions.'
 ---
 
 # Monorepo Scaffolding (DevSuite)
