@@ -191,7 +191,7 @@ test('policy override suppresses enforcement during override window', () => {
   assert.equal(overridden.auditEvent.type, 'override_applied');
 });
 
-test('distractor apps are only enforced while a session is active', () => {
+test('distractor apps are only enforced while a session is running', () => {
   const state = createDefaultStrictPolicyState();
   const whileIdle = evaluateStrictPolicy(
     state,
@@ -211,6 +211,26 @@ test('distractor apps are only enforced while a session is active', () => {
   );
 
   assert.equal(whileIdle.actions.length, 0);
+
+  const whilePaused = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 2_500,
+      sessionStatus: 'PAUSED',
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'whatsapp.exe',
+          pid: 23,
+          category: 'app_block',
+          timestamp: 2_500,
+        },
+      ],
+    })
+  );
+
+  assert.equal(whilePaused.actions.length, 0);
+  assert.deepEqual(Object.keys(whilePaused.nextState.appEntries), []);
 
   const whileRunning = evaluateStrictPolicy(
     createDefaultStrictPolicyState(),
@@ -374,6 +394,39 @@ test('website block list triggers prompt and escalation reminders while session 
   );
 });
 
+test('website block list is not enforced while a session is paused', () => {
+  const settings = createSettings({
+    websiteBlockList: ['youtube.com'],
+    websiteActionMode: 'escalate',
+    reminderIntervalSeconds: 5,
+  });
+
+  const paused = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 1_000,
+      sessionStatus: 'PAUSED',
+      settings,
+      websiteSignalAvailable: true,
+      websiteEvents: [
+        {
+          type: 'website_blocked_started',
+          domain: 'youtube.com',
+          sourceId: 'main-window',
+          timestamp: 1_000,
+        },
+      ],
+    })
+  );
+
+  assert.equal(paused.actions.length, 0);
+  assert.deepEqual(Object.keys(paused.nextState.websiteEntries), []);
+  assert.equal(
+    paused.auditEvents.some(event => event.type === 'website_prompt_started'),
+    false
+  );
+});
+
 test('website policy logs safe fallback when URL signal is unavailable', () => {
   const settings = createSettings({
     websiteBlockList: ['x.com'],
@@ -397,6 +450,29 @@ test('website policy logs safe fallback when URL signal is unavailable', () => {
   );
   assert.equal(
     result.actions.some(action => action.type === 'close_process'),
+    false
+  );
+});
+
+test('website policy does not log fallback while session is paused', () => {
+  const settings = createSettings({
+    websiteBlockList: ['x.com'],
+    reminderIntervalSeconds: 5,
+  });
+  const result = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 10_000,
+      sessionStatus: 'PAUSED',
+      settings,
+      websiteSignalAvailable: false,
+    })
+  );
+
+  assert.equal(
+    result.auditEvents.some(
+      event => event.type === 'website_signal_unavailable'
+    ),
     false
   );
 });
@@ -578,6 +654,145 @@ test('distractor close-process requests emit matching audit events', () => {
   );
   assert.equal(
     appClose.auditEvents.some(event => event.type === 'app_close_requested'),
+    true
+  );
+});
+
+test('pausing clears distractor entries and resume restarts grace timing', () => {
+  const settings = createSettings({
+    strictMode: 'prompt_then_close',
+    appActionMode: 'warn_then_close',
+    websiteBlockList: ['youtube.com'],
+    websiteActionMode: 'escalate',
+    reminderIntervalSeconds: 5,
+    graceSeconds: 10,
+  });
+
+  const running = evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    createInput({
+      nowMs: 1_000,
+      sessionStatus: 'RUNNING',
+      settings,
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'whatsapp.exe',
+          pid: 44,
+          category: 'app_block',
+          timestamp: 1_000,
+        },
+      ],
+      websiteSignalAvailable: true,
+      websiteEvents: [
+        {
+          type: 'website_blocked_started',
+          domain: 'youtube.com',
+          sourceId: 'tab-1',
+          timestamp: 1_000,
+        },
+      ],
+    })
+  );
+
+  const paused = evaluateStrictPolicy(
+    running.nextState,
+    createInput({
+      nowMs: 7_000,
+      sessionStatus: 'PAUSED',
+      settings,
+      websiteSignalAvailable: false,
+    })
+  );
+
+  assert.deepEqual(Object.keys(paused.nextState.appEntries), []);
+  assert.deepEqual(Object.keys(paused.nextState.websiteEntries), []);
+  assert.equal(
+    paused.auditEvents.some(event => event.type === 'app_entry_cleared'),
+    true
+  );
+  assert.equal(
+    paused.auditEvents.some(event => event.type === 'website_entry_cleared'),
+    true
+  );
+  assert.equal(
+    paused.auditEvents.some(
+      event => event.type === 'website_signal_unavailable'
+    ),
+    false
+  );
+
+  const resumed = evaluateStrictPolicy(
+    paused.nextState,
+    createInput({
+      nowMs: 8_000,
+      sessionStatus: 'RUNNING',
+      settings,
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'whatsapp.exe',
+          pid: 44,
+          category: 'app_block',
+          timestamp: 8_000,
+        },
+      ],
+      websiteSignalAvailable: true,
+      websiteEvents: [
+        {
+          type: 'website_blocked_started',
+          domain: 'youtube.com',
+          sourceId: 'tab-1',
+          timestamp: 8_000,
+        },
+      ],
+    })
+  );
+
+  assert.equal(
+    resumed.actions.some(
+      action =>
+        action.type === 'notify' && action.kind === 'distractor_app_detected'
+    ),
+    true
+  );
+  assert.equal(
+    resumed.actions.some(
+      action =>
+        action.type === 'notify' && action.kind === 'website_blocked_detected'
+    ),
+    true
+  );
+  assert.equal(
+    resumed.actions.some(action => action.type === 'close_process'),
+    false
+  );
+
+  const beforeGrace = evaluateStrictPolicy(
+    resumed.nextState,
+    createInput({
+      nowMs: 17_500,
+      sessionStatus: 'RUNNING',
+      settings,
+      websiteSignalAvailable: true,
+    })
+  );
+  assert.equal(
+    beforeGrace.actions.some(action => action.type === 'close_process'),
+    false
+  );
+
+  const afterGrace = evaluateStrictPolicy(
+    resumed.nextState,
+    createInput({
+      nowMs: 18_500,
+      sessionStatus: 'RUNNING',
+      settings,
+      websiteSignalAvailable: true,
+    })
+  );
+  assert.equal(
+    afterGrace.actions.some(action => action.type === 'close_process'),
     true
   );
 });

@@ -171,6 +171,51 @@ test('evaluateStrictPolicy logs app_block skip when session is idle', () => {
   );
 });
 
+test('evaluateStrictPolicy logs app_block skip when session is paused', () => {
+  const { logger, events } = createLogger();
+
+  evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    {
+      scope: createScope(),
+      settings: createSettings(),
+      sessionState: {
+        status: 'PAUSED',
+        sessionId: 's-paused',
+        effectiveDurationMs: 0,
+        connectionState: 'connected',
+        lastError: null,
+        updatedAt: 1000,
+      },
+      processEvents: [
+        {
+          type: 'process_started',
+          executable: 'whatsapp.exe',
+          pid: 21,
+          category: 'app_block',
+          timestamp: 1000,
+        },
+      ],
+      websiteEvents: [],
+      websiteSignalAvailable: true,
+      remainingTaskCount: null,
+      nowMs: 1000,
+    },
+    logger
+  );
+
+  assert.equal(
+    events.some(
+      event =>
+        event.level === 'debug' &&
+        event.message.includes('app_block rule evaluated:') &&
+        event.message.includes('sessionRunning=false') &&
+        event.message.includes('result=skip')
+    ),
+    true
+  );
+});
+
 test('evaluateStrictPolicy logs website rule evaluation', () => {
   const { logger, events } = createLogger();
 
@@ -210,6 +255,51 @@ test('evaluateStrictPolicy logs website rule evaluation', () => {
         event.subsystem === 'strict-policy' &&
         event.message.includes('website rule evaluated: domain=youtube.com') &&
         event.message.includes('result=action')
+    ),
+    true
+  );
+});
+
+test('evaluateStrictPolicy logs website rule skip when session is paused', () => {
+  const { logger, events } = createLogger();
+
+  evaluateStrictPolicy(
+    createDefaultStrictPolicyState(),
+    {
+      scope: createScope(),
+      settings: createSettings(),
+      sessionState: {
+        status: 'PAUSED',
+        sessionId: 's-3',
+        effectiveDurationMs: 500,
+        connectionState: 'connected',
+        lastError: null,
+        updatedAt: 1000,
+      },
+      processEvents: [],
+      websiteEvents: [
+        {
+          type: 'website_blocked_started',
+          domain: 'youtube.com',
+          sourceId: 'source-1',
+          timestamp: 1000,
+        },
+      ],
+      websiteSignalAvailable: true,
+      remainingTaskCount: null,
+      nowMs: 1000,
+    },
+    logger
+  );
+
+  assert.equal(
+    events.some(
+      event =>
+        event.level === 'debug' &&
+        event.subsystem === 'strict-policy' &&
+        event.message.includes('website rule evaluated: domain=youtube.com') &&
+        event.message.includes('sessionRunning=false') &&
+        event.message.includes('result=skip')
     ),
     true
   );
