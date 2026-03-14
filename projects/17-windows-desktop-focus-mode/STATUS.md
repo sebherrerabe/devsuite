@@ -3,8 +3,8 @@
 ## Current State
 
 **Status**: in-progress
-**Last Updated**: 2026-02-15
-**Updated By**: Cursor
+**Last Updated**: 2026-03-14
+**Updated By**: Codex
 
 ## Progress
 
@@ -14,9 +14,9 @@
 - [x] Added packaged-install helper verification and desktop settings health status for hosts enforcement (2026-03-11)
 - [x] Defined Windows-only desktop project objective and deliverables (2026-02-14)
 - [x] Decomposed implementation into platform, enforcement, installer, and QA workstreams (2026-02-14)
-- [x] Documented Electron Windows installer strategy with Squirrel-first recommendation and optional MSI path (2026-02-14)
+- [x] Documented Electron Windows installer strategy with NSIS packaging and GitHub Releases auto-update path (2026-02-14)
 - [x] Added deferred offline-features backlog section and explicit deferred task (2026-02-14)
-- [x] Locked installer choice to Squirrel for MVP (2026-02-14)
+- [x] Locked installer choice to NSIS for MVP and stable auto-update compatibility (2026-02-14)
 - [x] Locked distribution posture to local/self-use only for MVP (2026-02-14)
 - [x] Added explicit web/desktop compatibility requirements and parity tasking (2026-02-14)
 - [x] Added desktop-only parameterized settings scope (IDEs, app block list, website block list) (2026-02-14)
@@ -46,7 +46,7 @@
 - [x] Completed TASK-17-010 distractor app settings UX (add/remove/toggle ergonomics) (2026-02-14)
 - [x] Completed TASK-17-011 website block-list runtime enforcement for available URL signals with safe fallback audit path (2026-02-14)
 - [x] Completed TASK-17-012 remaining-task reminder escalation loop with policy-driven cadence and clear-stop behavior (2026-02-14)
-- [x] Started TASK-17-013 packaging baseline with Electron Forge + Squirrel maker config and make script (`make:win`) (2026-02-14)
+- [x] Started TASK-17-013 packaging baseline with Electron Builder + NSIS and make script (`make:win`) (2026-02-14)
 - [x] Added TASK-17-014 WebdriverIO desktop E2E harness baseline with deterministic fixture seeding (`wdio.e2e.conf.mjs`) (2026-02-14)
 - [x] Wired Windows CI execution profile for desktop E2E and installer artifact builds (`.github/workflows/desktop-windows-e2e.yml`) (2026-02-14)
 - [x] Added versioned Windows installer artifact naming (`DEVSUITE_DESKTOP_BUILD_VERSION`) and installer smoke script wiring in CI (`test:install-smoke`) (2026-02-14)
@@ -70,9 +70,13 @@
 
 (none — all evidence collected)
 
-### Recently Completed (2026-02-15)
+### Recently Completed (2026-03-14)
 
-- [x] Fixed Squirrel.Windows lifecycle handling in `main.ts` — root cause of install-smoke uninstall failures (app didn't quit during `--squirrel-uninstall`, Squirrel hook timed out) (2026-02-15)
+- [x] Added desktop auto-update manager, preload bridge, renderer consent/settings UX, and company-scoped backend persistence for GitHub Releases based stable updates (2026-03-14)
+- [x] Added stable tag-driven Windows release workflow publishing `.exe`, `.blockmap`, and `latest.yml` via GitHub CLI (2026-03-14)
+- [x] Updated desktop docs to standardize on NSIS packaging and public GitHub Releases instead of Squirrel-era guidance (2026-03-14)
+
+- [x] Fixed Windows installer lifecycle handling in `main.ts` for packaged install/uninstall smoke coverage (2026-02-15)
 - [x] Fixed preload script sandboxed execution — bundled with esbuild to CJS; origin guard rejects opaque `"null"` origins (2026-02-15)
 - [x] Fixed WDIO E2E config — switched to `appEntryPoint`, increased CDP/Mocha timeouts (2026-02-15)
 - [x] Fixed `Wait-Process` timeout detection in `install-smoke.ps1` (`HasExited` check) (2026-02-15)
@@ -104,10 +108,10 @@
 | Date       | Decision                                                                                                                                                                                                     | Rationale                                                                                                          | Made By      |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------ |
 | 2026-02-14 | Scope initial rollout to Windows only.                                                                                                                                                                       | Reduces platform variance and speeds execution of enforcement features.                                            | Codex        |
-| 2026-02-14 | Use Electron Forge + Squirrel Windows as default installer path.                                                                                                                                             | Matches current Electron Forge support posture and standard Setup.exe distribution flow.                           | Codex        |
+| 2026-02-14 | Use Electron Builder + NSIS as the default Windows installer path.                                                                                                                                           | Matches `electron-updater` requirements and the GitHub Releases distribution model.                                | Codex        |
 | 2026-02-14 | Keep WiX MSI as optional enterprise track, not mandatory for MVP.                                                                                                                                            | Avoids unnecessary packaging complexity before customer policy requires it.                                        | Codex        |
 | 2026-02-14 | Track offline support as deferred design task, not immediate implementation.                                                                                                                                 | Preserves delivery focus on enforcement and desktop runtime first.                                                 | Codex        |
-| 2026-02-14 | Keep MVP distribution local/self-use with no hosted update channel.                                                                                                                                          | Removes deployment overhead while product behavior is still being validated.                                       | User + Codex |
+| 2026-02-14 | Keep MVP distribution Windows-first, but publish stable desktop releases through public GitHub Releases.                                                                                                     | Enables production auto-update without mixing CI artifacts into the updater feed.                                  | User + Codex |
 | 2026-02-14 | Enforce explicit web non-regression and desktop parity checks as launch criteria.                                                                                                                            | Reduces risk of desktop work breaking existing web workflows.                                                      | User + Codex |
 | 2026-02-14 | Desktop focus policies are parameterized in user/company settings and enforced by desktop runtime only.                                                                                                      | Supports flexible per-user configuration without coupling enforcement to web runtime.                              | User + Codex |
 | 2026-02-14 | Adopt TDD-first execution with WebdriverIO + `wdio-electron-service` as desktop E2E strategy.                                                                                                                | Maximizes first-install reliability and catches regressions before release.                                        | User + Codex |

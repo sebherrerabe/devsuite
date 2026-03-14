@@ -9,6 +9,11 @@ import {
   type DesktopSettingsScope,
   type DesktopFocusSettings,
 } from './focus-settings.js';
+import {
+  DEFAULT_DESKTOP_AUTO_UPDATE_PREFERENCES,
+  parseDesktopAutoUpdatePreferences,
+  type DesktopAutoUpdatePreferences,
+} from './update-manager-model.js';
 
 const SETTINGS_FILE_NAME = 'desktop-focus-settings.json';
 const MAX_COMPANION_SHORTCUT_LENGTH = 120;
@@ -44,10 +49,11 @@ function resolveOpenAtLoginFallback(): boolean {
 }
 
 interface StoredDesktopFocusSettings {
-  version: 1;
+  version: 2;
   byScope: Record<string, DesktopFocusSettings>;
   companionShortcut: string;
   runtimePreferences: DesktopRuntimePreferences;
+  autoUpdate: DesktopAutoUpdatePreferences;
 }
 
 export interface DesktopRuntimePreferences {
@@ -61,13 +67,14 @@ function getSettingsFilePath(): string {
 
 function createEmptyStorage(): StoredDesktopFocusSettings {
   return {
-    version: 1,
+    version: 2,
     byScope: {},
     companionShortcut: DEFAULT_COMPANION_SHORTCUT,
     runtimePreferences: {
       ...DEFAULT_RUNTIME_PREFERENCES,
       openAtLogin: resolveOpenAtLoginFallback(),
     },
+    autoUpdate: { ...DEFAULT_DESKTOP_AUTO_UPDATE_PREFERENCES },
   };
 }
 
@@ -102,6 +109,7 @@ function parseStoredData(input: unknown): StoredDesktopFocusSettings {
     byScope?: unknown;
     companionShortcut?: unknown;
     runtimePreferences?: unknown;
+    autoUpdate?: unknown;
   };
   if (!raw.byScope || typeof raw.byScope !== 'object') {
     const emptyStorage = createEmptyStorage();
@@ -109,6 +117,7 @@ function parseStoredData(input: unknown): StoredDesktopFocusSettings {
       return {
         ...emptyStorage,
         runtimePreferences: parseRuntimePreferences(raw.runtimePreferences),
+        autoUpdate: parseDesktopAutoUpdatePreferences(raw.autoUpdate),
       };
     }
     try {
@@ -116,6 +125,7 @@ function parseStoredData(input: unknown): StoredDesktopFocusSettings {
         ...emptyStorage,
         companionShortcut: parseCompanionShortcut(raw.companionShortcut),
         runtimePreferences: parseRuntimePreferences(raw.runtimePreferences),
+        autoUpdate: parseDesktopAutoUpdatePreferences(raw.autoUpdate),
       };
     } catch {
       return emptyStorage;
@@ -141,10 +151,11 @@ function parseStoredData(input: unknown): StoredDesktopFocusSettings {
   }
 
   return {
-    version: 1,
+    version: 2,
     byScope: parsedByScope,
     companionShortcut,
     runtimePreferences: parseRuntimePreferences(raw.runtimePreferences),
+    autoUpdate: parseDesktopAutoUpdatePreferences(raw.autoUpdate),
   };
 }
 
@@ -288,6 +299,39 @@ export async function saveDesktopRuntimePreferences(
   }
 
   storage.runtimePreferences = normalizedPreferences;
+  await writeStorage(settingsFilePath, storage);
+  return normalizedPreferences;
+}
+
+export async function loadDesktopAutoUpdatePreferences(): Promise<DesktopAutoUpdatePreferences> {
+  const settingsFilePath = getSettingsFilePath();
+
+  try {
+    const fileContents = await readFile(settingsFilePath, 'utf-8');
+    const parsedJson = JSON.parse(fileContents) as unknown;
+    const storage = parseStoredData(parsedJson);
+    return storage.autoUpdate;
+  } catch {
+    return { ...DEFAULT_DESKTOP_AUTO_UPDATE_PREFERENCES };
+  }
+}
+
+export async function saveDesktopAutoUpdatePreferences(
+  requestedPreferences: unknown
+): Promise<DesktopAutoUpdatePreferences> {
+  const normalizedPreferences =
+    parseDesktopAutoUpdatePreferences(requestedPreferences);
+  const settingsFilePath = getSettingsFilePath();
+  let storage = createEmptyStorage();
+
+  try {
+    const fileContents = await readFile(settingsFilePath, 'utf-8');
+    storage = parseStoredData(JSON.parse(fileContents));
+  } catch {
+    // Start with empty storage when no file exists.
+  }
+
+  storage.autoUpdate = normalizedPreferences;
   await writeStorage(settingsFilePath, storage);
   return normalizedPreferences;
 }

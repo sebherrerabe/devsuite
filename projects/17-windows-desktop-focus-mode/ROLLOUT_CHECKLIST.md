@@ -18,7 +18,7 @@ Provide release gate checks, rollback instructions, and fallback behavior for `T
 ### Gate B: Windows Runtime Validation (Authoritative)
 
 - [x] `pnpm --filter @devsuite/desktop make:win` — artifacts produced 2026-02-15
-- [x] `pnpm --filter @devsuite/desktop test:install-smoke` — install/upgrade/uninstall all passed 2026-02-15 (root cause fix: Squirrel lifecycle handling in main.ts)
+- [x] `pnpm --filter @devsuite/desktop test:install-smoke` — install/upgrade/uninstall all passed 2026-02-15 (root cause fix: packaged Windows installer lifecycle handling in `main.ts`)
 - [x] `pnpm --filter @devsuite/desktop test:e2e` — 17/17 passed on local Windows 11, 2026-02-15 (root cause fix: esbuild preload bundling, appEntryPoint config)
 - [ ] Manual smoke:
   - [ ] tray start/pause/resume/end

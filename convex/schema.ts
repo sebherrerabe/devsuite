@@ -206,6 +206,12 @@ export default defineSchema({
         autoSessionWarmupSeconds: v.optional(v.number()),
       })
     ),
+    desktopApp: v.optional(
+      v.object({
+        autoUpdateConsent: v.union(v.literal('enabled'), v.literal('disabled')),
+        autoUpdateConsentUpdatedAt: v.number(),
+      })
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
     deletedAt: v.union(v.number(), v.null()),

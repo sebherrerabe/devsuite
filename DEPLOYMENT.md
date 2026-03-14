@@ -9,15 +9,15 @@
 
 ## 1. Stack Inventory
 
-| App / Service         | Runtime      | Type                     | Protocol       | Port | Always-On? | Notes                                         |
-| --------------------- | ------------ | ------------------------ | -------------- | ---- | ---------- | --------------------------------------------- |
-| `apps/web`            | Vite + React | Static SPA (after build) | HTTP (CDN)     | -    | N/A        | Build output is pure static files (`dist/`)   |
-| `apps/gh-service`     | Node.js 22   | HTTP microservice        | HTTP/JSON REST | 8790 | Yes        | GitHub OAuth, PR discovery, notification poll |
-| `apps/notion-service` | Node.js 22   | HTTP microservice        | HTTP/JSON REST | 8791 | Yes        | Notion OAuth, webhook receiver, link resolver |
-| `apps/mcp`            | Node.js 22   | MCP server (stdio)       | stdio          | -    | No         | Runs locally alongside AI agent (Cursor)      |
-| `apps/desktop`        | Electron 30  | Desktop app (Windows)    | -              | -    | No         | Packaged with electron-forge, runs locally    |
-| `convex/`             | Convex BaaS  | Managed backend          | -              | -    | N/A        | Deployed via `convex deploy`                  |
-| `packages/shared`     | TypeScript   | Build-time library       | -              | -    | N/A        | Consumed by other packages at build time      |
+| App / Service         | Runtime      | Type                     | Protocol       | Port | Always-On? | Notes                                               |
+| --------------------- | ------------ | ------------------------ | -------------- | ---- | ---------- | --------------------------------------------------- |
+| `apps/web`            | Vite + React | Static SPA (after build) | HTTP (CDN)     | -    | N/A        | Build output is pure static files (`dist/`)         |
+| `apps/gh-service`     | Node.js 22   | HTTP microservice        | HTTP/JSON REST | 8790 | Yes        | GitHub OAuth, PR discovery, notification poll       |
+| `apps/notion-service` | Node.js 22   | HTTP microservice        | HTTP/JSON REST | 8791 | Yes        | Notion OAuth, webhook receiver, link resolver       |
+| `apps/mcp`            | Node.js 22   | MCP server (stdio)       | stdio          | -    | No         | Runs locally alongside AI agent (Cursor)            |
+| `apps/desktop`        | Electron 30  | Desktop app (Windows)    | -              | -    | No         | Packaged with electron-builder + NSIS, runs locally |
+| `convex/`             | Convex BaaS  | Managed backend          | -              | -    | N/A        | Deployed via `convex deploy`                        |
+| `packages/shared`     | TypeScript   | Build-time library       | -              | -    | N/A        | Consumed by other packages at build time            |
 
 ### What actually needs hosting?
 

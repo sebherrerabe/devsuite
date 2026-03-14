@@ -8,9 +8,11 @@ import {
   clearDesktopScopedSettings,
   DEFAULT_COMPANION_SHORTCUT,
   loadCompanionShortcut,
+  loadDesktopAutoUpdatePreferences,
   loadDesktopFocusSettings,
   loadDesktopRuntimePreferences,
   saveCompanionShortcut,
+  saveDesktopAutoUpdatePreferences,
   saveDesktopFocusSettings,
   saveDesktopRuntimePreferences,
 } from '../../src/settings-store.js';
@@ -101,6 +103,11 @@ test('clearDesktopScopedSettings removes persisted company-scoped settings only'
       openAtLogin: false,
       runInBackgroundOnClose: true,
     });
+    await saveDesktopAutoUpdatePreferences({
+      consent: 'enabled',
+      consentUpdatedAt: 123,
+      dismissedReadyVersion: '0.5.0',
+    });
 
     await clearDesktopScopedSettings();
 
@@ -120,9 +127,47 @@ test('clearDesktopScopedSettings removes persisted company-scoped settings only'
       runInBackgroundOnClose: true,
     });
 
+    const autoUpdatePreferences = await loadDesktopAutoUpdatePreferences();
+    assert.deepEqual(autoUpdatePreferences, {
+      consent: 'enabled',
+      consentUpdatedAt: 123,
+      dismissedReadyVersion: '0.5.0',
+    });
+
     const persisted = JSON.parse(
       await readFile(join(tempDir, 'desktop-focus-settings.json'), 'utf-8')
     ) as { byScope?: Record<string, unknown> };
     assert.deepEqual(persisted.byScope, {});
+  });
+});
+
+test('desktop auto-update preferences round-trip through settings storage', async () => {
+  await withTempUserDataPath(async tempDir => {
+    const savedPreferences = await saveDesktopAutoUpdatePreferences({
+      consent: 'disabled',
+      consentUpdatedAt: 456,
+      dismissedReadyVersion: '0.6.0',
+    });
+
+    assert.deepEqual(savedPreferences, {
+      consent: 'disabled',
+      consentUpdatedAt: 456,
+      dismissedReadyVersion: '0.6.0',
+    });
+
+    const loadedPreferences = await loadDesktopAutoUpdatePreferences();
+    assert.deepEqual(loadedPreferences, savedPreferences);
+
+    const persisted = JSON.parse(
+      await readFile(join(tempDir, 'desktop-focus-settings.json'), 'utf-8')
+    ) as {
+      autoUpdate?: {
+        consent?: string;
+        consentUpdatedAt?: number | null;
+        dismissedReadyVersion?: string | null;
+      };
+    };
+
+    assert.deepEqual(persisted.autoUpdate, savedPreferences);
   });
 });

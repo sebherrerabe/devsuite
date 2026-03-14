@@ -126,6 +126,51 @@ type DesktopRuntimePreferencesApi = {
   ) => Promise<DesktopRuntimePreferences>;
 };
 
+type DesktopUpdaterConsent = 'unset' | 'enabled' | 'disabled';
+
+type DesktopUpdaterState =
+  | {
+      status: 'awaiting_consent';
+      currentVersion: string;
+      consent: DesktopUpdaterConsent;
+      lastCheckedAt: number | null;
+      availableVersion: null;
+      downloadedVersion: null;
+      releaseNotes: null;
+      error: null;
+      deferredUntilSessionEnd: false;
+    }
+  | {
+      status:
+        | 'idle'
+        | 'checking'
+        | 'available'
+        | 'downloading'
+        | 'downloaded'
+        | 'error';
+      currentVersion: string;
+      consent: DesktopUpdaterConsent;
+      lastCheckedAt: number | null;
+      availableVersion: string | null;
+      downloadedVersion: string | null;
+      releaseNotes: string | null;
+      error: string | null;
+      deferredUntilSessionEnd: boolean;
+    };
+
+type DesktopUpdaterApi = {
+  getState: () => Promise<DesktopUpdaterState>;
+  setConsent: (
+    next: Exclude<DesktopUpdaterConsent, 'unset'>
+  ) => Promise<DesktopUpdaterState>;
+  checkForUpdates: () => Promise<DesktopUpdaterState>;
+  downloadUpdate: () => Promise<DesktopUpdaterState>;
+  installUpdate: () => Promise<void>;
+  onStateChanged: (
+    listener: (state: DesktopUpdaterState) => void | Promise<void>
+  ) => () => void;
+};
+
 type DesktopNotificationPayload = {
   scope: DesktopSettingsScope;
   kind: DesktopNotificationKind;
@@ -269,6 +314,7 @@ const POLICY_AUDIT_CHANNEL = 'desktop-policy:audit-events';
 const HOSTS_ENFORCEMENT_STATUS_CHANNEL =
   'desktop-hosts-enforcement:status-changed';
 const WINDOW_MAXIMIZE_CHANGED_CHANNEL = 'desktop-window:maximize-changed';
+const DESKTOP_UPDATER_STATE_CHANGED_CHANNEL = 'desktop-updater:state-changed';
 
 const desktopCompanyApi: DesktopCompanyApi = {
   getSelection: async () =>
@@ -518,6 +564,41 @@ const desktopWindowApi: DesktopWindowApi = {
   },
 };
 
+const desktopUpdaterApi: DesktopUpdaterApi = {
+  getState: async () =>
+    ipcRenderer.invoke(
+      'desktop-updater:get-state'
+    ) as Promise<DesktopUpdaterState>,
+  setConsent: async next =>
+    ipcRenderer.invoke(
+      'desktop-updater:set-consent',
+      next
+    ) as Promise<DesktopUpdaterState>,
+  checkForUpdates: async () =>
+    ipcRenderer.invoke(
+      'desktop-updater:check-for-updates'
+    ) as Promise<DesktopUpdaterState>,
+  downloadUpdate: async () =>
+    ipcRenderer.invoke(
+      'desktop-updater:download-update'
+    ) as Promise<DesktopUpdaterState>,
+  installUpdate: async () => {
+    await ipcRenderer.invoke('desktop-updater:install-update');
+  },
+  onStateChanged: listener => {
+    const wrapped = (_event: unknown, payload: DesktopUpdaterState) => {
+      void listener(payload);
+    };
+    ipcRenderer.on(DESKTOP_UPDATER_STATE_CHANGED_CHANNEL, wrapped);
+    return () => {
+      ipcRenderer.removeListener(
+        DESKTOP_UPDATER_STATE_CHANGED_CHANNEL,
+        wrapped
+      );
+    };
+  },
+};
+
 const desktopTestApi: DesktopTestApi = {
   injectProcessEvents: async events =>
     ipcRenderer.invoke(
@@ -588,6 +669,7 @@ if (shouldExposeApis) {
     'desktopHostsEnforcement',
     desktopHostsEnforcementApi
   );
+  contextBridge.exposeInMainWorld('desktopUpdater', desktopUpdaterApi);
   contextBridge.exposeInMainWorld('desktopWidget', desktopWidgetApi);
   contextBridge.exposeInMainWorld('desktopWindow', desktopWindowApi);
   if (shouldForceExposeApisForTestHarness) {
@@ -608,6 +690,7 @@ declare global {
     desktopProcessMonitor?: DesktopProcessMonitorApi;
     desktopPolicy?: DesktopPolicyApi;
     desktopHostsEnforcement?: DesktopHostsEnforcementApi;
+    desktopUpdater?: DesktopUpdaterApi;
     desktopWidget?: DesktopWidgetApi;
     desktopWindow?: DesktopWindowApi;
     desktopTest?: DesktopTestApi;

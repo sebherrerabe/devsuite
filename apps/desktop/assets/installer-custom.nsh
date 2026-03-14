@@ -1,10 +1,6 @@
 !include "nsDialogs.nsh"
 !include "LogicLib.nsh"
 
-!define DEVSUITE_HOSTS_HELPER_TASK "DevSuiteHostsWriteHelper"
-!define DEVSUITE_HOSTS_HELPER_DIR "$WINDIR\..\ProgramData\DevSuite\hosts-helper"
-!define DEVSUITE_HOSTS_HELPER_SCRIPT "$INSTDIR\resources\assets\hosts-write-helper.ps1"
-
 !ifndef BUILD_UNINSTALLER
 Var DevSuiteStartWithWindowsCheckbox
 Var DevSuiteStartWithWindowsValue
@@ -68,19 +64,9 @@ FunctionEnd
   ${Else}
     DeleteRegValue SHELL_CONTEXT "Software\Microsoft\Windows\CurrentVersion\Run" "DevSuite"
   ${EndIf}
-
-  CreateDirectory "${DEVSUITE_HOSTS_HELPER_DIR}"
-  ExecWait 'icacls "${DEVSUITE_HOSTS_HELPER_DIR}" /grant "*S-1-5-32-545:(OI)(CI)M" /T /C' $0
-
-  IfFileExists "${DEVSUITE_HOSTS_HELPER_SCRIPT}" 0 +3
-    ExecWait 'schtasks /Create /TN "${DEVSUITE_HOSTS_HELPER_TASK}" /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $\"${DEVSUITE_HOSTS_HELPER_SCRIPT}$\"" /SC ONCE /ST 00:00 /RL HIGHEST /RU SYSTEM /F' $0
-    Goto +2
-  DetailPrint "DevSuite hosts helper script is missing. Reinstall may be required for hosts enforcement."
 !macroend
 !endif
 
 !macro customUnInstall
   DeleteRegValue SHELL_CONTEXT "Software\Microsoft\Windows\CurrentVersion\Run" "DevSuite"
-  ExecWait 'schtasks /Delete /TN "${DEVSUITE_HOSTS_HELPER_TASK}" /F' $0
-  RMDir /r "${DEVSUITE_HOSTS_HELPER_DIR}"
 !macroend

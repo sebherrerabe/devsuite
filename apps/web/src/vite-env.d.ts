@@ -170,6 +170,39 @@ interface DesktopRuntimePreferences {
   runInBackgroundOnClose: boolean;
 }
 
+type DesktopUpdaterConsent = 'unset' | 'enabled' | 'disabled';
+type DesktopUpdaterStatus =
+  | 'awaiting_consent'
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error';
+type DesktopUpdaterState =
+  | {
+      status: 'awaiting_consent';
+      currentVersion: string;
+      consent: DesktopUpdaterConsent;
+      lastCheckedAt: number | null;
+      availableVersion: null;
+      downloadedVersion: null;
+      releaseNotes: null;
+      error: null;
+      deferredUntilSessionEnd: false;
+    }
+  | {
+      status: Exclude<DesktopUpdaterStatus, 'awaiting_consent'>;
+      currentVersion: string;
+      consent: DesktopUpdaterConsent;
+      lastCheckedAt: number | null;
+      availableVersion: string | null;
+      downloadedVersion: string | null;
+      releaseNotes: string | null;
+      error: string | null;
+      deferredUntilSessionEnd: boolean;
+    };
+
 interface Window {
   desktopAuth?: {
     getScope: () => Promise<DesktopSettingsScope | null>;
@@ -295,6 +328,18 @@ interface Window {
     getStatus: () => Promise<HostsEnforcementStatus>;
     onStatusChanged: (
       listener: (status: HostsEnforcementStatus) => void | Promise<void>
+    ) => () => void;
+  };
+  desktopUpdater?: {
+    getState: () => Promise<DesktopUpdaterState>;
+    setConsent: (
+      next: Exclude<DesktopUpdaterConsent, 'unset'>
+    ) => Promise<DesktopUpdaterState>;
+    checkForUpdates: () => Promise<DesktopUpdaterState>;
+    downloadUpdate: () => Promise<DesktopUpdaterState>;
+    installUpdate: () => Promise<void>;
+    onStateChanged: (
+      listener: (state: DesktopUpdaterState) => void | Promise<void>
     ) => () => void;
   };
   desktopWidget?: {

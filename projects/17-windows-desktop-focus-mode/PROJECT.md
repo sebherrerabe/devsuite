@@ -38,7 +38,7 @@ Deliver a Windows desktop experience that can enforce session-first workflows wi
 - [ ] Strict mode can detect configured IDE launches and enforce "start session first" flow
 - [ ] Distractor-app policy can warn and optionally close configured executables during active focus sessions
 - [ ] Desktop-only settings let users configure IDEs, blocked apps, blocked websites, and enforcement modes
-- [ ] Installer pipeline generates a local distributable Windows installer via Squirrel (`Setup.exe`)
+- [ ] Installer pipeline generates NSIS-based Windows release artifacts plus GitHub Releases auto-update metadata (`latest.yml` + `.blockmap`)
 - [ ] Code-signing path is documented for future external distribution
 - [ ] Test suite includes installer smoke, desktop E2E, and regression checks that pass before release
 - [ ] All enforcement events are company-scoped and auditable

@@ -18,7 +18,7 @@
     "make:win": "pnpm run build:all && electron-builder --win nsis --x64 --config electron-builder.config.cjs",
     "test:int": "tsx --test test/integration/**/*.test.ts",
     "test:e2e": "pnpm run build && node scripts/run-e2e.mjs",
-    "test:install-smoke": "pnpm run build && node scripts/run-install-smoke.mjs",
+    "test:install-smoke": "pnpm run make:win && node scripts/run-install-smoke.mjs",
     "test:process-overhead": "pnpm run build && node scripts/process-monitor-overhead.mjs",
     "test:unit": "tsx --test test/unit/**/*.test.ts",
     "clean": "rm -rf dist"
@@ -26,7 +26,8 @@
   "dependencies": {
     "@devsuite/shared": "workspace:^",
     "@mapbox/node-pre-gyp": "^1.0.11",
-    "active-win": "^9.0.0"
+    "active-win": "^9.0.0",
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "@types/node": "^25.1.0",

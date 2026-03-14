@@ -95,6 +95,11 @@ import {
   shouldFinalizeExitAfterPause,
   shouldPauseRunningSessionOnExit,
 } from './session-exit-guard.js';
+import { UpdateManager } from './update-manager.js';
+import type {
+  DesktopUpdaterConsent,
+  DesktopUpdaterState,
+} from './update-manager-model.js';
 import {
   getSessionWidgetWindowOptions,
   getSessionWidgetSize,
@@ -147,6 +152,7 @@ const IDE_FOCUS_EVENTS_CHANNEL = 'desktop-ide-focus:events';
 const POLICY_AUDIT_CHANNEL = 'desktop-policy:audit-events';
 const HOSTS_ENFORCEMENT_STATUS_CHANNEL =
   'desktop-hosts-enforcement:status-changed';
+const DESKTOP_UPDATER_STATE_CHANGED_CHANNEL = 'desktop-updater:state-changed';
 const MAX_PROCESS_EVENT_LOG = 500;
 const MAX_POLICY_AUDIT_LOG = 1000;
 const POLICY_TICK_INTERVAL_MS = 5_000;
@@ -156,6 +162,15 @@ const TRAY_ICON_SIZE_PX = 16;
 const WEBSITE_SOURCE_PREFIX = 'webcontents';
 // nosemgrep: semgrep.devsuite-process-env-without-validation
 const ENABLE_TEST_IPC = process.env.DEVSUITE_DESKTOP_ENABLE_TEST_IPC === '1';
+// nosemgrep: semgrep.devsuite-process-env-without-validation
+const DISABLE_DESKTOP_AUTO_UPDATE =
+  process.env.DEVSUITE_DESKTOP_DISABLE_AUTO_UPDATE === '1';
+// nosemgrep: semgrep.devsuite-process-env-without-validation
+const DESKTOP_UPDATE_FEED_URL_OVERRIDE =
+  process.env.DEVSUITE_DESKTOP_UPDATE_FEED_URL?.trim() ?? null;
+// nosemgrep: semgrep.devsuite-process-env-without-validation
+const DESKTOP_UPDATE_CHECK_INTERVAL_OVERRIDE_MS =
+  process.env.DEVSUITE_DESKTOP_UPDATE_CHECK_INTERVAL_MS ?? null;
 const TEST_IPC_RENDERER_SWITCH = '--devsuite-enable-test-ipc=1';
 const TEST_IPC_RENDERER_ARGS = ENABLE_TEST_IPC
   ? [TEST_IPC_RENDERER_SWITCH]
@@ -212,6 +227,22 @@ function resolveExistingPath(candidates: readonly string[]): string {
   }
 
   return process.execPath;
+}
+
+function parsePositiveIntegerFromEnv(
+  rawValue: string | null,
+  fallbackValue: number | null = null
+): number | null {
+  if (!rawValue) {
+    return fallbackValue;
+  }
+
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallbackValue;
+  }
+
+  return parsed;
 }
 
 const APP_ICON_PATH = resolveExistingPath(APP_ICON_CANDIDATE_PATHS);
@@ -345,14 +376,29 @@ let desktopRuntimePreferences: DesktopRuntimePreferences = {
   openAtLogin: true,
   runInBackgroundOnClose: false,
 };
+let desktopUpdaterState: DesktopUpdaterState = {
+  status: 'awaiting_consent',
+  currentVersion: app.getVersion(),
+  consent: 'unset',
+  lastCheckedAt: null,
+  availableVersion: null,
+  downloadedVersion: null,
+  releaseNotes: null,
+  error: null,
+  deferredUntilSessionEnd: false,
+};
+let updateManagerRef: UpdateManager | null = null;
 let isAppQuitting = false;
 let bypassSessionPauseOnQuit = false;
 let pendingQuitAfterSessionPause = false;
-let pendingQuitReason: 'app_quit' | 'window_close' | null = null;
+let pendingQuitReason: 'app_quit' | 'window_close' | 'update_install' | null =
+  null;
+let pendingQuitCompletion: (() => void) | null = null;
 let sessionPauseBeforeQuitTimer: ReturnType<typeof setTimeout> | null = null;
 let isClosingSessionWidgetProgrammatically = false;
 let sessionWidgetDismissedByUser = false;
 let sessionWidgetMode: SessionWidgetMode = 'mini';
+let isDesktopUpdatePromptVisible = false;
 
 const lastEffectiveDurationBySessionId = new Map<string, number>();
 const SESSION_PAUSE_BEFORE_QUIT_TIMEOUT_MS = 5_000;
@@ -427,6 +473,16 @@ function parseSessionWidgetMode(value: unknown): SessionWidgetMode {
   }
 
   throw new Error('Session widget mode must be "mini" or "expanded".');
+}
+
+function parseDesktopUpdaterConsent(
+  value: unknown
+): Exclude<DesktopUpdaterConsent, 'unset'> {
+  if (value === 'enabled' || value === 'disabled') {
+    return value;
+  }
+
+  throw new Error('Desktop updater consent must be "enabled" or "disabled".');
 }
 
 function parseDesktopCompanionNotificationLevel(
@@ -1021,6 +1077,17 @@ function broadcastDesktopCompanySelection(companyId: string | null): void {
   }
 }
 
+function broadcastDesktopUpdaterState(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(
+        DESKTOP_UPDATER_STATE_CHANGED_CHANNEL,
+        desktopUpdaterState
+      );
+    }
+  }
+}
+
 function setDesktopCompanySelection(
   nextCompanyId: string | null,
   options?: {
@@ -1441,6 +1508,7 @@ function canDispatchSessionAction(action: DesktopSessionAction): boolean {
 function clearPendingQuitAfterSessionPause(): void {
   pendingQuitAfterSessionPause = false;
   pendingQuitReason = null;
+  pendingQuitCompletion = null;
   if (sessionPauseBeforeQuitTimer) {
     clearTimeout(sessionPauseBeforeQuitTimer);
     sessionPauseBeforeQuitTimer = null;
@@ -1449,6 +1517,8 @@ function clearPendingQuitAfterSessionPause(): void {
 
 function prepareForAppQuit(): void {
   isAppQuitting = true;
+  updateManagerRef?.dispose();
+  updateManagerRef = null;
   foregroundWindowTrackerRef?.stop();
   foregroundWindowTrackerRef = null;
   foregroundTrackerRecordingIDE = null;
@@ -1467,7 +1537,12 @@ function prepareForAppQuit(): void {
 }
 
 function finalizeAppQuitAfterSessionPause(): void {
+  const completion = pendingQuitCompletion;
   clearPendingQuitAfterSessionPause();
+  if (completion) {
+    completion();
+    return;
+  }
   bypassSessionPauseOnQuit = true;
   isAppQuitting = true;
   app.quit();
@@ -1478,7 +1553,8 @@ function shouldPauseSessionBeforeExit(): boolean {
 }
 
 function requestSessionPauseThenQuit(
-  reason: 'app_quit' | 'window_close'
+  reason: 'app_quit' | 'window_close' | 'update_install',
+  completion?: () => void
 ): void {
   if (pendingQuitAfterSessionPause) {
     return;
@@ -1486,6 +1562,7 @@ function requestSessionPauseThenQuit(
 
   pendingQuitAfterSessionPause = true;
   pendingQuitReason = reason;
+  pendingQuitCompletion = completion ?? null;
   runtimeLog.info(
     'session-sync',
     `deferring ${reason} to pause active session before exit`
@@ -1515,6 +1592,92 @@ async function showMainWindow(): Promise<void> {
   }
   window.show();
   window.focus();
+}
+
+function getDesktopDialogParent(): BrowserWindowType | undefined {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  const isWidgetFocused =
+    focusedWindow !== null &&
+    sessionWidgetWindowRef !== null &&
+    !sessionWidgetWindowRef.isDestroyed() &&
+    focusedWindow.id === sessionWidgetWindowRef.id;
+
+  if (isWidgetFocused) {
+    return mainWindowRef ?? undefined;
+  }
+
+  return focusedWindow ?? mainWindowRef ?? undefined;
+}
+
+function launchDownloadedUpdateInstall(): void {
+  if (!updateManagerRef) {
+    throw new Error('Desktop updater is not initialized.');
+  }
+
+  runtimeLog.info(
+    'session-sync',
+    `starting install for ${desktopUpdaterState.downloadedVersion ?? 'downloaded update'}`
+  );
+  bypassSessionPauseOnQuit = true;
+  isAppQuitting = true;
+  updateManagerRef.quitAndInstallNow();
+}
+
+function requestDownloadedUpdateInstall(): void {
+  if (shouldPauseSessionBeforeExit()) {
+    requestSessionPauseThenQuit('update_install', () => {
+      launchDownloadedUpdateInstall();
+    });
+    return;
+  }
+
+  launchDownloadedUpdateInstall();
+}
+
+async function showDesktopUpdateReadyPrompt(): Promise<void> {
+  if (isDesktopUpdatePromptVisible) {
+    return;
+  }
+
+  if (
+    !updateManagerRef ||
+    desktopUpdaterState.status !== 'downloaded' ||
+    desktopUpdaterState.deferredUntilSessionEnd
+  ) {
+    return;
+  }
+
+  isDesktopUpdatePromptVisible = true;
+  try {
+    const dialogParent = getDesktopDialogParent();
+    const prompt: MessageBoxOptions = {
+      type: 'info',
+      buttons: ['Restart to update', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+      title: 'Update ready',
+      message: `DevSuite ${desktopUpdaterState.downloadedVersion ?? ''} is ready to install.`,
+      detail:
+        'The update has already downloaded in the background. Restart DevSuite when you are ready.',
+    };
+    const result = dialogParent
+      ? await dialog.showMessageBox(dialogParent, prompt)
+      : await dialog.showMessageBox(prompt);
+
+    if (result.response === 0) {
+      await updateManagerRef.installUpdate();
+    } else {
+      await updateManagerRef.dismissRestartPrompt();
+    }
+  } catch (error) {
+    runtimeLog.warn(
+      'session-sync',
+      `failed to complete restart prompt flow: ${error instanceof Error ? error.message : String(error)}`
+    );
+  } finally {
+    isDesktopUpdatePromptVisible = false;
+  }
 }
 
 function buildNotificationActionKey(
@@ -2026,6 +2189,48 @@ async function updateRuntimePreferences(
   desktopRuntimePreferences = saved;
   applyLoginItemPreferences(saved);
   return saved;
+}
+
+async function initializeDesktopUpdater(): Promise<void> {
+  updateManagerRef?.dispose();
+  updateManagerRef = new UpdateManager({
+    currentVersion: app.getVersion(),
+    isPackaged: app.isPackaged,
+    initialSessionStatus: desktopSessionState.status,
+    installUpdate: async () => {
+      requestDownloadedUpdateInstall();
+    },
+    feedUrlOverride: DESKTOP_UPDATE_FEED_URL_OVERRIDE,
+    disableAutoUpdate: DISABLE_DESKTOP_AUTO_UPDATE,
+    checkIntervalMs: parsePositiveIntegerFromEnv(
+      DESKTOP_UPDATE_CHECK_INTERVAL_OVERRIDE_MS
+    ),
+    logger: {
+      debug: (_scope, message) => {
+        runtimeLog.debug('session-sync', message);
+      },
+      info: (_scope, message) => {
+        runtimeLog.info('session-sync', message);
+      },
+      warn: (_scope, message) => {
+        runtimeLog.warn('session-sync', message);
+      },
+      error: (_scope, message) => {
+        runtimeLog.error('session-sync', message);
+      },
+    },
+  });
+
+  updateManagerRef.on('state-changed', state => {
+    desktopUpdaterState = state;
+    broadcastDesktopUpdaterState();
+  });
+  updateManagerRef.on('restart-prompt-requested', () => {
+    void showDesktopUpdateReadyPrompt();
+  });
+
+  desktopUpdaterState = await updateManagerRef.start();
+  broadcastDesktopUpdaterState();
 }
 
 function formatScopeForLog(scope: DesktopSettingsScope | null): string {
@@ -2840,6 +3045,7 @@ function registerIpcHandlers(): void {
         finalizeAppQuitAfterSessionPause();
         return getDesktopSessionStateSnapshot();
       }
+      updateManagerRef?.handleSessionStatusChanged(desktopSessionState.status);
       autoSessionManagerRef?.handleSessionStateChange(
         previousState,
         desktopSessionState
@@ -3164,6 +3370,42 @@ function registerIpcHandlers(): void {
       return updateRuntimePreferences(nextPreferences);
     }
   );
+  ipcMain.handle('desktop-updater:get-state', async () => {
+    return desktopUpdaterState;
+  });
+  ipcMain.handle(
+    'desktop-updater:set-consent',
+    async (_event, next: unknown) => {
+      if (!updateManagerRef) {
+        throw new Error('Desktop updater is not initialized.');
+      }
+
+      return await updateManagerRef.setConsent(
+        parseDesktopUpdaterConsent(next)
+      );
+    }
+  );
+  ipcMain.handle('desktop-updater:check-for-updates', async () => {
+    if (!updateManagerRef) {
+      throw new Error('Desktop updater is not initialized.');
+    }
+
+    return await updateManagerRef.checkForUpdates();
+  });
+  ipcMain.handle('desktop-updater:download-update', async () => {
+    if (!updateManagerRef) {
+      throw new Error('Desktop updater is not initialized.');
+    }
+
+    return await updateManagerRef.downloadUpdate();
+  });
+  ipcMain.handle('desktop-updater:install-update', async () => {
+    if (!updateManagerRef) {
+      throw new Error('Desktop updater is not initialized.');
+    }
+
+    await updateManagerRef.installUpdate();
+  });
   ipcMain.handle(
     'desktop-process-monitor:get-events',
     async (_event, scope: unknown) => {
@@ -3426,6 +3668,7 @@ if (hasHostsWriteHelperArg(process.argv)) {
       await refreshHostsEnforcementHealth('startup');
       await registerRendererProtocol();
       await initializeRuntimePreferences();
+      await initializeDesktopUpdater();
       registerIpcHandlers();
       setDesktopScope(await loadDesktopSessionScope());
       applyDesktopPermissionPolicy();
@@ -3458,6 +3701,14 @@ if (hasHostsWriteHelperArg(process.argv)) {
         });
         powerMonitor.on('resume', () => {
           void foregroundWindowTrackerRef?.onResume();
+          if (updateManagerRef?.shouldCheckOnResume()) {
+            void updateManagerRef.checkForUpdates().catch(error => {
+              runtimeLog.warn(
+                'session-sync',
+                `failed to check for updates after resume: ${error instanceof Error ? error.message : String(error)}`
+              );
+            });
+          }
         });
       }
     });

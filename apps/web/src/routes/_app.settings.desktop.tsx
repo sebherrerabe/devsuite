@@ -19,6 +19,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { authClient } from '@/lib/auth';
 import { Badge } from '@/components/ui/badge';
 import {
+  getDesktopUpdaterStatusLabel,
+  useDesktopUpdaterState,
+} from '@/lib/desktop-updater';
+import type { DesktopUpdaterConsent } from '@/lib/desktop-updater-types';
+import {
   Card,
   CardContent,
   CardDescription,
@@ -451,6 +456,15 @@ function DesktopSettingsPage() {
     companyId ? { companyId } : 'skip'
   );
   const updateSettings = useMutation(api.userSettings.update);
+  const backendUpdaterConsent = settings?.desktopApp?.autoUpdateConsent ?? null;
+  const {
+    isAvailable: hasDesktopUpdaterApi,
+    state: desktopUpdaterState,
+    setConsent: setDesktopUpdaterConsent,
+    checkForUpdates,
+    downloadUpdate,
+    installUpdate,
+  } = useDesktopUpdaterState(backendUpdaterConsent);
 
   const [desktopDevCoreList, setDesktopDevCoreList] = useState<string[]>(
     DEFAULT_DESKTOP_FOCUS_SETTINGS.devCoreList
@@ -517,6 +531,10 @@ function DesktopSettingsPage() {
   const [hostsEnforcementStatus, setHostsEnforcementStatus] =
     useState<DesktopHostsEnforcementStatus>(DEFAULT_HOSTS_ENFORCEMENT_STATUS);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingUpdaterConsent, setIsSavingUpdaterConsent] = useState(false);
+  const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
+  const [isDownloadingUpdate, setIsDownloadingUpdate] = useState(false);
+  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
 
   const hasDesktopFocusApi =
     typeof window !== 'undefined' && typeof window.desktopFocus !== 'undefined';
@@ -718,6 +736,10 @@ function DesktopSettingsPage() {
         value: hasDesktopRuntimePreferencesApi ? 'Available' : 'Not available',
       },
       {
+        label: 'Updater',
+        value: hasDesktopUpdaterApi ? 'Available' : 'Not available',
+      },
+      {
         label: 'Hosts enforcement',
         value: hasDesktopHostsEnforcementApi ? 'Available' : 'Not available',
       },
@@ -726,6 +748,7 @@ function DesktopSettingsPage() {
       hasDesktopCompanionApi,
       hasDesktopHostsEnforcementApi,
       hasDesktopProcessPicker,
+      hasDesktopUpdaterApi,
       hasDesktopRuntimePreferencesApi,
       isDesktopRuntime,
     ]
@@ -759,6 +782,99 @@ function DesktopSettingsPage() {
       body: 'No active session requires hosts blocking right now, or no blocked domains are configured.',
     };
   }, [hostsEnforcementStatus]);
+
+  const desktopUpdaterStatusLabel = useMemo(
+    () => getDesktopUpdaterStatusLabel(desktopUpdaterState),
+    [desktopUpdaterState]
+  );
+
+  const handleDesktopAutoUpdateConsentChange = async (
+    next: Exclude<DesktopUpdaterConsent, 'unset'>
+  ) => {
+    if (!companyId || !hasDesktopUpdaterApi) {
+      return;
+    }
+
+    setIsSavingUpdaterConsent(true);
+    try {
+      const updatedAt = Date.now();
+      await Promise.all([
+        setDesktopUpdaterConsent(next),
+        updateSettings({
+          companyId,
+          desktopApp: {
+            autoUpdateConsent: next,
+            autoUpdateConsentUpdatedAt: updatedAt,
+          },
+        }),
+      ]);
+      showToast.success(
+        next === 'enabled'
+          ? 'Desktop auto-updates enabled'
+          : 'Desktop auto-updates disabled'
+      );
+    } catch (error) {
+      showToast.error(
+        error instanceof Error
+          ? error.message
+          : 'Failed to update desktop auto-update preference'
+      );
+    } finally {
+      setIsSavingUpdaterConsent(false);
+    }
+  };
+
+  const handleCheckForUpdates = async () => {
+    if (!hasDesktopUpdaterApi) {
+      return;
+    }
+
+    setIsCheckingForUpdates(true);
+    try {
+      await checkForUpdates();
+    } catch (error) {
+      showToast.error(
+        error instanceof Error ? error.message : 'Failed to check for updates'
+      );
+    } finally {
+      setIsCheckingForUpdates(false);
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    if (!hasDesktopUpdaterApi) {
+      return;
+    }
+
+    setIsDownloadingUpdate(true);
+    try {
+      await downloadUpdate();
+    } catch (error) {
+      showToast.error(
+        error instanceof Error ? error.message : 'Failed to download update'
+      );
+    } finally {
+      setIsDownloadingUpdate(false);
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!hasDesktopUpdaterApi) {
+      return;
+    }
+
+    setIsInstallingUpdate(true);
+    try {
+      await installUpdate();
+    } catch (error) {
+      showToast.error(
+        error instanceof Error
+          ? error.message
+          : 'Failed to start update install'
+      );
+      setIsInstallingUpdate(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!companyId || !isDesktopRuntime) {
@@ -905,6 +1021,129 @@ function DesktopSettingsPage() {
           </div>
         ))}
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Desktop Updates</CardTitle>
+          <CardDescription>
+            Manage background update consent, check GitHub Releases, and restart
+            when a stable build is ready.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-md border bg-muted/20 p-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Auto-update consent</p>
+              <p className="text-xs text-muted-foreground">
+                Allow DevSuite Desktop to download stable updates in the
+                background after checking public GitHub Releases.
+              </p>
+            </div>
+            <Switch
+              checked={desktopUpdaterState?.consent === 'enabled'}
+              disabled={!hasDesktopUpdaterApi || isSavingUpdaterConsent}
+              onCheckedChange={checked => {
+                void handleDesktopAutoUpdateConsentChange(
+                  checked ? 'enabled' : 'disabled'
+                );
+              }}
+            />
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-md border px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                Current version
+              </p>
+              <p className="text-sm font-medium">
+                {desktopUpdaterState?.currentVersion ?? 'Unknown'}
+              </p>
+            </div>
+            <div className="rounded-md border px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                Status
+              </p>
+              <p className="text-sm font-medium">{desktopUpdaterStatusLabel}</p>
+            </div>
+            <div className="rounded-md border px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                Available version
+              </p>
+              <p className="text-sm font-medium">
+                {desktopUpdaterState?.availableVersion ?? 'None'}
+              </p>
+            </div>
+            <div className="rounded-md border px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                Last checked
+              </p>
+              <p className="text-sm font-medium">
+                {formatDateTime(desktopUpdaterState?.lastCheckedAt ?? null)}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={
+                !hasDesktopUpdaterApi ||
+                isCheckingForUpdates ||
+                desktopUpdaterState?.status === 'checking'
+              }
+              onClick={() => void handleCheckForUpdates()}
+            >
+              {isCheckingForUpdates ||
+              desktopUpdaterState?.status === 'checking'
+                ? 'Checking...'
+                : 'Check for updates'}
+            </Button>
+            {desktopUpdaterState?.status === 'available' &&
+            desktopUpdaterState.consent !== 'enabled' ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!hasDesktopUpdaterApi || isDownloadingUpdate}
+                onClick={() => void handleDownloadUpdate()}
+              >
+                {isDownloadingUpdate ? 'Downloading...' : 'Download update'}
+              </Button>
+            ) : null}
+            {desktopUpdaterState?.status === 'downloaded' ? (
+              <Button
+                type="button"
+                disabled={!hasDesktopUpdaterApi || isInstallingUpdate}
+                onClick={() => void handleInstallUpdate()}
+              >
+                {isInstallingUpdate ? 'Restarting...' : 'Restart to update'}
+              </Button>
+            ) : null}
+          </div>
+
+          {desktopUpdaterState?.deferredUntilSessionEnd ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              DevSuite already downloaded the update. The restart prompt is
+              deferred until the current session is paused or idle.
+            </div>
+          ) : null}
+
+          {desktopUpdaterState?.error ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {desktopUpdaterState.error}
+            </div>
+          ) : null}
+
+          {desktopUpdaterState?.releaseNotes ? (
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">Release notes</p>
+              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                {desktopUpdaterState.releaseNotes}
+              </p>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

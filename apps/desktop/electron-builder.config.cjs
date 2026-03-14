@@ -28,4 +28,13 @@ module.exports = {
     include: 'assets/installer-custom.nsh',
   },
   asar: true,
+  publish: [
+    {
+      provider: 'github',
+      owner: 'sebherrerabe',
+      repo: 'devsuite',
+      releaseType: 'release',
+      channel: 'latest',
+    },
+  ],
 };

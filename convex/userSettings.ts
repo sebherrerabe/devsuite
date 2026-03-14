@@ -56,6 +56,11 @@ const desktopFocusSettingsValidator = v.object({
   autoSessionWarmupSeconds: v.optional(v.number()),
 });
 
+const desktopAppSettingsValidator = v.object({
+  autoUpdateConsent: v.union(v.literal('enabled'), v.literal('disabled')),
+  autoUpdateConsentUpdatedAt: v.number(),
+});
+
 type DbCtx = QueryCtx | MutationCtx;
 
 async function getUserId(ctx: DbCtx) {
@@ -191,6 +196,20 @@ function normalizeDesktopFocusSettingsForStorage(value: {
   };
 }
 
+function normalizeDesktopAppSettingsForStorage(value: {
+  autoUpdateConsent: 'enabled' | 'disabled';
+  autoUpdateConsentUpdatedAt: number;
+}) {
+  return {
+    autoUpdateConsent: value.autoUpdateConsent,
+    autoUpdateConsentUpdatedAt: clampInteger(
+      value.autoUpdateConsentUpdatedAt,
+      1,
+      Number.MAX_SAFE_INTEGER
+    ),
+  };
+}
+
 export const get = query({
   args: { companyId: v.id('companies') },
   handler: async (ctx, args) => {
@@ -213,6 +232,9 @@ export const get = query({
         const normalizedDesktopFocus = settings.desktopFocus
           ? normalizeDesktopFocusSettingsForStorage(settings.desktopFocus)
           : undefined;
+        const normalizedDesktopApp = settings.desktopApp
+          ? normalizeDesktopAppSettingsForStorage(settings.desktopApp)
+          : undefined;
 
         return {
           ...settings,
@@ -220,6 +242,7 @@ export const get = query({
           ...(normalizedDesktopFocus
             ? { desktopFocus: normalizedDesktopFocus }
             : {}),
+          ...(normalizedDesktopApp ? { desktopApp: normalizedDesktopApp } : {}),
         };
       });
   },
@@ -231,6 +254,7 @@ export const update = mutation({
     timezone: v.optional(v.string()),
     moduleFlags: v.optional(moduleFlagsValidator),
     desktopFocus: v.optional(desktopFocusSettingsValidator),
+    desktopApp: v.optional(desktopAppSettingsValidator),
   },
   handler: async (ctx, args) => {
     const userId = await getUserId(ctx);
@@ -240,7 +264,8 @@ export const update = mutation({
     if (
       args.timezone === undefined &&
       args.moduleFlags === undefined &&
-      args.desktopFocus === undefined
+      args.desktopFocus === undefined &&
+      args.desktopApp === undefined
     ) {
       throw new Error('No settings provided');
     }
@@ -258,6 +283,10 @@ export const update = mutation({
       args.desktopFocus === undefined
         ? undefined
         : normalizeDesktopFocusSettingsForStorage(args.desktopFocus);
+    const normalizedDesktopApp =
+      args.desktopApp === undefined
+        ? undefined
+        : normalizeDesktopAppSettingsForStorage(args.desktopApp);
 
     if (existing) {
       const updates: {
@@ -266,6 +295,7 @@ export const update = mutation({
         desktopFocus?: ReturnType<
           typeof normalizeDesktopFocusSettingsForStorage
         >;
+        desktopApp?: ReturnType<typeof normalizeDesktopAppSettingsForStorage>;
         updatedAt: number;
       } = {
         updatedAt: now,
@@ -280,6 +310,9 @@ export const update = mutation({
       }
       if (normalizedDesktopFocus !== undefined) {
         updates.desktopFocus = normalizedDesktopFocus;
+      }
+      if (normalizedDesktopApp !== undefined) {
+        updates.desktopApp = normalizedDesktopApp;
       }
       await ctx.db.patch(existing._id, updates);
 
@@ -316,6 +349,11 @@ export const update = mutation({
         ? {}
         : {
             desktopFocus: normalizedDesktopFocus,
+          }),
+      ...(normalizedDesktopApp === undefined
+        ? {}
+        : {
+            desktopApp: normalizedDesktopApp,
           }),
       createdAt: now,
       updatedAt: now,
