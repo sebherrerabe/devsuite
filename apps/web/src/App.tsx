@@ -6,8 +6,8 @@ import { authClient } from './lib/auth';
 import { ThemeProvider } from 'next-themes';
 import { ErrorBoundary } from './components/error-boundary';
 import { PrivacyModeProvider } from './lib/privacy-mode-context';
-
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
+import { RuntimeConfigError } from './components/runtime-config-error';
+import { readWebRuntimeConfig } from './lib/runtime-config';
 
 const router = createRouter({
   routeTree,
@@ -16,6 +16,16 @@ const router = createRouter({
   },
 });
 
+let convexClient: ConvexReactClient | null = null;
+
+function getConvexClient(convexUrl: string): ConvexReactClient {
+  if (!convexClient) {
+    convexClient = new ConvexReactClient(convexUrl);
+  }
+
+  return convexClient;
+}
+
 declare module '@tanstack/react-router' {
   interface Register {
     router: typeof router;
@@ -23,10 +33,23 @@ declare module '@tanstack/react-router' {
 }
 
 export function App() {
+  const runtimeConfig = readWebRuntimeConfig();
+
+  if (!runtimeConfig.ok) {
+    console.error(
+      '[startup] Missing required runtime configuration.',
+      runtimeConfig.missingKeys
+    );
+    return <RuntimeConfigError missingKeys={runtimeConfig.missingKeys} />;
+  }
+
   return (
     <ErrorBoundary>
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-        <ConvexBetterAuthProvider client={convex} authClient={authClient}>
+        <ConvexBetterAuthProvider
+          client={getConvexClient(runtimeConfig.value.convexUrl)}
+          authClient={authClient}
+        >
           <PrivacyModeProvider>
             <RouterProvider router={router} />
           </PrivacyModeProvider>

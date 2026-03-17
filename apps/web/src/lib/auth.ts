@@ -3,9 +3,14 @@ import {
   convexClient,
   crossDomainClient,
 } from '@convex-dev/better-auth/client/plugins';
+import { readWebRuntimeConfig } from './runtime-config';
+
+const runtimeConfig = readWebRuntimeConfig();
 
 export const authClient = createAuthClient({
-  baseURL: import.meta.env.VITE_CONVEX_SITE_URL,
+  baseURL: runtimeConfig.ok
+    ? runtimeConfig.value.convexSiteUrl
+    : 'http://localhost',
   plugins: [convexClient(), crossDomainClient()],
 });
 
