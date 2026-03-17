@@ -1,7 +1,7 @@
 {
   "name": "@devsuite/desktop",
   "productName": "DevSuite",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Windows desktop shell for DevSuite",
   "author": "DevSuite",
   "private": true,
@@ -19,6 +19,7 @@
     "test:int": "tsx --test test/integration/**/*.test.ts",
     "test:e2e": "pnpm run build && node scripts/run-e2e.mjs",
     "test:install-smoke": "pnpm run make:win && node scripts/run-install-smoke.mjs",
+    "test:install-smoke:existing": "node scripts/run-install-smoke.mjs",
     "test:process-overhead": "pnpm run build && node scripts/process-monitor-overhead.mjs",
     "test:unit": "tsx --test test/unit/**/*.test.ts",
     "clean": "rm -rf dist"
