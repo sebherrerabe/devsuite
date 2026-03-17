@@ -1,7 +1,7 @@
 {
   "name": "@devsuite/desktop",
   "productName": "DevSuite",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Windows desktop shell for DevSuite",
   "author": "DevSuite",
   "private": true,

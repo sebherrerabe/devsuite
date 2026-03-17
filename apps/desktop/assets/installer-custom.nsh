@@ -75,6 +75,7 @@ FunctionEnd
     DetailPrint "DevSuite hosts helper directory permission grant exited with code $0"
   ${EndIf}
 
+  IfSilent helperInstallDone 0
   IfFileExists "${DEVSUITE_HOSTS_HELPER_SCRIPT}" 0 helperScriptMissing
     ExecWait 'schtasks /Create /TN "${DEVSUITE_HOSTS_HELPER_TASK}" /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $\"${DEVSUITE_HOSTS_HELPER_SCRIPT}$\"" /SC ONCE /ST 00:00 /RL HIGHEST /RU SYSTEM /F' $0
     ${If} $0 != 0
