@@ -47,6 +47,8 @@ export interface HostsManagerOptions {
   programDataPath?: string;
   helperTaskName?: string;
   helperTimeoutMs?: number;
+  elevateExecutablePath?: string;
+  helperExecutablePath?: string;
 }
 
 export type HostsOperationStatus = 'applied' | 'noop' | 'degraded';
@@ -244,6 +246,8 @@ async function writeWithRegisteredHelper(params: {
   programDataPath: string;
   helperTaskName: string;
   helperTimeoutMs: number;
+  elevateExecutablePath: string;
+  helperExecutablePath: string;
 }): Promise<{
   applied: boolean;
   method: HostsOperationMethod;
@@ -277,11 +281,16 @@ async function writeWithRegisteredHelper(params: {
   } catch {
     const message = `hosts helper task "${params.helperTaskName}" is unavailable; reinstall DevSuite to restore installer-level permissions`;
     params.logger.warn('hosts-manager', message);
-    return {
-      applied: false,
-      method: 'none',
-      error: message,
-    };
+    return writeWithElevatedProcess({
+      hostsPath: params.hostsPath,
+      contents: params.contents,
+      execFile: params.execFile,
+      logger: params.logger,
+      platform: params.platform,
+      elevateExecutablePath: params.elevateExecutablePath,
+      helperExecutablePath: params.helperExecutablePath,
+      fallbackReason: message,
+    });
   }
 
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -313,11 +322,16 @@ async function writeWithRegisteredHelper(params: {
   } catch (error) {
     const message = `failed to invoke helper task "${params.helperTaskName}": ${error instanceof Error ? error.message : String(error)}`;
     params.logger.warn('hosts-manager', message);
-    return {
-      applied: false,
-      method: 'none',
-      error: message,
-    };
+    return writeWithElevatedProcess({
+      hostsPath: params.hostsPath,
+      contents: params.contents,
+      execFile: params.execFile,
+      logger: params.logger,
+      platform: params.platform,
+      elevateExecutablePath: params.elevateExecutablePath,
+      helperExecutablePath: params.helperExecutablePath,
+      fallbackReason: message,
+    });
   }
 
   const timeoutAt = Date.now() + params.helperTimeoutMs;
@@ -370,20 +384,93 @@ async function writeWithRegisteredHelper(params: {
       'hosts-manager',
       `helper task failed to write hosts file: ${message}`
     );
-    return {
-      applied: false,
-      method: 'none',
-      error: message,
-    };
+    return writeWithElevatedProcess({
+      hostsPath: params.hostsPath,
+      contents: params.contents,
+      execFile: params.execFile,
+      logger: params.logger,
+      platform: params.platform,
+      elevateExecutablePath: params.elevateExecutablePath,
+      helperExecutablePath: params.helperExecutablePath,
+      fallbackReason: message,
+    });
   }
 
   const timeoutMessage = `helper task timed out while writing hosts file: ${params.helperTaskName}`;
   params.logger.warn('hosts-manager', timeoutMessage);
-  return {
-    applied: false,
-    method: 'none',
-    error: timeoutMessage,
-  };
+  return writeWithElevatedProcess({
+    hostsPath: params.hostsPath,
+    contents: params.contents,
+    execFile: params.execFile,
+    logger: params.logger,
+    platform: params.platform,
+    elevateExecutablePath: params.elevateExecutablePath,
+    helperExecutablePath: params.helperExecutablePath,
+    fallbackReason: timeoutMessage,
+  });
+}
+
+async function writeWithElevatedProcess(params: {
+  hostsPath: string;
+  contents: string;
+  execFile: ExecFileLike;
+  logger: RuntimeLogWriter;
+  platform: string;
+  elevateExecutablePath: string;
+  helperExecutablePath: string;
+  fallbackReason: string;
+}): Promise<{
+  applied: boolean;
+  method: HostsOperationMethod;
+  error: string | null;
+}> {
+  if (params.platform !== 'win32') {
+    return {
+      applied: false,
+      method: 'none',
+      error: params.fallbackReason,
+    };
+  }
+
+  const encodedContents = Buffer.from(params.contents, 'utf8').toString(
+    'base64'
+  );
+  try {
+    await params.execFile(
+      params.elevateExecutablePath,
+      [
+        '-wait',
+        params.helperExecutablePath,
+        HOSTS_WRITE_HELPER_FLAG,
+        HOSTS_WRITE_HELPER_PATH_ARG,
+        params.hostsPath,
+        HOSTS_WRITE_HELPER_BASE64_ARG,
+        encodedContents,
+      ],
+      {
+        windowsHide: true,
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+      }
+    );
+    params.logger.info(
+      'hosts-manager',
+      `hosts file updated via elevated process helper: ${params.helperExecutablePath}`
+    );
+    return {
+      applied: true,
+      method: 'helper',
+      error: null,
+    };
+  } catch (error) {
+    const message = `failed to invoke elevated hosts helper: ${error instanceof Error ? error.message : String(error)}`;
+    params.logger.warn('hosts-manager', message);
+    return {
+      applied: false,
+      method: 'none',
+      error: `${params.fallbackReason}; ${message}`,
+    };
+  }
 }
 
 async function writeHostsFile(params: {
@@ -398,6 +485,8 @@ async function writeHostsFile(params: {
   programDataPath: string;
   helperTaskName: string;
   helperTimeoutMs: number;
+  elevateExecutablePath: string;
+  helperExecutablePath: string;
 }): Promise<{
   applied: boolean;
   method: HostsOperationMethod;
@@ -416,6 +505,8 @@ async function writeHostsFile(params: {
       programDataPath: params.programDataPath,
       helperTaskName: params.helperTaskName,
       helperTimeoutMs: params.helperTimeoutMs,
+      elevateExecutablePath: params.elevateExecutablePath,
+      helperExecutablePath: params.helperExecutablePath,
     });
   }
 
@@ -452,6 +543,8 @@ async function writeHostsFile(params: {
       programDataPath: params.programDataPath,
       helperTaskName: params.helperTaskName,
       helperTimeoutMs: params.helperTimeoutMs,
+      elevateExecutablePath: params.elevateExecutablePath,
+      helperExecutablePath: params.helperExecutablePath,
     });
     if (appliedWithHelper.applied) {
       return appliedWithHelper;
@@ -513,6 +606,10 @@ function resolveOptions(options: HostsManagerOptions = {}) {
       options.programDataPath ?? process.env.ProgramData ?? 'C:\\ProgramData',
     helperTaskName: options.helperTaskName ?? HOSTS_WRITE_HELPER_TASK_NAME,
     helperTimeoutMs: options.helperTimeoutMs ?? HOSTS_WRITE_HELPER_TIMEOUT_MS,
+    elevateExecutablePath:
+      options.elevateExecutablePath ??
+      joinPath(process.resourcesPath ?? '', 'elevate.exe'),
+    helperExecutablePath: options.helperExecutablePath ?? process.execPath,
   };
 }
 
@@ -577,6 +674,8 @@ export async function blockDomains(
     programDataPath: resolved.programDataPath,
     helperTaskName: resolved.helperTaskName,
     helperTimeoutMs: resolved.helperTimeoutMs,
+    elevateExecutablePath: resolved.elevateExecutablePath,
+    helperExecutablePath: resolved.helperExecutablePath,
   });
 
   if (writeResult.applied) {
@@ -632,6 +731,8 @@ export async function unblockAll(
     programDataPath: resolved.programDataPath,
     helperTaskName: resolved.helperTaskName,
     helperTimeoutMs: resolved.helperTimeoutMs,
+    elevateExecutablePath: resolved.elevateExecutablePath,
+    helperExecutablePath: resolved.helperExecutablePath,
   });
 
   if (writeResult.applied) {
@@ -723,6 +824,8 @@ export async function verifyHostsWriteHelper(
     programDataPath: resolved.programDataPath,
     helperTaskName: resolved.helperTaskName,
     helperTimeoutMs: resolved.helperTimeoutMs,
+    elevateExecutablePath: resolved.elevateExecutablePath,
+    helperExecutablePath: resolved.helperExecutablePath,
   });
 
   if (!writeResult.applied) {

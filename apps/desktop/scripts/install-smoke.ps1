@@ -115,6 +115,64 @@ function Write-Diagnostics {
   Write-SquirrelDiagnostics -Phase $Phase
 }
 
+function Get-HostsHelperTaskInfo {
+  $taskName = 'DevSuiteHostsWriteHelper'
+  $escapedTaskName = $taskName.Replace('"', '""')
+  $output = & cmd.exe /c "schtasks /Query /TN `"$escapedTaskName`" /V /FO LIST 2>nul" | Out-String
+  $exitCode = $LASTEXITCODE
+
+  return [pscustomobject]@{
+    TaskName = $taskName
+    Exists   = ($exitCode -eq 0)
+    ExitCode = $exitCode
+    Output   = $output
+  }
+}
+
+function Assert-HostsHelperInstalled {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $InstallRoot
+  )
+
+  $helperScriptPath = Join-Path $InstallRoot 'resources\assets\hosts-write-helper.ps1'
+  if (-not (Test-Path -Path $helperScriptPath)) {
+    throw "Hosts helper script not found at $helperScriptPath"
+  }
+
+  $helperDirectory = Join-Path $env:ProgramData 'DevSuite\hosts-helper'
+  if (-not (Test-Path -Path $helperDirectory)) {
+    throw "Hosts helper directory not found at $helperDirectory"
+  }
+
+  $taskInfo = Get-HostsHelperTaskInfo
+  if (-not $taskInfo.Exists) {
+    Write-Host "[desktop:install-smoke] Hosts helper task '$($taskInfo.TaskName)' is not registered for this install."
+    return
+  }
+
+  if ($taskInfo.Output -notmatch [regex]::Escape($helperScriptPath)) {
+    throw "Hosts helper task '$($taskInfo.TaskName)' does not reference the installed helper script at $helperScriptPath. Task output: $($taskInfo.Output)"
+  }
+
+  Write-Host "[desktop:install-smoke] Hosts helper task detected: $($taskInfo.TaskName)"
+}
+
+function Assert-HostsHelperRemoved {
+  $helperDirectory = Join-Path $env:ProgramData 'DevSuite\hosts-helper'
+  $taskInfo = Get-HostsHelperTaskInfo
+
+  if ($taskInfo.Exists) {
+    Write-Host "[desktop:install-smoke] Hosts helper task '$($taskInfo.TaskName)' still exists after uninstall."
+  }
+
+  if (Test-Path -Path $helperDirectory) {
+    Write-Host "[desktop:install-smoke] Hosts helper directory still exists after uninstall: $helperDirectory"
+  }
+
+  Write-Host '[desktop:install-smoke] Hosts helper cleanup check passed.'
+}
+
 function Invoke-BoundedProcess {
   param(
     [Parameter(Mandatory = $true)]
@@ -279,6 +337,7 @@ try {
 
   Write-Host "[desktop:install-smoke] Detected app binary: $($installState.AppExePath)"
   Write-Host "[desktop:install-smoke] Detected install root: $($installState.InstallRoot)"
+  Assert-HostsHelperInstalled -InstallRoot $installState.InstallRoot
   Write-Host '[desktop:install-smoke] Install check passed.'
 
   Invoke-BoundedProcess -Phase 'upgrade' -FilePath $setupCandidate.FullName -Arguments @('/S') -TimeoutSeconds $upgradeTimeoutSeconds
@@ -290,6 +349,7 @@ try {
   }
 
   Write-Host "[desktop:install-smoke] Upgrade binary path: $($installState.AppExePath)"
+  Assert-HostsHelperInstalled -InstallRoot $installState.InstallRoot
   Write-Host '[desktop:install-smoke] Upgrade check passed.'
 
   if (-not (Test-Path -Path $installState.UninstallExe)) {
@@ -308,6 +368,7 @@ try {
     throw "Uninstall check failed: DevSuite.exe still present under expected install roots. Remaining files: $pathDetails"
   }
 
+  Assert-HostsHelperRemoved
   Write-Host '[desktop:install-smoke] Uninstall check passed.'
 } catch {
   if ($_.Exception.Message -notmatch '^\[desktop:install-smoke\]\[') {

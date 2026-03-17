@@ -7,6 +7,9 @@ import test from 'node:test';
 import {
   BEGIN_MARKER,
   END_MARKER,
+  HOSTS_WRITE_HELPER_BASE64_ARG,
+  HOSTS_WRITE_HELPER_FLAG,
+  HOSTS_WRITE_HELPER_PATH_ARG,
   blockDomains,
   cleanupStaleBlocks,
   normalizeHostsDomains,
@@ -193,6 +196,8 @@ test('blockDomains prefers installer helper when direct hosts write is denied', 
     programDataPath: tempDir,
     writeFile: writeFileMock as typeof writeFile,
     execFile: execFileMock as never,
+    elevateExecutablePath: 'elevate.exe',
+    helperExecutablePath: 'DevSuite.exe',
   });
 
   assert.equal(result.status, 'applied');
@@ -232,6 +237,9 @@ test('blockDomains fails gracefully when helper is unavailable', async () => {
     if (file === 'schtasks' && args[0] === '/Query') {
       throw new Error('task not found');
     }
+    if (file === 'elevate.exe') {
+      throw new Error('uac denied');
+    }
 
     return {
       stdout: '',
@@ -245,14 +253,84 @@ test('blockDomains fails gracefully when helper is unavailable', async () => {
     programDataPath: tempDir,
     writeFile: writeFileMock as typeof writeFile,
     execFile: execFileMock as never,
+    elevateExecutablePath: 'elevate.exe',
+    helperExecutablePath: 'DevSuite.exe',
   });
 
   assert.equal(result.status, 'degraded');
   assert.equal(result.method, 'none');
   assert.match(result.error ?? '', /unavailable|task not found/i);
   assert.equal(
-    execCalls.some(call => call[0] === 'powershell'),
-    false
+    execCalls.some(call => call[0] === 'elevate.exe'),
+    true
+  );
+});
+
+test('blockDomains falls back to elevated process helper when scheduled task is unavailable', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'hosts-manager-elevated-'));
+  const hostsPath = join(tempDir, 'hosts');
+  await writeFile(hostsPath, '127.0.0.1 localhost\n', 'utf8');
+
+  const execCalls: string[][] = [];
+  const writeFileMock = async (
+    filePath: Parameters<typeof writeFile>[0],
+    data: Parameters<typeof writeFile>[1],
+    options?: Parameters<typeof writeFile>[2]
+  ) => {
+    if (filePath === hostsPath) {
+      const deniedError = new Error('denied') as Error & { code?: string };
+      deniedError.code = 'EACCES';
+      throw deniedError;
+    }
+
+    return writeFile(filePath, data, options as never);
+  };
+
+  const execFileMock = async (
+    file: string,
+    args: string[]
+  ): Promise<{ stdout: string; stderr: string }> => {
+    execCalls.push([file, ...args]);
+    if (file === 'schtasks' && args[0] === '/Query') {
+      throw new Error('task not found');
+    }
+
+    if (file === 'elevate.exe') {
+      const hostsPathIndex = args.indexOf(HOSTS_WRITE_HELPER_PATH_ARG);
+      const contentsIndex = args.indexOf(HOSTS_WRITE_HELPER_BASE64_ARG);
+      assert.equal(args.includes(HOSTS_WRITE_HELPER_FLAG), true);
+      assert.equal(hostsPathIndex > -1, true);
+      assert.equal(contentsIndex > -1, true);
+      await writeFile(
+        args[hostsPathIndex + 1]!,
+        Buffer.from(args[contentsIndex + 1]!, 'base64').toString('utf8'),
+        'utf8'
+      );
+    }
+
+    return {
+      stdout: '',
+      stderr: '',
+    };
+  };
+
+  const result = await blockDomains(['youtube.com'], {
+    hostsPath,
+    platform: 'win32',
+    programDataPath: tempDir,
+    writeFile: writeFileMock as typeof writeFile,
+    execFile: execFileMock as never,
+    elevateExecutablePath: 'elevate.exe',
+    helperExecutablePath: 'DevSuite.exe',
+  });
+
+  assert.equal(result.status, 'applied');
+  assert.equal(result.method, 'helper');
+  const contents = await readFile(hostsPath, 'utf8');
+  assert.equal(contents.includes('youtube.com'), true);
+  assert.equal(
+    execCalls.some(call => call[0] === 'elevate.exe'),
+    true
   );
 });
 
@@ -299,6 +377,8 @@ test('verifyHostsWriteHelper succeeds via scheduled task flow', async () => {
     platform: 'win32',
     programDataPath: tempDir,
     execFile: execFileMock as never,
+    elevateExecutablePath: 'elevate.exe',
+    helperExecutablePath: 'DevSuite.exe',
   });
 
   assert.equal(result.ok, true);
@@ -315,6 +395,9 @@ test('verifyHostsWriteHelper fails when helper task is unavailable', async () =>
     if (file === 'schtasks' && args[0] === '/Query') {
       throw new Error('task not found');
     }
+    if (file === 'elevate.exe') {
+      throw new Error('uac denied');
+    }
 
     return {
       stdout: '',
@@ -326,9 +409,55 @@ test('verifyHostsWriteHelper fails when helper task is unavailable', async () =>
     platform: 'win32',
     programDataPath: tempDir,
     execFile: execFileMock as never,
+    elevateExecutablePath: 'elevate.exe',
+    helperExecutablePath: 'DevSuite.exe',
   });
 
   assert.equal(result.ok, false);
   assert.equal(result.method, 'none');
   assert.match(result.error ?? '', /unavailable|task not found/i);
+});
+
+test('verifyHostsWriteHelper falls back to elevated process helper when scheduled task is unavailable', async () => {
+  const tempDir = await mkdtemp(
+    join(tmpdir(), 'hosts-manager-verify-elevated-')
+  );
+  const execFileMock = async (
+    file: string,
+    args: string[]
+  ): Promise<{ stdout: string; stderr: string }> => {
+    if (file === 'schtasks' && args[0] === '/Query') {
+      throw new Error('task not found');
+    }
+
+    if (file === 'elevate.exe') {
+      const hostsPathIndex = args.indexOf(HOSTS_WRITE_HELPER_PATH_ARG);
+      const contentsIndex = args.indexOf(HOSTS_WRITE_HELPER_BASE64_ARG);
+      assert.equal(args.includes(HOSTS_WRITE_HELPER_FLAG), true);
+      assert.equal(hostsPathIndex > -1, true);
+      assert.equal(contentsIndex > -1, true);
+      await writeFile(
+        args[hostsPathIndex + 1]!,
+        Buffer.from(args[contentsIndex + 1]!, 'base64').toString('utf8'),
+        'utf8'
+      );
+    }
+
+    return {
+      stdout: '',
+      stderr: '',
+    };
+  };
+
+  const result = await verifyHostsWriteHelper({
+    platform: 'win32',
+    programDataPath: tempDir,
+    execFile: execFileMock as never,
+    elevateExecutablePath: 'elevate.exe',
+    helperExecutablePath: 'DevSuite.exe',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.method, 'helper');
+  assert.equal(result.error, null);
 });
