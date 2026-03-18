@@ -18,6 +18,7 @@ export const END_MARKER = '# END DEVSUITE BLOCK';
 export const HOSTS_WRITE_HELPER_FLAG = '--devsuite-hosts-write';
 export const HOSTS_WRITE_HELPER_PATH_ARG = '--hosts-path';
 export const HOSTS_WRITE_HELPER_BASE64_ARG = '--hosts-base64';
+export const HOSTS_WRITE_HELPER_REQUEST_PATH_ARG = '--hosts-request-path';
 export const HOSTS_WRITE_HELPER_TASK_NAME = 'DevSuiteHostsWriteHelper';
 export const HOSTS_WRITE_HELPER_DIR_SEGMENTS = ['DevSuite', 'hosts-helper'];
 export const HOSTS_WRITE_HELPER_REQUEST_FILENAME = 'request.json';
@@ -226,6 +227,85 @@ function resolveHostsWriteHelperPaths(programDataPath: string): {
   };
 }
 
+function buildHostsWriteHelperRequestPayload(params: {
+  requestId: string;
+  hostsPath: string;
+  contents: string;
+}): string {
+  return JSON.stringify({
+    requestId: params.requestId,
+    hostsPath: params.hostsPath,
+    encodedContents: Buffer.from(params.contents, 'utf8').toString('base64'),
+  });
+}
+
+async function stageHostsWriteHelperRequest(params: {
+  hostsPath: string;
+  contents: string;
+  writeFile: WriteFileLike;
+  mkdir: MkdirLike;
+  logger: RuntimeLogWriter;
+  programDataPath: string;
+}): Promise<
+  | {
+      requestId: string;
+      requestPath: string;
+      resultPath: string;
+      error: null;
+    }
+  | {
+      requestId: null;
+      requestPath: null;
+      resultPath: null;
+      error: string;
+    }
+> {
+  const paths = resolveHostsWriteHelperPaths(params.programDataPath);
+
+  try {
+    await params.mkdir(paths.helperDirectoryPath, {
+      recursive: true,
+    });
+  } catch (error) {
+    const message = `failed to prepare helper directory at ${paths.helperDirectoryPath}: ${error instanceof Error ? error.message : String(error)}`;
+    params.logger.warn('hosts-manager', message);
+    return {
+      requestId: null,
+      requestPath: null,
+      resultPath: null,
+      error: message,
+    };
+  }
+
+  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const requestPayload = buildHostsWriteHelperRequestPayload({
+    requestId,
+    hostsPath: params.hostsPath,
+    contents: params.contents,
+  });
+
+  try {
+    await params.writeFile(paths.requestPath, requestPayload, 'utf8');
+    await params.writeFile(paths.resultPath, '', 'utf8');
+  } catch (error) {
+    const message = `failed to stage helper request payload: ${error instanceof Error ? error.message : String(error)}`;
+    params.logger.warn('hosts-manager', message);
+    return {
+      requestId: null,
+      requestPath: null,
+      resultPath: null,
+      error: message,
+    };
+  }
+
+  return {
+    requestId,
+    requestPath: paths.requestPath,
+    resultPath: paths.resultPath,
+    error: null,
+  };
+}
+
 function isHostsWriteHelperResultRecord(value: unknown): value is {
   requestId?: unknown;
   ok?: unknown;
@@ -261,21 +341,6 @@ async function writeWithRegisteredHelper(params: {
     };
   }
 
-  const paths = resolveHostsWriteHelperPaths(params.programDataPath);
-  try {
-    await params.mkdir(paths.helperDirectoryPath, {
-      recursive: true,
-    });
-  } catch (error) {
-    const message = `failed to prepare helper directory at ${paths.helperDirectoryPath}: ${error instanceof Error ? error.message : String(error)}`;
-    params.logger.warn('hosts-manager', message);
-    return {
-      applied: false,
-      method: 'none',
-      error: message,
-    };
-  }
-
   try {
     await params.execFile('schtasks', ['/Query', '/TN', params.helperTaskName]);
   } catch {
@@ -284,32 +349,31 @@ async function writeWithRegisteredHelper(params: {
     return writeWithElevatedProcess({
       hostsPath: params.hostsPath,
       contents: params.contents,
+      writeFile: params.writeFile,
+      mkdir: params.mkdir,
       execFile: params.execFile,
       logger: params.logger,
       platform: params.platform,
+      programDataPath: params.programDataPath,
       elevateExecutablePath: params.elevateExecutablePath,
       helperExecutablePath: params.helperExecutablePath,
       fallbackReason: message,
     });
   }
 
-  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const requestPayload = JSON.stringify({
-    requestId,
+  const stagedRequest = await stageHostsWriteHelperRequest({
     hostsPath: params.hostsPath,
-    encodedContents: Buffer.from(params.contents, 'utf8').toString('base64'),
+    contents: params.contents,
+    writeFile: params.writeFile,
+    mkdir: params.mkdir,
+    logger: params.logger,
+    programDataPath: params.programDataPath,
   });
-
-  try {
-    await params.writeFile(paths.requestPath, requestPayload, 'utf8');
-    await params.writeFile(paths.resultPath, '', 'utf8');
-  } catch (error) {
-    const message = `failed to stage helper request payload: ${error instanceof Error ? error.message : String(error)}`;
-    params.logger.warn('hosts-manager', message);
+  if (stagedRequest.error) {
     return {
       applied: false,
       method: 'none',
-      error: message,
+      error: stagedRequest.error,
     };
   }
 
@@ -325,9 +389,12 @@ async function writeWithRegisteredHelper(params: {
     return writeWithElevatedProcess({
       hostsPath: params.hostsPath,
       contents: params.contents,
+      writeFile: params.writeFile,
+      mkdir: params.mkdir,
       execFile: params.execFile,
       logger: params.logger,
       platform: params.platform,
+      programDataPath: params.programDataPath,
       elevateExecutablePath: params.elevateExecutablePath,
       helperExecutablePath: params.helperExecutablePath,
       fallbackReason: message,
@@ -342,7 +409,7 @@ async function writeWithRegisteredHelper(params: {
 
     let rawResult = '';
     try {
-      rawResult = await params.readFile(paths.resultPath, 'utf8');
+      rawResult = await params.readFile(stagedRequest.resultPath!, 'utf8');
     } catch {
       continue;
     }
@@ -362,7 +429,7 @@ async function writeWithRegisteredHelper(params: {
       continue;
     }
 
-    if (parsed.requestId !== requestId) {
+    if (parsed.requestId !== stagedRequest.requestId!) {
       continue;
     }
 
@@ -387,9 +454,12 @@ async function writeWithRegisteredHelper(params: {
     return writeWithElevatedProcess({
       hostsPath: params.hostsPath,
       contents: params.contents,
+      writeFile: params.writeFile,
+      mkdir: params.mkdir,
       execFile: params.execFile,
       logger: params.logger,
       platform: params.platform,
+      programDataPath: params.programDataPath,
       elevateExecutablePath: params.elevateExecutablePath,
       helperExecutablePath: params.helperExecutablePath,
       fallbackReason: message,
@@ -401,9 +471,12 @@ async function writeWithRegisteredHelper(params: {
   return writeWithElevatedProcess({
     hostsPath: params.hostsPath,
     contents: params.contents,
+    writeFile: params.writeFile,
+    mkdir: params.mkdir,
     execFile: params.execFile,
     logger: params.logger,
     platform: params.platform,
+    programDataPath: params.programDataPath,
     elevateExecutablePath: params.elevateExecutablePath,
     helperExecutablePath: params.helperExecutablePath,
     fallbackReason: timeoutMessage,
@@ -413,9 +486,12 @@ async function writeWithRegisteredHelper(params: {
 async function writeWithElevatedProcess(params: {
   hostsPath: string;
   contents: string;
+  writeFile: WriteFileLike;
+  mkdir: MkdirLike;
   execFile: ExecFileLike;
   logger: RuntimeLogWriter;
   platform: string;
+  programDataPath: string;
   elevateExecutablePath: string;
   helperExecutablePath: string;
   fallbackReason: string;
@@ -432,9 +508,21 @@ async function writeWithElevatedProcess(params: {
     };
   }
 
-  const encodedContents = Buffer.from(params.contents, 'utf8').toString(
-    'base64'
-  );
+  const stagedRequest = await stageHostsWriteHelperRequest({
+    hostsPath: params.hostsPath,
+    contents: params.contents,
+    writeFile: params.writeFile,
+    mkdir: params.mkdir,
+    logger: params.logger,
+    programDataPath: params.programDataPath,
+  });
+  if (stagedRequest.error) {
+    return {
+      applied: false,
+      method: 'none',
+      error: `${params.fallbackReason}; ${stagedRequest.error}`,
+    };
+  }
   try {
     await params.execFile(
       params.elevateExecutablePath,
@@ -442,10 +530,8 @@ async function writeWithElevatedProcess(params: {
         '-wait',
         params.helperExecutablePath,
         HOSTS_WRITE_HELPER_FLAG,
-        HOSTS_WRITE_HELPER_PATH_ARG,
-        params.hostsPath,
-        HOSTS_WRITE_HELPER_BASE64_ARG,
-        encodedContents,
+        HOSTS_WRITE_HELPER_REQUEST_PATH_ARG,
+        stagedRequest.requestPath!,
       ],
       {
         windowsHide: true,

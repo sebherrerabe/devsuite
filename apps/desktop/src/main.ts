@@ -75,6 +75,7 @@ import {
   HOSTS_WRITE_HELPER_BASE64_ARG,
   HOSTS_WRITE_HELPER_FLAG,
   HOSTS_WRITE_HELPER_PATH_ARG,
+  HOSTS_WRITE_HELPER_REQUEST_PATH_ARG,
   unblockAll,
   verifyHostsWriteHelper,
   type HostsEnforcementStatus,
@@ -604,16 +605,43 @@ function readCliArgValue(argv: readonly string[], flag: string): string | null {
   return typeof value === 'string' ? value : null;
 }
 
+function parseHostsWriteHelperRequestPayload(payload: unknown): {
+  hostsPath: string;
+  encodedContents: string;
+} {
+  if (!isRecord(payload)) {
+    throw new Error('Hosts helper request payload must be an object.');
+  }
+
+  return {
+    hostsPath: parseNonEmptyString(payload.hostsPath, 'hostsPath'),
+    encodedContents: parseNonEmptyString(
+      payload.encodedContents,
+      'encodedContents'
+    ),
+  };
+}
+
 async function runHostsWriteHelperMode(argv: readonly string[]): Promise<void> {
   try {
-    const hostsPath = parseNonEmptyString(
-      readCliArgValue(argv, HOSTS_WRITE_HELPER_PATH_ARG),
-      HOSTS_WRITE_HELPER_PATH_ARG
+    const requestPath = readCliArgValue(
+      argv,
+      HOSTS_WRITE_HELPER_REQUEST_PATH_ARG
     );
-    const encodedContents = parseNonEmptyString(
-      readCliArgValue(argv, HOSTS_WRITE_HELPER_BASE64_ARG),
-      HOSTS_WRITE_HELPER_BASE64_ARG
-    );
+    const { hostsPath, encodedContents } = requestPath
+      ? parseHostsWriteHelperRequestPayload(
+          JSON.parse(await readFile(requestPath, 'utf8'))
+        )
+      : {
+          hostsPath: parseNonEmptyString(
+            readCliArgValue(argv, HOSTS_WRITE_HELPER_PATH_ARG),
+            HOSTS_WRITE_HELPER_PATH_ARG
+          ),
+          encodedContents: parseNonEmptyString(
+            readCliArgValue(argv, HOSTS_WRITE_HELPER_BASE64_ARG),
+            HOSTS_WRITE_HELPER_BASE64_ARG
+          ),
+        };
     const decodedBytes = Buffer.from(encodedContents, 'base64');
     await writeFile(hostsPath, decodedBytes);
     process.exit(0);

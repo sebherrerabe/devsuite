@@ -7,9 +7,9 @@ import test from 'node:test';
 import {
   BEGIN_MARKER,
   END_MARKER,
-  HOSTS_WRITE_HELPER_BASE64_ARG,
   HOSTS_WRITE_HELPER_FLAG,
   HOSTS_WRITE_HELPER_PATH_ARG,
+  HOSTS_WRITE_HELPER_REQUEST_PATH_ARG,
   blockDomains,
   cleanupStaleBlocks,
   normalizeHostsDomains,
@@ -296,14 +296,21 @@ test('blockDomains falls back to elevated process helper when scheduled task is 
     }
 
     if (file === 'elevate.exe') {
-      const hostsPathIndex = args.indexOf(HOSTS_WRITE_HELPER_PATH_ARG);
-      const contentsIndex = args.indexOf(HOSTS_WRITE_HELPER_BASE64_ARG);
+      const requestPathIndex = args.indexOf(
+        HOSTS_WRITE_HELPER_REQUEST_PATH_ARG
+      );
       assert.equal(args.includes(HOSTS_WRITE_HELPER_FLAG), true);
-      assert.equal(hostsPathIndex > -1, true);
-      assert.equal(contentsIndex > -1, true);
+      assert.equal(requestPathIndex > -1, true);
+      assert.equal(args.includes(HOSTS_WRITE_HELPER_PATH_ARG), false);
+      const request = JSON.parse(
+        await readFile(args[requestPathIndex + 1]!, 'utf8')
+      ) as {
+        hostsPath: string;
+        encodedContents: string;
+      };
       await writeFile(
-        args[hostsPathIndex + 1]!,
-        Buffer.from(args[contentsIndex + 1]!, 'base64').toString('utf8'),
+        request.hostsPath,
+        Buffer.from(request.encodedContents, 'base64').toString('utf8'),
         'utf8'
       );
     }
@@ -431,14 +438,21 @@ test('verifyHostsWriteHelper falls back to elevated process helper when schedule
     }
 
     if (file === 'elevate.exe') {
-      const hostsPathIndex = args.indexOf(HOSTS_WRITE_HELPER_PATH_ARG);
-      const contentsIndex = args.indexOf(HOSTS_WRITE_HELPER_BASE64_ARG);
+      const requestPathIndex = args.indexOf(
+        HOSTS_WRITE_HELPER_REQUEST_PATH_ARG
+      );
       assert.equal(args.includes(HOSTS_WRITE_HELPER_FLAG), true);
-      assert.equal(hostsPathIndex > -1, true);
-      assert.equal(contentsIndex > -1, true);
+      assert.equal(requestPathIndex > -1, true);
+      assert.equal(args.includes(HOSTS_WRITE_HELPER_PATH_ARG), false);
+      const request = JSON.parse(
+        await readFile(args[requestPathIndex + 1]!, 'utf8')
+      ) as {
+        hostsPath: string;
+        encodedContents: string;
+      };
       await writeFile(
-        args[hostsPathIndex + 1]!,
-        Buffer.from(args[contentsIndex + 1]!, 'base64').toString('utf8'),
+        request.hostsPath,
+        Buffer.from(request.encodedContents, 'base64').toString('utf8'),
         'utf8'
       );
     }
