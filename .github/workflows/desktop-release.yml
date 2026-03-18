@@ -114,27 +114,44 @@ jobs:
           VITE_DESKTOP_INSTALLER_URL: ${{ vars.VITE_DESKTOP_INSTALLER_URL }}
         run: pnpm --filter @devsuite/desktop make:win
 
+      - name: Resolve update asset names
+        id: release_assets
+        shell: bash
+        run: |
+          ASSET_NAME=$(node -e "const fs=require('fs'); const raw=fs.readFileSync('apps/desktop/out/latest.yml','utf8'); const match=raw.match(/^path:\\s*(.+)$/m); if (!match) { throw new Error('latest.yml is missing a path entry'); } process.stdout.write(match[1].trim());")
+          if [ ! -f "apps/desktop/out/$ASSET_NAME" ]; then
+            echo "Expected installer asset apps/desktop/out/$ASSET_NAME not found."
+            ls -la apps/desktop/out
+            exit 1
+          fi
+          if [ ! -f "apps/desktop/out/$ASSET_NAME.blockmap" ]; then
+            echo "Expected blockmap apps/desktop/out/$ASSET_NAME.blockmap not found."
+            ls -la apps/desktop/out
+            exit 1
+          fi
+          echo "asset_name=$ASSET_NAME" >> "$GITHUB_OUTPUT"
+
       - name: Installer smoke test
         run: pnpm --filter @devsuite/desktop test:install-smoke:existing
 
       - name: Create or update GitHub Release
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           TAG_NAME="${GITHUB_REF_NAME}"
+          ASSET_NAME="${{ steps.release_assets.outputs.asset_name }}"
           if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG_NAME" \
-              "apps/desktop/out/DevSuite Setup ${VERSION}.exe" \
-              apps/desktop/out/*.blockmap \
+              "apps/desktop/out/$ASSET_NAME" \
+              "apps/desktop/out/$ASSET_NAME.blockmap" \
               apps/desktop/out/latest*.yml \
               --clobber \
               --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG_NAME" \
-              "apps/desktop/out/DevSuite Setup ${VERSION}.exe" \
-              apps/desktop/out/*.blockmap \
+              "apps/desktop/out/$ASSET_NAME" \
+              "apps/desktop/out/$ASSET_NAME.blockmap" \
               apps/desktop/out/latest*.yml \
-              --title "DevSuite ${VERSION}" \
-              --notes "Stable Windows desktop release ${VERSION}." \
+              --title "DevSuite ${GITHUB_REF_NAME#v}" \
+              --notes "Stable Windows desktop release ${GITHUB_REF_NAME#v}." \
               --repo "$GITHUB_REPOSITORY"
           fi

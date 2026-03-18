@@ -4,6 +4,7 @@ module.exports = {
   executableName: 'DevSuite',
   directories: { output: 'out', buildResources: 'assets' },
   files: ['dist/**/*', 'renderer/**/*', 'package.json'],
+  artifactName: 'DevSuite-Setup-${version}.${ext}',
   extraResources: [
     {
       from: 'assets',
